@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "lib": ["DOM", "ES2022"],
+    "allowJs": false,
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "declarationDir": "dist/types",
+    "target": "ES6",
+    "module": "NodeNext",
+    "outDir": "dist/esm",
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}
