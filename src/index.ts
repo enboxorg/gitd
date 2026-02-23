@@ -4,20 +4,22 @@
  * Protocol definitions for a decentralized GitHub alternative.
  * See PLAN.md for full architecture documentation.
  *
- * @module
+ * Each protocol exports:
+ * - Data shape types for each record type (e.g. `IssueData`, `RepoData`)
+ * - A `SchemaMap` type mapping type names to data shapes
+ * - A raw `ProtocolDefinition` (e.g. `ForgeRepoDefinition`)
+ * - A typed protocol created via `defineProtocol()` (e.g. `ForgeRepoProtocol`)
+ *
+ * @packageDocumentation
  */
 
-// Protocol definitions will be exported here as they are implemented.
-// See PLAN.md Section 11 for the implementation roadmap.
-//
-// Planned exports:
-//   - ForgeRepoDefinition, ForgeRepoProtocol
-//   - ForgeIssuesDefinition, ForgeIssuesProtocol
-//   - ForgePatchesDefinition, ForgePatchesProtocol
-//   - ForgeCiDefinition, ForgeCiProtocol
-//   - ForgeReleasesDefinition, ForgeReleasesProtocol
-//   - ForgeRegistryDefinition, ForgeRegistryProtocol
-//   - ForgeSocialDefinition, ForgeSocialProtocol
-//   - ForgeNotificationsDefinition, ForgeNotificationsProtocol
-//   - ForgeWikiDefinition, ForgeWikiProtocol
-//   - ForgeOrgDefinition, ForgeOrgProtocol
+export * from './repo.js';
+export * from './issues.js';
+export * from './patches.js';
+export * from './ci.js';
+export * from './releases.js';
+export * from './registry.js';
+export * from './social.js';
+export * from './notifications.js';
+export * from './wiki.js';
+export * from './org.js';

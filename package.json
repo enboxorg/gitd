@@ -37,10 +37,12 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
-    "@enbox/api": "0.5.5",
-    "@enbox/dwn-sdk-js": "0.5.10"
+    "@enbox/api": "0.2.4",
+    "@enbox/dwn-sdk-js": "0.0.8"
   },
   "devDependencies": {
+    "@eslint/js": "9.7.0",
+    "@stylistic/eslint-plugin": "^5.9.0",
     "@typescript-eslint/eslint-plugin": "8.32.1",
     "@typescript-eslint/parser": "8.32.1",
     "bun-types": "latest",
