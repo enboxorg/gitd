@@ -1,18 +1,28 @@
 /**
  * CLI command tests — exercises command functions against a real Web5 agent.
  *
- * Uses `Web5.connect()` with `sync: 'off'` to create an in-memory agent,
- * then tests each command function directly.
+ * Uses `Web5.connect()` with `sync: 'off'` to create an ephemeral agent,
+ * then tests each command function directly.  The agent's data directory
+ * (`__TESTDATA__/cli`) is cleaned before and after the suite.
  */
-import { beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+
+import { rmSync } from 'node:fs';
 
 import { Web5 } from '@enbox/api';
+import { Web5UserAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../src/cli/agent.js';
 
 import { ForgeIssuesProtocol } from '../src/issues.js';
 import { ForgePatchesProtocol } from '../src/patches.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DATA_PATH = '__TESTDATA__/cli-agent';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -68,9 +78,28 @@ describe('dwn-git CLI commands', () => {
   let ctx: AgentContext;
 
   beforeAll(async () => {
+    // Clean any leftover state from previous runs.
+    rmSync(DATA_PATH, { recursive: true, force: true });
+
+    // Create agent with isolated data path, initialize, and start.
+    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    await agent.initialize({ password: 'test-password' });
+    await agent.start({ password: 'test-password' });
+
+    // Create an identity (Web5.connect normally does this).
+    const identities = await agent.identity.list();
+    let identity = identities[0];
+    if (!identity) {
+      identity = await agent.identity.create({
+        didMethod : 'jwk',
+        metadata  : { name: 'CLI Test' },
+      });
+    }
+
     const result = await Web5.connect({
-      password : 'test-password',
-      sync     : 'off',
+      agent,
+      connectedDid : identity.did.uri,
+      sync         : 'off',
     });
     web5 = result.web5;
     did = result.did;
@@ -86,8 +115,9 @@ describe('dwn-git CLI commands', () => {
     ctx = { did, repo, issues, patches, web5 };
   });
 
-  // For tests that modify state, we need to be careful about ordering.
-  // The singleton repo can only be created once, so we test in a sequence.
+  afterAll(() => {
+    rmSync(DATA_PATH, { recursive: true, force: true });
+  });
 
   // =========================================================================
   // init command
