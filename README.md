@@ -108,6 +108,10 @@ dwn-git indexer                   # Start indexer on port 8090
 dwn-git indexer --seed <did>      # Discover DIDs from a seed user
 dwn-git indexer --interval 30     # Crawl every 30 seconds
 
+# GitHub API compatibility shim
+dwn-git github-api                # Start shim on port 8181
+dwn-git github-api --port 9000    # Custom port
+
 # Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
 dwn-git whoami                    # Show connected DID
@@ -151,6 +155,16 @@ dwn-git whoami                    # Show connected DID
 - **User profiles** — repo count, total stars received, follower/following counts
 - **REST API** — `/api/repos`, `/api/repos/search?q=`, `/api/repos/trending`, `/api/users/:did`, `/api/stats`
 - Start with `dwn-git indexer [--port <port>] [--interval <sec>] [--seed <did>]`
+
+### GitHub API Compatibility Shim
+
+- Read-only HTTP server that translates GitHub REST API v3 requests into DWN queries
+- Allows existing GitHub-compatible tools (VS Code extensions, `gh` CLI, CI systems) to read DWN data
+- DID is used as the GitHub "owner" in URLs: `GET /repos/:did/:repo/issues`
+- 10 Phase 1 endpoints: repo info, issues (list/detail/comments), pulls (list/detail/reviews), releases (list/by-tag), user profile
+- GitHub-compatible response shapes: numeric IDs, pagination (`Link` header, `per_page`), rate limit headers
+- CORS enabled, `X-GitHub-Media-Type: github.v3` header
+- Start with `dwn-git github-api [--port <port>]` (default: 8181, configurable via `DWN_GIT_GITHUB_API_PORT`)
 
 ## Architecture
 
@@ -200,6 +214,12 @@ import { createGitServer, createBundleSyncer, restoreFromBundles } from '@enbox/
 
 // Git remote helper utilities
 import { parseDidUrl, resolveGitEndpoint } from '@enbox/dwn-git/git-remote';
+
+// Indexer service
+import { IndexerStore, IndexerCrawler, handleApiRequest } from '@enbox/dwn-git/indexer';
+
+// GitHub API compatibility shim
+import { handleShimRequest, startShimServer } from '@enbox/dwn-git/github-shim';
 ```
 
 ## Development
@@ -214,7 +234,7 @@ bun test               # Run all tests
 
 ## Status
 
-**Phase 5 in progress** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, read-only web UI, and indexer service. 610+ tests across 16 test files. See PLAN.md Section 12 for the full roadmap.
+**Phase 5 complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, read-only web UI, indexer service, and GitHub API compatibility shim. 666+ tests across 17 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 

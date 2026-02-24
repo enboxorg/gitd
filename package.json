@@ -41,6 +41,10 @@
     "./indexer": {
       "types": "./dist/types/indexer/index.d.ts",
       "import": "./dist/esm/indexer/index.js"
+    },
+    "./github-shim": {
+      "types": "./dist/types/github-shim/index.d.ts",
+      "import": "./dist/esm/github-shim/index.js"
     }
   },
   "keywords": [

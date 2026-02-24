@@ -1320,9 +1320,9 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 
 - [x] **Indexer service**: repo discovery, star aggregation, external contribution surfacing
 - [x] **Web UI**: read-only repo/issue/PR viewer
-- [ ] **VS Code extension**: native IDE integration
+- [ ] **VS Code extension**: native IDE integration (separate repo, post-stabilization)
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
-- [ ] **GitHub API compatibility shim** (optional)
+- [x] **GitHub API compatibility shim**: read-only Phase 1 (10 endpoints)
 
 ---
 
@@ -1370,18 +1370,27 @@ dwn-git/
 │   │   ├── parse-url.ts        # DID URL parser (did::, did://)
 │   │   ├── resolve.ts          # DID resolution + endpoint discovery
 │   │   └── service.ts          # GitTransport DID service type utilities
-│   └── git-server/             # Git transport sidecar server
+│   ├── git-server/             # Git transport sidecar server
+│   │   ├── index.ts            # Barrel re-export
+│   │   ├── auth.ts             # DID-signed push authentication
+│   │   ├── bundle-restore.ts   # Restore bare repos from DWN bundle records
+│   │   ├── bundle-sync.ts      # Post-push bundle sync to DWN
+│   │   ├── did-service.ts      # DID service registration
+│   │   ├── git-backend.ts      # Bare repo management (init, upload-pack, receive-pack)
+│   │   ├── http-handler.ts     # Smart HTTP protocol handler (with onRepoNotFound)
+│   │   ├── push-authorizer.ts  # DWN-backed push authorization
+│   │   ├── ref-sync.ts         # Git ref → DWN record mirroring
+│   │   ├── server.ts           # Node.js HTTP server bridge
+│   │   └── verify.ts           # DID signature verification
+│   └── github-shim/            # GitHub API compatibility shim
 │       ├── index.ts            # Barrel re-export
-│       ├── auth.ts             # DID-signed push authentication
-│       ├── bundle-restore.ts   # Restore bare repos from DWN bundle records
-│       ├── bundle-sync.ts      # Post-push bundle sync to DWN
-│       ├── did-service.ts      # DID service registration
-│       ├── git-backend.ts      # Bare repo management (init, upload-pack, receive-pack)
-│       ├── http-handler.ts     # Smart HTTP protocol handler (with onRepoNotFound)
-│       ├── push-authorizer.ts  # DWN-backed push authorization
-│       ├── ref-sync.ts         # Git ref → DWN record mirroring
-│       ├── server.ts           # Node.js HTTP server bridge
-│       └── verify.ts           # DID signature verification
+│       ├── helpers.ts          # numericId, fromOpt, pagination, response builders
+│       ├── server.ts           # HTTP server, router, handleShimRequest
+│       ├── repos.ts            # GET /repos/:did/:repo
+│       ├── issues.ts           # GET /repos/:did/:repo/issues{/:number{/comments}}
+│       ├── pulls.ts            # GET /repos/:did/:repo/pulls{/:number{/reviews}}
+│       ├── releases.ts         # GET /repos/:did/:repo/releases{/tags/:tag}
+│       └── users.ts            # GET /users/:did
 ├── schemas/                    # JSON Schema files (34 files)
 │   ├── repo/
 │   ├── refs/
@@ -1408,5 +1417,6 @@ dwn-git/
     ├── push-authorizer.spec.ts # DWN push authorization tests
     ├── ref-sync.spec.ts        # Ref sync tests
     ├── verify.spec.ts          # Signature verification tests
-    └── credential-helper.spec.ts # Credential helper tests
+    ├── credential-helper.spec.ts # Credential helper tests
+    └── github-shim.spec.ts     # GitHub API shim tests (56 tests)
 ```
