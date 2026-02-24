@@ -38,6 +38,10 @@
  *   dwn-git social star <did>                  Star a repo
  *   dwn-git social follow <did>                Follow a user
  *   dwn-git notification list [--unread]       List notifications
+ *   dwn-git migrate all <owner/repo>            Import everything from GitHub
+ *   dwn-git migrate issues <owner/repo>         Import issues + comments
+ *   dwn-git migrate pulls <owner/repo>          Import PRs as patches
+ *   dwn-git migrate releases <owner/repo>       Import releases
  *   dwn-git log                                Show recent activity
  *   dwn-git serve [--port <port>]              Start the git transport server
  *   dwn-git whoami                             Show connected DID
@@ -56,6 +60,7 @@ import { connectAgent } from './agent.js';
 import { initCommand } from './commands/init.js';
 import { issueCommand } from './commands/issue.js';
 import { logCommand } from './commands/log.js';
+import { migrateCommand } from './commands/migrate.js';
 import { notificationCommand } from './commands/notification.js';
 import { orgCommand } from './commands/org.js';
 import { patchCommand } from './commands/patch.js';
@@ -143,6 +148,12 @@ function printUsage(): void {
   console.log('  notification read <id>                      Mark as read');
   console.log('  notification clear                          Clear read notifications');
   console.log('');
+  console.log('  migrate all <owner/repo>                   Import everything from GitHub');
+  console.log('  migrate repo <owner/repo>                  Import repo metadata');
+  console.log('  migrate issues <owner/repo>                Import issues + comments');
+  console.log('  migrate pulls <owner/repo>                 Import PRs as patches + reviews');
+  console.log('  migrate releases <owner/repo>              Import releases');
+  console.log('');
   console.log('  log                                         Show recent activity');
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
@@ -150,6 +161,7 @@ function printUsage(): void {
   console.log('  DWN_GIT_PASSWORD  vault password (prompted if not set)');
   console.log('  DWN_GIT_PORT      server port for `serve` (default: 9418)');
   console.log('  DWN_GIT_REPOS     base path for bare repos (default: ./repos)');
+  console.log('  GITHUB_TOKEN      GitHub API token for migration (optional, higher rate limits)');
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +260,10 @@ async function main(): Promise<void> {
     case 'notification':
     case 'notifications':
       await notificationCommand(ctx, rest);
+      break;
+
+    case 'migrate':
+      await migrateCommand(ctx, rest);
       break;
 
     case 'log':
