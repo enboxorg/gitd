@@ -19,6 +19,18 @@
  *   dwn-git patch comment <number> <body>      Add a comment/review
  *   dwn-git patch merge <number>               Merge a patch
  *   dwn-git patch list [--status <status>]
+ *   dwn-git release create <tag>               Create a release
+ *   dwn-git release show <tag>                 Show release details
+ *   dwn-git release list                       List releases
+ *   dwn-git ci status [<commit>]               Show latest CI status
+ *   dwn-git ci create <commit>                 Create a check suite
+ *   dwn-git wiki create <slug> <title>         Create a wiki page
+ *   dwn-git wiki show <slug>                   Show a wiki page
+ *   dwn-git org create <name>                  Create an organization
+ *   dwn-git org info                           Show org details
+ *   dwn-git social star <did>                  Star a repo
+ *   dwn-git social follow <did>                Follow a user
+ *   dwn-git notification list [--unread]       List notifications
  *   dwn-git log                                Show recent activity
  *   dwn-git serve [--port <port>]              Start the git transport server
  *   dwn-git whoami                             Show connected DID
@@ -31,15 +43,21 @@
  * @module
  */
 
+import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
 import { initCommand } from './commands/init.js';
 import { issueCommand } from './commands/issue.js';
 import { logCommand } from './commands/log.js';
+import { notificationCommand } from './commands/notification.js';
+import { orgCommand } from './commands/org.js';
 import { patchCommand } from './commands/patch.js';
+import { releaseCommand } from './commands/release.js';
 import { repoCommand } from './commands/repo.js';
 import { serveCommand } from './commands/serve.js';
 import { setupCommand } from './commands/setup.js';
+import { socialCommand } from './commands/social.js';
+import { wikiCommand } from './commands/wiki.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -79,6 +97,35 @@ function printUsage(): void {
   console.log('  patch close <number>                        Close a patch');
   console.log('  patch reopen <number>                       Reopen a closed patch');
   console.log('  patch list [--status <status>]              List patches');
+  console.log('');
+  console.log('  release create <tag> [--name ...] [--body ...]  Create a release');
+  console.log('  release show <tag>                          Show release details + assets');
+  console.log('  release list                                List releases');
+  console.log('');
+  console.log('  ci status [<commit>]                        Show latest CI status');
+  console.log('  ci list                                     List recent check suites');
+  console.log('  ci show <suite-id>                          Show check suite + runs');
+  console.log('  ci create <commit> [--app <name>]           Create a check suite');
+  console.log('');
+  console.log('  wiki create <slug> <title> [--body ...]     Create a wiki page');
+  console.log('  wiki show <slug>                            Show a wiki page');
+  console.log('  wiki edit <slug> --body <markdown>          Edit a wiki page');
+  console.log('  wiki list                                   List wiki pages');
+  console.log('');
+  console.log('  org create <name>                           Create an organization');
+  console.log('  org info                                    Show org details');
+  console.log('  org add-member <did>                        Add a member');
+  console.log('  org team create <name>                      Create a team');
+  console.log('');
+  console.log('  social star <did>                           Star a repo');
+  console.log('  social unstar <did>                         Remove a star');
+  console.log('  social stars                                List starred repos');
+  console.log('  social follow <did>                         Follow a user');
+  console.log('  social following                            List followed users');
+  console.log('');
+  console.log('  notification list [--unread]                List notifications');
+  console.log('  notification read <id>                      Mark as read');
+  console.log('  notification clear                          Clear read notifications');
   console.log('');
   console.log('  log                                         Show recent activity');
   console.log('  whoami                                      Show connected DID');
@@ -156,6 +203,31 @@ async function main(): Promise<void> {
 
     case 'serve':
       await serveCommand(ctx, rest);
+      break;
+
+    case 'release':
+      await releaseCommand(ctx, rest);
+      break;
+
+    case 'ci':
+      await ciCommand(ctx, rest);
+      break;
+
+    case 'wiki':
+      await wikiCommand(ctx, rest);
+      break;
+
+    case 'org':
+      await orgCommand(ctx, rest);
+      break;
+
+    case 'social':
+      await socialCommand(ctx, rest);
+      break;
+
+    case 'notification':
+    case 'notifications':
+      await notificationCommand(ctx, rest);
       break;
 
     case 'log':
