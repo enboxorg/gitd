@@ -11,6 +11,7 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
@@ -102,12 +103,4 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}

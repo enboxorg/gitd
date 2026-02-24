@@ -1,11 +1,13 @@
 /**
- * `dwn-git patch` — create, list, show, and merge patches (pull requests).
+ * `dwn-git patch` — create, list, show, comment on, and merge patches (pull requests).
  *
  * Usage:
  *   dwn-git patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
  *   dwn-git patch show <number>
+ *   dwn-git patch comment <number> <body>
  *   dwn-git patch merge <number> [--strategy <merge|squash|rebase>]
  *   dwn-git patch close <number>
+ *   dwn-git patch reopen <number>
  *   dwn-git patch list [--status <draft|open|closed|merged>]
  *
  * @module
@@ -13,6 +15,7 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
@@ -26,12 +29,14 @@ export async function patchCommand(ctx: AgentContext, args: string[]): Promise<v
   switch (sub) {
     case 'create': return patchCreate(ctx, rest);
     case 'show': return patchShow(ctx, rest);
+    case 'comment': return patchComment(ctx, rest);
     case 'merge': return patchMerge(ctx, rest);
     case 'close': return patchClose(ctx, rest);
+    case 'reopen': return patchReopen(ctx, rest);
     case 'list':
     case 'ls': return patchList(ctx, rest);
     default:
-      console.error('Usage: dwn-git patch <create|show|merge|close|list>');
+      console.error('Usage: dwn-git patch <create|show|comment|merge|close|reopen|list>');
       process.exit(1);
   }
 }
@@ -140,6 +145,41 @@ async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// patch comment
+// ---------------------------------------------------------------------------
+
+async function patchComment(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
+
+  if (!numberStr || !body) {
+    console.error('Usage: dwn-git patch comment <number> <body>');
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx);
+  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  if (!patch) {
+    console.error(`Patch #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  // Create a review with verdict: 'comment' (general comment, not approve/reject).
+  const { status } = await ctx.patches.records.create('repo/patch/review' as any, {
+    data            : { body },
+    tags            : { verdict: 'comment' },
+    parentContextId : patch.contextId,
+  } as any);
+
+  if (status.code >= 300) {
+    console.error(`Failed to add comment: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  console.log(`Added comment to patch #${numberStr}.`);
+}
+
+// ---------------------------------------------------------------------------
 // patch merge
 // ---------------------------------------------------------------------------
 
@@ -243,6 +283,50 @@ async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// patch reopen
+// ---------------------------------------------------------------------------
+
+async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  if (!numberStr) {
+    console.error('Usage: dwn-git patch reopen <number>');
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx);
+  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  if (!patch) {
+    console.error(`Patch #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  const data = await patch.data.json();
+  const tags = patch.tags as Record<string, string> | undefined;
+
+  if (tags?.status === 'open' || tags?.status === 'draft') {
+    console.log(`Patch #${numberStr} is already open.`);
+    return;
+  }
+
+  if (tags?.status === 'merged') {
+    console.log(`Patch #${numberStr} is merged and cannot be reopened.`);
+    return;
+  }
+
+  const { status } = await patch.update({
+    data : data,
+    tags : { ...tags, status: 'open' },
+  });
+
+  if (status.code >= 300) {
+    console.error(`Failed to reopen patch: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  console.log(`Reopened patch #${numberStr}: "${data.title}"`);
+}
+
+// ---------------------------------------------------------------------------
 // patch list
 // ---------------------------------------------------------------------------
 
@@ -291,12 +375,6 @@ async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}
 
 /**
  * Get the next sequential patch number by querying existing patches.

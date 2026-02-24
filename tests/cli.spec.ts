@@ -408,10 +408,63 @@ describe('dwn-git CLI commands', () => {
       expect(logs.some((l) => l.includes('already merged'))).toBe(true);
     });
 
+    it('should add a comment to a patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['comment', '2', 'Looks good to me']));
+      expect(logs.some((l) => l.includes('Added comment to patch #2'))).toBe(true);
+    });
+
+    it('should show review comments in patch detail', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['show', '2']));
+      expect(logs.some((l) => l.includes('Reviews (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('COMMENTED'))).toBe(true);
+      expect(logs.some((l) => l.includes('Looks good to me'))).toBe(true);
+    });
+
+    it('should fail comment without body', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['comment', '2']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail comment for non-existent patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['comment', '99', 'hello']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
     it('should close a patch', async () => {
       const { patchCommand } = await import('../src/cli/commands/patch.js');
       const logs = await captureLog(() => patchCommand(ctx, ['close', '2']));
       expect(logs.some((l) => l.includes('Closed patch #2'))).toBe(true);
+    });
+
+    it('should reopen a closed patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '2']));
+      expect(logs.some((l) => l.includes('Reopened patch #2'))).toBe(true);
+    });
+
+    it('should not reopen an already open patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '2']));
+      expect(logs.some((l) => l.includes('already open'))).toBe(true);
+    });
+
+    it('should not reopen a merged patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '1']));
+      expect(logs.some((l) => l.includes('cannot be reopened'))).toBe(true);
+    });
+
+    it('should fail reopen for non-existent patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['reopen', '99']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
     });
 
     it('should list all patches with numbers', async () => {

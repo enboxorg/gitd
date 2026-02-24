@@ -29,6 +29,14 @@
     ".": {
       "types": "./dist/types/index.d.ts",
       "import": "./dist/esm/index.js"
+    },
+    "./git-server": {
+      "types": "./dist/types/git-server/index.d.ts",
+      "import": "./dist/esm/git-server/index.js"
+    },
+    "./git-remote": {
+      "types": "./dist/types/git-remote/index.d.ts",
+      "import": "./dist/esm/git-remote/index.js"
     }
   },
   "keywords": [

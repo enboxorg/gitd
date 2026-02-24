@@ -17,13 +17,14 @@
    - 4.9 [Wiki Protocol](#49-wiki-protocol-forge-wiki)
    - 4.10 [Organization Protocol](#410-organization-protocol-forge-org)
 5. [DID-Addressed Git Remotes](#5-did-addressed-git-remotes)
-6. [DID-Scoped Package Registry](#6-did-scoped-package-registry)
-7. [Namespace-Based Contribution Model](#7-namespace-based-contribution-model)
-8. [Indexer Integration](#8-indexer-integration)
-9. [Identity & Access Control](#9-identity--access-control)
-10. [Technical Challenges & Mitigations](#10-technical-challenges--mitigations)
-11. [Implementation Roadmap](#11-implementation-roadmap)
-12. [Directory Structure](#12-directory-structure)
+6. [Decentralized Bundle Storage](#6-decentralized-bundle-storage)
+7. [DID-Scoped Package Registry](#7-did-scoped-package-registry)
+8. [Namespace-Based Contribution Model](#8-namespace-based-contribution-model)
+9. [Indexer Integration](#9-indexer-integration)
+10. [Identity & Access Control](#10-identity--access-control)
+11. [Technical Challenges & Mitigations](#11-technical-challenges--mitigations)
+12. [Implementation Roadmap](#12-implementation-roadmap)
+13. [Directory Structure](#13-directory-structure)
 
 ---
 
@@ -100,7 +101,7 @@ External contributions (from strangers) follow one of these patterns:
 
 ### 3.2 Composable protocols
 
-Rather than one monolithic protocol, `dwn-git` uses 10 composable protocols. Each handles one domain (repo, issues, patches, etc.) and references the others via `uses` for cross-protocol role authorization. This mirrors how `@enbox/protocols` composes `ListsDefinition` with `SocialGraphDefinition`.
+Rather than one monolithic protocol, `dwn-git` uses 11 composable protocols. Each handles one domain (repo, issues, patches, etc.) and references the others via `uses` for cross-protocol role authorization. This mirrors how `@enbox/protocols` composes `ListsDefinition` with `SocialGraphDefinition`.
 
 **`$ref` wrapping**: The DWN SDK requires composing protocols to include a `$ref` node in their `structure` that references the foreign protocol's root type. For `dwn-git`, all 5 protocols that compose with `forge-repo` (issues, patches, ci, releases, wiki) wrap their top-level type inside a `repo: { $ref: 'repo:repo' }` node. This means protocolPaths include the `repo/` prefix (e.g., `'repo/issue'` instead of `'issue'`). At write time, the `parentContextId` of the `$ref` child (e.g., the issue) is set to the `contextId` of the referenced repo record, establishing the cross-protocol link without needing a `repoRecordId` tag.
 
@@ -138,6 +139,7 @@ export const ForgeRepoDefinition = {
     settings     : { schema: 'https://enbox.org/schemas/forge/settings',     dataFormats: ['application/json'] },
     readme       : { dataFormats: ['text/markdown', 'text/plain'] },
     license      : { dataFormats: ['text/plain'] },
+    bundle       : { dataFormats: ['application/x-git-bundle'] },
     maintainer   : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
     triager      : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
     contributor  : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
@@ -190,6 +192,21 @@ export const ForgeRepoDefinition = {
           { role: 'repo/maintainer', can: ['create', 'delete'] },
         ],
         $tags: { $requiredTags: ['name'], $allowUndefinedTags: false, name: { type: 'string', maxLength: 50 } },
+      },
+      bundle: {
+        $squash  : true,
+        $actions : [
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo/maintainer', can: ['create', 'squash'] },
+        ],
+        $tags: {
+          $requiredTags       : ['tipCommit', 'isFull'],
+          $allowUndefinedTags : false,
+          tipCommit           : { type: 'string' },
+          isFull              : { type: 'boolean' },
+          refCount            : { type: 'integer' },
+          size                : { type: 'integer' },
+        },
       },
       settings: {
         $recordLimit : { max: 1, strategy: 'reject' },
@@ -345,7 +362,7 @@ export type StatusChangeData = { reason?: string };
 ```
 
 **Key decisions:**
-- **No `{ who: 'anyone', can: ['create'] }`** — only users with a contributor or maintainer role can create issues directly on the repo owner's DWN. External issue reports live on the reporter's own DWN (see [Section 7](#7-namespace-based-contribution-model)).
+- **No `{ who: 'anyone', can: ['create'] }`** — only users with a contributor or maintainer role can create issues directly on the repo owner's DWN. External issue reports live on the reporter's own DWN (see [Section 8](#8-namespace-based-contribution-model)).
 - **`statusChange` and `label` are `$immutable`** — these are audit events, not editable records.
 - **`$ref` wrapping** — the `repo: { $ref: 'repo:repo' }` node links issues to a specific repo context via `parentContextId`, replacing the previous `repoRecordId` tag approach. ProtocolPaths include the `repo/` prefix (e.g., `'repo/issue'`, `'repo/issue/comment'`).
 - **Cross-protocol roles** via `repo:repo/maintainer` reference the forge-repo protocol.
@@ -723,7 +740,7 @@ export const ForgeSocialDefinition = {
 } as const satisfies ProtocolDefinition;
 ```
 
-**Key insight**: Stars and follows live on the actor's DWN, not the target's. This means "how many stars does this repo have?" requires an indexer to aggregate across DWNs. This is a deliberate trade-off: data sovereignty over convenience. Indexers solve the aggregation problem.
+**Key insight**: Stars and follows live on the actor's DWN, not the target's. This means "how many stars does this repo have?" requires an indexer to aggregate across DWNs. This is a deliberate trade-off: data sovereignty over convenience. Indexers solve the aggregation problem (see [Section 9](#9-indexer-integration)).
 
 ### 4.8 Notifications Protocol (`forge-notifications`)
 
@@ -945,7 +962,72 @@ This gives DWN's subscription system visibility into branch updates (real-time n
 
 ---
 
-## 6. DID-Scoped Package Registry
+## 6. Decentralized Bundle Storage
+
+Git objects use native git transport for performance (Section 5), but this means a commodity git host must have the bare repo on disk to serve clones. What happens when a new host has never seen the repo before — or when a host restarts with an empty disk?
+
+**Solution: Store git bundles as DWN records.** After each push, a `git bundle` is created and synced to the repo owner's DWN. Any host can reconstruct the bare repo by reading these bundle records from the DWN.
+
+### Bundle Type
+
+The `bundle` type is defined in ForgeRepoProtocol with `$squash: true`:
+
+```typescript
+bundle: {
+  $squash  : true,
+  $actions : [
+    { who: 'anyone', can: ['read'] },
+    { role: 'repo/maintainer', can: ['create', 'squash'] },
+  ],
+  $tags: {
+    tipCommit : { type: 'string' },    // SHA of the tip commit
+    isFull    : { type: 'boolean' },   // Full bundle (all refs) vs incremental
+    refCount  : { type: 'integer' },   // Number of refs in the bundle
+    size      : { type: 'integer' },   // Bundle file size in bytes
+  },
+}
+```
+
+Bundle records store binary `application/x-git-bundle` data. Tags provide queryable metadata without reading the bundle content.
+
+### Sync Flow (post-push)
+
+After a successful `git push`, the bundle syncer (`createBundleSyncer()`) runs:
+
+1. **Query existing bundles** — check if any full or incremental bundles exist
+2. **First push**: create a **full bundle** (`git bundle create --all`) containing all refs and all reachable objects
+3. **Subsequent pushes**: create an **incremental bundle** containing only objects reachable from current refs but not from the last tip commit
+4. **Every N pushes** (default 5): create a **squash bundle** — a full bundle written with `squash: true`, which atomically purges all older bundle records via DWN's `$squash` mechanism
+
+The squash mechanism leverages DWN's `$squash` feature: a squash write creates a new record and atomically deletes all older siblings at the same protocol path and context. This prevents unbounded bundle accumulation without requiring manual garbage collection.
+
+### Restore Flow (cold start)
+
+When a clone/fetch request arrives for a repo that doesn't exist on disk, the `onRepoNotFound` callback triggers `restoreFromBundles()`:
+
+1. **Query the owner's DWN** for the most recent full bundle (`isFull: true`, sorted by `dateCreated` descending)
+2. **Clone from the full bundle** — `git clone --bare <bundle-file>` creates the bare repo
+3. **Apply incremental bundles** — fetch all incrementals newer than the full bundle, in chronological order
+4. **Serve the clone** — the restored bare repo is now ready for git smart HTTP
+
+This enables a **fully stateless git host** — repos are restored on-demand from DWN records. Host restarts, horizontal scaling, and disaster recovery all work automatically.
+
+### Encryption Model
+
+Bundle encryption follows repo visibility:
+
+- **Public repos**: bundles are written unencrypted. They can be replicated via IPFS, cached at CDN edges, and read by anyone without DWN credentials. This maximizes availability and replication.
+- **Private repos**: bundles are JWE-encrypted using the repo owner's X25519 key agreement key. Only the owner (and DID holders with appropriate key material) can decrypt. The protocol must be installed with `encryption: true` to inject `$encryption` keys.
+
+The writer decides encryption per-write based on the `visibility` tag on the repo record. There is no separate "private bundle" type — it's the same `bundle` path with or without JWE wrapping.
+
+### Bundle Format
+
+Bundles use git's native `git bundle` format (`application/x-git-bundle`). This is self-describing, leverages all of git's delta compression and packfile optimizations, and is natively understood by `git clone` and `git fetch`. No custom serialization needed.
+
+---
+
+## 7. DID-Scoped Package Registry
 
 ### Resolution Flow
 
@@ -990,7 +1072,7 @@ The resolver builds a trust chain: resolve each DID, verify tarball signatures m
 
 ---
 
-## 7. Namespace-Based Contribution Model
+## 8. Namespace-Based Contribution Model
 
 ### The Problem
 
@@ -1026,7 +1108,7 @@ Alice's DWN                            Bob's DWN (repo owner)
 
 ---
 
-## 8. Indexer Integration
+## 9. Indexer Integration
 
 Indexers are services that crawl published DWN records and build materialized views. They solve aggregation problems that don't have a protocol-level answer.
 
@@ -1054,7 +1136,7 @@ Multiple competing indexers can exist — no single indexer is authoritative. Us
 
 ---
 
-## 9. Identity & Access Control
+## 10. Identity & Access Control
 
 ### Role Model
 
@@ -1127,19 +1209,19 @@ Bob's client uses `sourceDid` to resolve Alice's DWN and fetch the git branch fo
 
 ---
 
-## 10. Technical Challenges & Mitigations
+## 11. Technical Challenges & Mitigations
 
-### 10.1 Sequential Issue/PR Numbers
+### 11.1 Sequential Issue/PR Numbers
 
 GitHub issues have sequential numbers (#1, #2, ...). In a decentralized system with concurrent creation (even offline), sequential numbering requires coordination.
 
 **Mitigation**: The repo owner assigns sequential numbers. The owner's DWN is the single writer for the `number` field. This creates a minor bottleneck but is acceptable — issue number assignment is low-frequency and the owner's DWN is always the authority for their repo.
 
-### 10.2 Large File Storage
+### 11.2 Large File Storage
 
 DWN records support arbitrary data sizes via streaming. For a git LFS equivalent: LFS pointers in the git repo reference DWN record IDs. Binary data lives as records in a `forge-lfs` protocol with `$size` constraints.
 
-### 10.3 Performance at Scale
+### 11.3 Performance at Scale
 
 The core bottleneck: querying thousands of records. Mitigations:
 - **Tag-based filtering** pushes selectivity into the DWN (`tags: { status: 'open' }`), combined with `contextId`-scoped queries that leverage the `$ref` repo context
@@ -1148,7 +1230,7 @@ The core bottleneck: querying thousands of records. Mitigations:
 - **`RecordsSubscribe`** for real-time updates (no polling)
 - **Client-side caching** with subscription-based invalidation
 
-### 10.4 Real-Time Collaboration
+### 11.4 Real-Time Collaboration
 
 DWN subscriptions (`RecordsSubscribe` over WebSocket) provide event notification when records are written. This is sufficient for forge use cases:
 - New issue comment appeared: subscription delivers the event
@@ -1157,18 +1239,18 @@ DWN subscriptions (`RecordsSubscribe` over WebSocket) provide event notification
 
 All of these tolerate 100-500ms latency. Sub-second collaborative editing (Google Docs style, Figma cursors) would require ~16-50ms round-trip, which DWN's message processing pipeline doesn't support. But this is a v3+ concern (live code editing) — not needed for any core forge feature.
 
-### 10.5 Global Discovery
+### 11.5 Global Discovery
 
 No "explore" page without an indexing service. This is a solved problem with indexers (Section 8). Multiple competing indexers can provide discovery. Initially, a single "official" indexer can bootstrap the ecosystem, similar to how npmjs.com bootstrapped npm.
 
-### 10.6 Ecosystem Compatibility
+### 11.6 Ecosystem Compatibility
 
 Tools like VS Code, JetBrains IDEs, and `gh` CLI assume GitHub's REST/GraphQL API. Options:
 - **Centralized shim** (temporary): a service that translates GitHub API calls to DWN protocol queries. Lets existing tools work during migration.
 - **Native integrations** (long-term): VS Code extension, CLI tool (`dwn-git`), web UI
 - **Some won't matter**: many GitHub-specific features (Actions YAML, Dependabot) are deeply coupled to GitHub's infrastructure. These get replaced by DWN-native equivalents, not shimmed.
 
-### 10.7 Migration from GitHub
+### 11.7 Migration from GitHub
 
 A migration tool:
 1. Import repo metadata -> create `repo` record
@@ -1180,13 +1262,13 @@ A migration tool:
 
 ---
 
-## 11. Implementation Roadmap
+## 12. Implementation Roadmap
 
 ### Phase 0: Protocols & Scaffolding (complete)
 
 - [x] Architecture document (this file)
-- [x] TypeScript protocol definitions for all 10 protocols
-- [x] JSON Schema files for each record type (33 schemas)
+- [x] TypeScript protocol definitions for all 11 protocols
+- [x] JSON Schema files for each record type (34 schemas)
 - [x] Structural tests (220 tests, 615 assertions)
 - [x] Package setup (bun, TypeScript, ESLint, build)
 
@@ -1210,7 +1292,9 @@ The most novel component.
 - [x] **DWN server git sidecar**: `GitBackend` (bare repo management with DID-hashed paths), `createGitHttpHandler()` (smart HTTP v1: info/refs, upload-pack, receive-pack), `createGitServer()` (Node.js HTTP bridge), path prefix support, pluggable auth
 - [x] **Push authentication**: DID-signed token scheme over HTTP Basic auth (`did-auth` username, signed payload in password field), `createPushAuthenticator()` factory with signature verification + optional role-based authorization callbacks
 - [x] **git ref mirroring**: `ForgeRefsProtocol` — DWN protocol for branch/tag refs as records with `$ref` composition, role-based write access (maintainers only), anyone-read for subscription-based push notifications
-- 352 total tests, 921 assertions across 7 test files
+- [x] **Decentralized bundle storage**: `bundle` type in ForgeRepoProtocol with `$squash: true`, post-push bundle sync (`createBundleSyncer()`), cold-start restore (`restoreFromBundles()`), public/private encryption model. See [Section 6](#6-decentralized-bundle-storage).
+- [x] **E2E bundle round-trip**: push -> bundle sync to DWN -> delete bare repo -> restore from DWN bundles -> clone and verify content
+- 453 total tests, 1147 assertions across 14 test files
 
 ### Phase 3: Extended Protocols
 
@@ -1238,7 +1322,7 @@ The most novel component.
 
 ---
 
-## 12. Directory Structure
+## 13. Directory Structure
 
 ```
 dwn-git/
@@ -1263,23 +1347,40 @@ dwn-git/
 │   ├── cli/                    # CLI commands
 │   │   ├── main.ts             # Entry point, command dispatch
 │   │   ├── agent.ts            # Web5 agent connection
+│   │   ├── flags.ts            # Shared CLI flag utilities
 │   │   ├── repo-context.ts     # Shared repo record lookup
 │   │   └── commands/           # Individual CLI commands
+│   │       ├── clone.ts
 │   │       ├── init.ts
 │   │       ├── issue.ts
-│   │       └── patch.ts
+│   │       ├── log.ts
+│   │       ├── patch.ts
+│   │       ├── repo.ts
+│   │       ├── serve.ts
+│   │       └── setup.ts
 │   ├── git-remote/             # Git remote helper
+│   │   ├── index.ts            # Barrel re-export
 │   │   ├── main.ts             # Entry point (git-remote-did binary)
+│   │   ├── credential-helper.ts # Push credential generation
+│   │   ├── credential-main.ts  # Credential helper entry point
 │   │   ├── parse-url.ts        # DID URL parser (did::, did://)
 │   │   ├── resolve.ts          # DID resolution + endpoint discovery
 │   │   └── service.ts          # GitTransport DID service type utilities
 │   └── git-server/             # Git transport sidecar server
+│       ├── index.ts            # Barrel re-export
 │       ├── auth.ts             # DID-signed push authentication
+│       ├── bundle-restore.ts   # Restore bare repos from DWN bundle records
+│       ├── bundle-sync.ts      # Post-push bundle sync to DWN
+│       ├── did-service.ts      # DID service registration
 │       ├── git-backend.ts      # Bare repo management (init, upload-pack, receive-pack)
-│       ├── http-handler.ts     # Smart HTTP protocol handler (fetch-compatible)
-│       └── server.ts           # Node.js HTTP server bridge
-├── schemas/                    # JSON Schema files for each record type
+│       ├── http-handler.ts     # Smart HTTP protocol handler (with onRepoNotFound)
+│       ├── push-authorizer.ts  # DWN-backed push authorization
+│       ├── ref-sync.ts         # Git ref → DWN record mirroring
+│       ├── server.ts           # Node.js HTTP server bridge
+│       └── verify.ts           # DID signature verification
+├── schemas/                    # JSON Schema files (34 files)
 │   ├── repo/
+│   ├── refs/
 │   ├── issues/
 │   ├── patches/
 │   ├── ci/
@@ -1290,11 +1391,18 @@ dwn-git/
 │   ├── wiki/
 │   └── org/
 └── tests/
-    ├── protocols.spec.ts       # Structural validation tests
+    ├── protocols.spec.ts       # Structural validation tests (148 tests)
     ├── schemas.spec.ts         # JSON schema validation tests
-    ├── integration.spec.ts     # DWN integration tests
-    ├── cli.spec.ts             # CLI command tests
+    ├── integration.spec.ts     # DWN integration tests (15 tests)
+    ├── cli.spec.ts             # CLI command tests (48 tests)
+    ├── e2e.spec.ts             # E2E tests: transport + bundle round-trip (11 tests)
+    ├── bundle-sync.spec.ts     # Bundle sync unit tests (8 tests)
+    ├── bundle-restore.spec.ts  # Bundle restore unit tests (5 tests)
     ├── git-remote.spec.ts      # Git remote helper + service type tests
     ├── git-server.spec.ts      # Git sidecar server tests
-    └── git-auth.spec.ts        # Push authentication tests
+    ├── git-auth.spec.ts        # Push authentication tests
+    ├── push-authorizer.spec.ts # DWN push authorization tests
+    ├── ref-sync.spec.ts        # Ref sync tests
+    ├── verify.spec.ts          # Signature verification tests
+    └── credential-helper.spec.ts # Credential helper tests
 ```

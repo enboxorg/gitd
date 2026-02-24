@@ -26,6 +26,7 @@ import { createDwnPushAuthorizer } from '../../git-server/push-authorizer.js';
 import { createGitServer } from '../../git-server/server.js';
 import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
+import { flagValue } from '../flags.js';
 import { getRepoContext } from '../repo-context.js';
 import { registerGitService } from '../../git-server/did-service.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
@@ -149,13 +150,4 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   });
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-/** Extract the value following a flag in argv. */
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}

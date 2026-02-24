@@ -9,6 +9,7 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { flagValue } from '../flags.js';
 import { GitBackend } from '../../git-server/git-backend.js';
 
 // ---------------------------------------------------------------------------
@@ -65,13 +66,4 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   console.log(`  Git path:  ${gitPath}`);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-/** Extract the value following a flag in argv. */
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}
