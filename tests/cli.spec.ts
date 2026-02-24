@@ -278,23 +278,64 @@ describe('dwn-git CLI commands', () => {
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should create an issue', async () => {
+    it('should create issue #1 with sequential numbering', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['create', 'Bug report', '--body', 'Something broke']));
-      expect(logs.some((l) => l.includes('Created issue'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created issue #1'))).toBe(true);
       expect(logs.some((l) => l.includes('Bug report'))).toBe(true);
     });
 
-    it('should create a second issue', async () => {
+    it('should create issue #2 with next number', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['create', 'Feature request']));
-      expect(logs.some((l) => l.includes('Created issue'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created issue #2'))).toBe(true);
     });
 
-    it('should list all issues', async () => {
+    it('should show issue details by number', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('Issue #1: Bug report'))).toBe(true);
+      expect(logs.some((l) => l.includes('Status:  OPEN'))).toBe(true);
+      expect(logs.some((l) => l.includes('Something broke'))).toBe(true);
+    });
+
+    it('should add a comment to an issue', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['comment', '1', 'Looking into this']));
+      expect(logs.some((l) => l.includes('Added comment to issue #1'))).toBe(true);
+    });
+
+    it('should show comments in issue detail', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('Comments (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('Looking into this'))).toBe(true);
+    });
+
+    it('should close an issue', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['close', '1']));
+      expect(logs.some((l) => l.includes('Closed issue #1'))).toBe(true);
+    });
+
+    it('should show closed status after closing', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('Status:  CLOSED'))).toBe(true);
+    });
+
+    it('should reopen a closed issue', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const logs = await captureLog(() => issueCommand(ctx, ['reopen', '1']));
+      expect(logs.some((l) => l.includes('Reopened issue #1'))).toBe(true);
+    });
+
+    it('should list all issues with numbers', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('Issues (2)'))).toBe(true);
+      expect(logs.some((l) => l.includes('#1'))).toBe(true);
+      expect(logs.some((l) => l.includes('#2'))).toBe(true);
       expect(logs.some((l) => l.includes('Bug report'))).toBe(true);
       expect(logs.some((l) => l.includes('Feature request'))).toBe(true);
     });
@@ -303,6 +344,13 @@ describe('dwn-git CLI commands', () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['list', '--status', 'closed']));
       expect(logs.some((l) => l.includes('No issues found'))).toBe(true);
+    });
+
+    it('should fail show for non-existent issue', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const { errors, exitCode } = await captureError(() => issueCommand(ctx, ['show', '99']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
     });
   });
 
@@ -318,27 +366,133 @@ describe('dwn-git CLI commands', () => {
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should create a patch', async () => {
+    it('should create patch #1 with sequential numbering', async () => {
       const { patchCommand } = await import('../src/cli/commands/patch.js');
       const logs = await captureLog(() =>
         patchCommand(ctx, ['create', 'Add feature X', '--body', 'This adds X', '--base', 'main', '--head', 'feature-x']),
       );
-      expect(logs.some((l) => l.includes('Created patch'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created patch #1'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
     });
 
-    it('should create a second patch with defaults', async () => {
+    it('should create patch #2 with next number', async () => {
       const { patchCommand } = await import('../src/cli/commands/patch.js');
       const logs = await captureLog(() => patchCommand(ctx, ['create', 'Fix typo']));
-      expect(logs.some((l) => l.includes('Created patch'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created patch #2'))).toBe(true);
     });
 
-    it('should list all patches', async () => {
+    it('should show patch details by number', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('Patch #1: Add feature X'))).toBe(true);
+      expect(logs.some((l) => l.includes('Status:   OPEN'))).toBe(true);
+      expect(logs.some((l) => l.includes('main <- feature-x'))).toBe(true);
+    });
+
+    it('should merge a patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['merge', '1']));
+      expect(logs.some((l) => l.includes('Merged patch #1'))).toBe(true);
+      expect(logs.some((l) => l.includes('strategy: merge'))).toBe(true);
+    });
+
+    it('should show merged status after merging', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('Status:   MERGED'))).toBe(true);
+    });
+
+    it('should not re-merge an already merged patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['merge', '1']));
+      expect(logs.some((l) => l.includes('already merged'))).toBe(true);
+    });
+
+    it('should close a patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const logs = await captureLog(() => patchCommand(ctx, ['close', '2']));
+      expect(logs.some((l) => l.includes('Closed patch #2'))).toBe(true);
+    });
+
+    it('should list all patches with numbers', async () => {
       const { patchCommand } = await import('../src/cli/commands/patch.js');
       const logs = await captureLog(() => patchCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('Patches (2)'))).toBe(true);
+      expect(logs.some((l) => l.includes('#1'))).toBe(true);
+      expect(logs.some((l) => l.includes('#2'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
       expect(logs.some((l) => l.includes('Fix typo'))).toBe(true);
+    });
+
+    it('should fail show for non-existent patch', async () => {
+      const { patchCommand } = await import('../src/cli/commands/patch.js');
+      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['show', '99']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+  });
+
+  // =========================================================================
+  // log command
+  // =========================================================================
+
+  describe('log', () => {
+    it('should show recent activity', async () => {
+      const { logCommand } = await import('../src/cli/commands/log.js');
+      const logs = await captureLog(() => logCommand(ctx, []));
+      expect(logs.some((l) => l.includes('Recent activity'))).toBe(true);
+      // Should have both issues and patches.
+      expect(logs.some((l) => l.includes('issue'))).toBe(true);
+      expect(logs.some((l) => l.includes('patch'))).toBe(true);
+    });
+
+    it('should respect --limit flag', async () => {
+      const { logCommand } = await import('../src/cli/commands/log.js');
+      const logs = await captureLog(() => logCommand(ctx, ['--limit', '2']));
+      // Header + 2 entries.
+      expect(logs.some((l) => l.includes('Recent activity (2)'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // setup command
+  // =========================================================================
+
+  describe('setup', () => {
+    it('should print setup instructions', async () => {
+      const { setupCommand } = await import('../src/cli/commands/setup.js');
+      // Use a test-specific bin dir to avoid modifying the user's system.
+      const logs = await captureLog(() => setupCommand(['--bin-dir', '__TESTDATA__/cli-bin']));
+      // Even if sources don't exist (not built at test time), setup should print messages.
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('clone repos via DID');
+    });
+  });
+
+  // =========================================================================
+  // clone command
+  // =========================================================================
+
+  describe('clone', () => {
+    it('should fail without arguments', async () => {
+      const { cloneCommand } = await import('../src/cli/commands/clone.js');
+      const { errors, exitCode } = await captureError(() => cloneCommand([]));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should reject invalid DID format', async () => {
+      const { cloneCommand } = await import('../src/cli/commands/clone.js');
+      const { errors, exitCode } = await captureError(() => cloneCommand(['not-a-did/repo']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Invalid target');
+    });
+
+    it('should reject DID without repo name', async () => {
+      const { cloneCommand } = await import('../src/cli/commands/clone.js');
+      const { errors, exitCode } = await captureError(() => cloneCommand(['did:dht:abc123']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Invalid target');
     });
   });
 });

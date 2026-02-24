@@ -1,8 +1,11 @@
 /**
- * `dwn-git patch` — create and list patches (pull requests).
+ * `dwn-git patch` — create, list, show, and merge patches (pull requests).
  *
  * Usage:
  *   dwn-git patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
+ *   dwn-git patch show <number>
+ *   dwn-git patch merge <number> [--strategy <merge|squash|rebase>]
+ *   dwn-git patch close <number>
  *   dwn-git patch list [--status <draft|open|closed|merged>]
  *
  * @module
@@ -22,10 +25,13 @@ export async function patchCommand(ctx: AgentContext, args: string[]): Promise<v
 
   switch (sub) {
     case 'create': return patchCreate(ctx, rest);
+    case 'show': return patchShow(ctx, rest);
+    case 'merge': return patchMerge(ctx, rest);
+    case 'close': return patchClose(ctx, rest);
     case 'list':
     case 'ls': return patchList(ctx, rest);
     default:
-      console.error('Usage: dwn-git patch <create|list>');
+      console.error('Usage: dwn-git patch <create|show|merge|close|list>');
       process.exit(1);
   }
 }
@@ -47,14 +53,18 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
 
   const repoContextId = await getRepoContextId(ctx);
 
+  // Assign the next sequential number.
+  const number = await getNextNumber(ctx, repoContextId);
+
   const tags: Record<string, string> = {
     status     : 'open',
     baseBranch : base,
+    number     : String(number),
   };
   if (head) { tags.headBranch = head; }
 
   const { status, record } = await ctx.patches.records.create('repo/patch', {
-    data            : { title, body },
+    data            : { title, body, number },
     tags,
     parentContextId : repoContextId,
   });
@@ -64,9 +74,172 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Created patch: "${title}" (${base}${head ? ` <- ${head}` : ''})`);
+  console.log(`Created patch #${number}: "${title}" (${base}${head ? ` <- ${head}` : ''})`);
   console.log(`  Record ID: ${record.id}`);
-  console.log(`  Context:   ${record.contextId}`);
+}
+
+// ---------------------------------------------------------------------------
+// patch show
+// ---------------------------------------------------------------------------
+
+async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  if (!numberStr) {
+    console.error('Usage: dwn-git patch show <number>');
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx);
+  const record = await findPatchByNumber(ctx, repoContextId, numberStr);
+  if (!record) {
+    console.error(`Patch #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  const data = await record.data.json();
+  const tags = record.tags as Record<string, string> | undefined;
+  const st = tags?.status ?? 'unknown';
+  const date = record.dateCreated?.slice(0, 10) ?? '';
+  const num = data.number ?? tags?.number ?? '?';
+  const base = tags?.baseBranch ?? '?';
+  const head = tags?.headBranch;
+
+  console.log(`Patch #${num}: ${data.title}`);
+  console.log(`  Status:   ${st.toUpperCase()}`);
+  console.log(`  Branches: ${base}${head ? ` <- ${head}` : ''}`);
+  console.log(`  Created:  ${date}`);
+  console.log(`  ID:       ${record.id}`);
+
+  if (data.body) {
+    console.log('');
+    console.log(`  ${data.body}`);
+  }
+
+  // Fetch reviews.
+  const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
+    filter: { contextId: record.contextId },
+  });
+
+  if (reviews.length > 0) {
+    console.log('');
+    console.log(`  Reviews (${reviews.length}):`);
+    console.log('  ---');
+    for (const review of reviews) {
+      const reviewData = await review.data.json();
+      const reviewTags = review.tags as Record<string, string> | undefined;
+      const verdict = reviewTags?.verdict ?? 'comment';
+      const reviewDate = review.dateCreated?.slice(0, 19)?.replace('T', ' ') ?? '';
+      const verdictLabel = verdict === 'approve' ? 'APPROVED' : verdict === 'reject' ? 'CHANGES REQUESTED' : 'COMMENTED';
+      console.log(`  [${verdictLabel}] ${reviewDate}`);
+      if (reviewData.body) {
+        console.log(`  ${reviewData.body}`);
+      }
+      console.log('  ---');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// patch merge
+// ---------------------------------------------------------------------------
+
+async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  const strategy = flagValue(args, '--strategy') ?? 'merge';
+
+  if (!numberStr) {
+    console.error('Usage: dwn-git patch merge <number> [--strategy <merge|squash|rebase>]');
+    process.exit(1);
+  }
+
+  if (!['merge', 'squash', 'rebase'].includes(strategy)) {
+    console.error(`Invalid strategy: ${strategy}. Must be merge, squash, or rebase.`);
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx);
+  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  if (!patch) {
+    console.error(`Patch #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  const data = await patch.data.json();
+  const tags = patch.tags as Record<string, string> | undefined;
+
+  if (tags?.status === 'merged') {
+    console.log(`Patch #${numberStr} is already merged.`);
+    return;
+  }
+
+  if (tags?.status === 'closed') {
+    console.error(`Patch #${numberStr} is closed. Reopen it before merging.`);
+    process.exit(1);
+  }
+
+  // Update the patch status to merged.
+  const { status } = await patch.update({
+    data : data,
+    tags : { ...tags, status: 'merged' },
+  });
+
+  if (status.code >= 300) {
+    console.error(`Failed to merge patch: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  // Create a merge result record.
+  await ctx.patches.records.create('repo/patch/mergeResult' as any, {
+    data            : { mergedBy: ctx.did },
+    tags            : { mergeCommit: 'pending', strategy },
+    parentContextId : patch.contextId,
+  } as any);
+
+  console.log(`Merged patch #${numberStr}: "${data.title}" (strategy: ${strategy})`);
+}
+
+// ---------------------------------------------------------------------------
+// patch close
+// ---------------------------------------------------------------------------
+
+async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  if (!numberStr) {
+    console.error('Usage: dwn-git patch close <number>');
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx);
+  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  if (!patch) {
+    console.error(`Patch #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  const data = await patch.data.json();
+  const tags = patch.tags as Record<string, string> | undefined;
+
+  if (tags?.status === 'closed') {
+    console.log(`Patch #${numberStr} is already closed.`);
+    return;
+  }
+
+  if (tags?.status === 'merged') {
+    console.log(`Patch #${numberStr} is merged and cannot be closed.`);
+    return;
+  }
+
+  const { status } = await patch.update({
+    data : data,
+    tags : { ...tags, status: 'closed' },
+  });
+
+  if (status.code >= 300) {
+    console.error(`Failed to close patch: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  console.log(`Closed patch #${numberStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,8 +255,13 @@ async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
   if (repoContextId) {
     filter.contextId = repoContextId;
   }
+
+  const filterTags: Record<string, string> = {};
   if (statusFilter) {
-    filter.tags = { status: statusFilter };
+    filterTags.status = statusFilter;
+  }
+  if (Object.keys(filterTags).length > 0) {
+    filter.tags = filterTags;
   }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
@@ -98,14 +276,15 @@ async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
   console.log(`Patches (${records.length}):\n`);
   for (const rec of records) {
     const data = await rec.data.json();
-    const tags = rec.tags as Record<string, string> | undefined;
-    const st = tags?.status ?? 'unknown';
-    const base = tags?.baseBranch ?? '?';
-    const head = tags?.headBranch;
+    const recTags = rec.tags as Record<string, string> | undefined;
+    const st = recTags?.status ?? 'unknown';
+    const base = recTags?.baseBranch ?? '?';
+    const head = recTags?.headBranch;
     const date = rec.dateCreated?.slice(0, 10) ?? '';
+    const num = data.number ?? recTags?.number ?? '?';
     const branches = head ? `${base} <- ${head}` : base;
-    console.log(`  [${st.toUpperCase().padEnd(6)}] ${data.title} (${branches})`);
-    console.log(`           id: ${rec.id}  created: ${date}`);
+    console.log(`  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title} (${branches})`);
+    console.log(`        created: ${date}  id: ${rec.id}`);
   }
 }
 
@@ -117,4 +296,40 @@ function flagValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
   if (idx === -1 || idx + 1 >= args.length) { return undefined; }
   return args[idx + 1];
+}
+
+/**
+ * Get the next sequential patch number by querying existing patches.
+ */
+async function getNextNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    filter: { contextId: repoContextId },
+  });
+
+  let maxNumber = 0;
+  for (const rec of records) {
+    const recTags = rec.tags as Record<string, string> | undefined;
+    const num = parseInt(recTags?.number ?? '0', 10);
+    if (num > maxNumber) { maxNumber = num; }
+  }
+
+  return maxNumber + 1;
+}
+
+/**
+ * Find a patch record by its sequential number.
+ */
+async function findPatchByNumber(
+  ctx: AgentContext,
+  repoContextId: string,
+  numberStr: string,
+): Promise<any | undefined> {
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    filter: {
+      contextId : repoContextId,
+      tags      : { number: numberStr },
+    },
+  });
+
+  return records[0];
 }
