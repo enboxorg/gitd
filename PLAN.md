@@ -1201,11 +1201,11 @@ The smallest useful forge — repos, issues, patches.
 - [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
 - [x] CLI prototype: `dwn-git init`, `dwn-git issue create/list`, `dwn-git patch create/list`, `dwn-git whoami` — 12 CLI tests (254 total, 762 assertions)
 
-### Phase 2: Git Transport
+### Phase 2: Git Transport (in progress)
 
 The most novel component.
 
-- [ ] **git-remote-did**: git remote helper that resolves DIDs to git endpoints
+- [x] **git-remote-did**: git remote helper that resolves DIDs to git endpoints — DID URL parser (`did::` and `did://` forms), DID resolution with GitTransport/DWN service discovery, exec delegation to `git-remote-https` (267 total tests, 783 assertions)
 - [ ] **GitTransport service type**: DID document service registration
 - [ ] **DWN server git sidecar**: smart HTTP git transport alongside DWN
 - [ ] **Push authentication**: DID-signed challenge/response
@@ -1258,7 +1258,19 @@ dwn-git/
 │   ├── social.ts               # ForgeSocialDefinition + types
 │   ├── notifications.ts        # ForgeNotificationsDefinition + types
 │   ├── wiki.ts                 # ForgeWikiDefinition + types
-│   └── org.ts                  # ForgeOrgDefinition + types
+│   ├── org.ts                  # ForgeOrgDefinition + types
+│   ├── cli/                    # CLI commands
+│   │   ├── main.ts             # Entry point, command dispatch
+│   │   ├── agent.ts            # Web5 agent connection
+│   │   ├── repo-context.ts     # Shared repo record lookup
+│   │   └── commands/           # Individual CLI commands
+│   │       ├── init.ts
+│   │       ├── issue.ts
+│   │       └── patch.ts
+│   └── git-remote/             # Git remote helper
+│       ├── main.ts             # Entry point (git-remote-did binary)
+│       ├── parse-url.ts        # DID URL parser (did::, did://)
+│       └── resolve.ts          # DID resolution + endpoint discovery
 ├── schemas/                    # JSON Schema files for each record type
 │   ├── repo/
 │   ├── issues/
@@ -1271,6 +1283,9 @@ dwn-git/
 │   ├── wiki/
 │   └── org/
 └── tests/
-    ├── tsconfig.json
-    └── protocols.spec.ts       # Structural validation tests
+    ├── protocols.spec.ts       # Structural validation tests
+    ├── schemas.spec.ts         # JSON schema validation tests
+    ├── integration.spec.ts     # DWN integration tests
+    ├── cli.spec.ts             # CLI command tests
+    └── git-remote.spec.ts      # Git remote helper tests
 ```

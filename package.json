@@ -7,7 +7,8 @@
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
-    "dwn-git": "./dist/esm/cli/main.js"
+    "dwn-git": "./dist/esm/cli/main.js",
+    "git-remote-did": "./dist/esm/git-remote/main.js"
   },
   "scripts": {
     "clean": "rimraf dist",
@@ -41,10 +42,10 @@
   },
   "dependencies": {
     "@enbox/api": "0.2.4",
+    "@enbox/dids": "0.0.6",
     "@enbox/dwn-sdk-js": "0.0.8"
   },
   "devDependencies": {
-    "@enbox/dids": "0.0.6",
     "@eslint/js": "9.7.0",
     "@stylistic/eslint-plugin": "^5.9.0",
     "@typescript-eslint/eslint-plugin": "8.32.1",
