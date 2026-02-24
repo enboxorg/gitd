@@ -53,6 +53,14 @@ export type WebhookData = {
   active : boolean;
 };
 
+/**
+ * Data shape for a git bundle record.
+ *
+ * The record payload is the raw git bundle binary (`application/x-git-bundle`).
+ * Queryable metadata (tipCommit, isFull, etc.) is stored in record tags.
+ */
+export type BundleData = Uint8Array;
+
 // ---------------------------------------------------------------------------
 // Schema map
 // ---------------------------------------------------------------------------
@@ -60,6 +68,7 @@ export type WebhookData = {
 /** Maps protocol type names to their TypeScript data shapes. */
 export type ForgeRepoSchemaMap = {
   repo : RepoData;
+  bundle : BundleData;
   settings : SettingsData;
   readme : string;
   license : string;
@@ -108,6 +117,9 @@ export const ForgeRepoDefinition = {
       schema      : 'https://enbox.org/schemas/forge/topic',
       dataFormats : ['application/json'],
     },
+    bundle: {
+      dataFormats: ['application/x-git-bundle'],
+    },
     webhook: {
       schema             : 'https://enbox.org/schemas/forge/webhook',
       dataFormats        : ['application/json'],
@@ -155,6 +167,22 @@ export const ForgeRepoDefinition = {
           $requiredTags       : ['did'],
           $allowUndefinedTags : false,
           did                 : { type: 'string' },
+        },
+      },
+
+      bundle: {
+        $squash  : true,
+        $actions : [
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo/maintainer', can: ['create', 'squash'] },
+        ],
+        $tags: {
+          $requiredTags       : ['tipCommit', 'isFull'],
+          $allowUndefinedTags : false,
+          tipCommit           : { type: 'string' },
+          isFull              : { type: 'boolean' },
+          refCount            : { type: 'integer' },
+          size                : { type: 'integer' },
         },
       },
 

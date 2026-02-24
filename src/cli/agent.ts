@@ -96,7 +96,9 @@ export async function connectAgent(password: string): Promise<AgentContext> {
   const org = web5.using(ForgeOrgProtocol);
 
   // Install / verify all protocols (idempotent).
-  await repo.configure();
+  // Repo protocol requires encryption: webhook has encryptionRequired: true,
+  // and bundle records are optionally encrypted based on repo visibility.
+  await repo.configure({ encryption: true });
   await refs.configure();
   await issues.configure();
   await patches.configure();

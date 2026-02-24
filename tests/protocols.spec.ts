@@ -42,6 +42,7 @@ describe('@enbox/dwn-git', () => {
 
     it('should define all expected types', () => {
       expect(ForgeRepoDefinition.types.repo).toBeDefined();
+      expect(ForgeRepoDefinition.types.bundle).toBeDefined();
       expect(ForgeRepoDefinition.types.settings).toBeDefined();
       expect(ForgeRepoDefinition.types.readme).toBeDefined();
       expect(ForgeRepoDefinition.types.license).toBeDefined();
@@ -95,12 +96,39 @@ describe('@enbox/dwn-git', () => {
       expect(anyoneAction!.can).toContain('read');
     });
 
-    it('should nest settings, readme, license, topic, webhook under repo', () => {
+    it('should nest settings, readme, license, topic, webhook, bundle under repo', () => {
       expect(ForgeRepoDefinition.structure.repo.settings).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.readme).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.license).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.topic).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.webhook).toBeDefined();
+      expect(ForgeRepoDefinition.structure.repo.bundle).toBeDefined();
+    });
+
+    it('should enable $squash on bundle records', () => {
+      expect(ForgeRepoDefinition.structure.repo.bundle.$squash).toBe(true);
+    });
+
+    it('should accept application/x-git-bundle data format for bundles', () => {
+      expect(ForgeRepoDefinition.types.bundle.dataFormats).toEqual(['application/x-git-bundle']);
+    });
+
+    it('should require tipCommit and isFull tags on bundle records', () => {
+      expect(ForgeRepoDefinition.structure.repo.bundle.$tags?.$requiredTags).toContain('tipCommit');
+      expect(ForgeRepoDefinition.structure.repo.bundle.$tags?.$requiredTags).toContain('isFull');
+      expect(ForgeRepoDefinition.structure.repo.bundle.$tags?.$allowUndefinedTags).toBe(false);
+    });
+
+    it('should allow anyone to read and maintainers to create/squash bundles', () => {
+      const actions = ForgeRepoDefinition.structure.repo.bundle.$actions;
+      const anyoneAction = actions!.find((a) => 'who' in a && a.who === 'anyone');
+      expect(anyoneAction).toBeDefined();
+      expect(anyoneAction!.can).toContain('read');
+
+      const maintainerAction = actions!.find((a) => 'role' in a && a.role === 'repo/maintainer');
+      expect(maintainerAction).toBeDefined();
+      expect(maintainerAction!.can).toContain('create');
+      expect(maintainerAction!.can).toContain('squash');
     });
 
     it('should wrap definition via defineProtocol()', () => {
