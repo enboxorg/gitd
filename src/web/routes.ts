@@ -1,8 +1,11 @@
 /**
  * Route handlers for the read-only web UI.
  *
- * Each handler queries DWN records via the AgentContext and returns
- * an HTML string.  The server module maps URL paths to these handlers.
+ * Each handler queries DWN records via the AgentContext, targeting either
+ * the local DWN or a remote DWN identified by `targetDid`.  When
+ * `targetDid` differs from `ctx.did`, the `from` parameter is passed to
+ * every query so the request is forwarded to the remote DWN endpoint
+ * resolved from the target's DID document.
  *
  * @module
  */
@@ -22,8 +25,18 @@ type RepoInfo = {
   contextId: string; visibility: string;
 };
 
-async function getRepoRecord(ctx: AgentContext): Promise<RepoInfo | null> {
-  const { records } = await ctx.repo.records.query('repo');
+/**
+ * Build the `from` option for a query.  When the target is the local
+ * agent's own DID we omit `from` (local query); otherwise we set it so
+ * the SDK routes the message to the remote DWN.
+ */
+function fromOpt(ctx: AgentContext, targetDid: string): string | undefined {
+  return targetDid === ctx.did ? undefined : targetDid;
+}
+
+async function getRepoRecord(ctx: AgentContext, targetDid: string): Promise<RepoInfo | null> {
+  const from = fromOpt(ctx, targetDid);
+  const { records } = await ctx.repo.records.query('repo', { from });
   if (records.length === 0) { return null; }
   const rec = records[0];
   const data = await rec.data.json();
@@ -42,30 +55,38 @@ function repoName(repo: { name: string } | null): string {
 }
 
 // ---------------------------------------------------------------------------
-// GET / — repo overview
+// GET /:did — repo overview
 // ---------------------------------------------------------------------------
 
-export async function overviewPage(ctx: AgentContext): Promise<string> {
-  const repo = await getRepoRecord(ctx);
+export async function overviewPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
 
   if (!repo) {
-    return layout('Overview', 'dwn-git', '<div class="card"><p class="empty">No repository found. Run <code>dwn-git init</code> to create one.</p></div>');
+    return layout('Overview', 'dwn-git', '<div class="card"><p class="empty">No repository found for this DID.</p></div>', basePath);
   }
 
   // Count issues.
   const { records: issues } = await ctx.issues.records.query('repo/issue', {
+    from,
     filter: { contextId: repo.contextId },
   });
-  const openIssues = issues.filter((r) => (r.tags as Record<string, string> | undefined)?.status === 'open').length;
+  const openIssues = issues.filter(
+    (r) => (r.tags as Record<string, string> | undefined)?.status === 'open',
+  ).length;
 
   // Count patches.
   const { records: patches } = await ctx.patches.records.query('repo/patch', {
+    from,
     filter: { contextId: repo.contextId },
   });
-  const openPatches = patches.filter((r) => (r.tags as Record<string, string> | undefined)?.status === 'open').length;
+  const openPatches = patches.filter(
+    (r) => (r.tags as Record<string, string> | undefined)?.status === 'open',
+  ).length;
 
   // Count releases.
   const { records: releases } = await ctx.releases.records.query('repo/release' as any, {
+    from,
     filter: { contextId: repo.contextId },
   });
 
@@ -76,44 +97,46 @@ export async function overviewPage(ctx: AgentContext): Promise<string> {
       <p class="meta">
         Default branch: <strong>${esc(repo.defaultBranch)}</strong>
         &middot; Visibility: <strong>${esc(repo.visibility)}</strong>
-        &middot; DID: <code>${esc(ctx.did)}</code>
+        &middot; DID: <code>${esc(targetDid)}</code>
       </p>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
       <div class="card">
-        <h3><a href="/issues">Issues</a></h3>
+        <h3><a href="${basePath}/issues">Issues</a></h3>
         <p style="font-size:2em;margin:0">${issues.length}</p>
         <p class="meta">${openIssues} open</p>
       </div>
       <div class="card">
-        <h3><a href="/patches">Patches</a></h3>
+        <h3><a href="${basePath}/patches">Patches</a></h3>
         <p style="font-size:2em;margin:0">${patches.length}</p>
         <p class="meta">${openPatches} open</p>
       </div>
       <div class="card">
-        <h3><a href="/releases">Releases</a></h3>
+        <h3><a href="${basePath}/releases">Releases</a></h3>
         <p style="font-size:2em;margin:0">${releases.length}</p>
       </div>
     </div>`;
 
-  return layout('Overview', repoName(repo), html);
+  return layout('Overview', repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /issues — issues list
+// GET /:did/issues — issues list
 // ---------------------------------------------------------------------------
 
-export async function issuesListPage(ctx: AgentContext): Promise<string> {
-  const repo = await getRepoRecord(ctx);
-  if (!repo) { return layout('Issues', 'dwn-git', '<p class="empty">No repository found.</p>'); }
+export async function issuesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) { return layout('Issues', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
+    from,
     filter   : { contextId: repo.contextId },
     dateSort : DateSort.CreatedDescending,
   });
 
   if (records.length === 0) {
-    return layout('Issues', repoName(repo), '<div class="card"><p class="empty">No issues yet.</p></div>');
+    return layout('Issues', repoName(repo), '<div class="card"><p class="empty">No issues yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -123,8 +146,8 @@ export async function issuesListPage(ctx: AgentContext): Promise<string> {
     const num = data.number ?? tags?.number ?? '?';
     const status = tags?.status ?? 'open';
     rows += `<tr>
-      <td><a href="/issues/${esc(String(num))}">#${esc(String(num))}</a></td>
-      <td><a href="/issues/${esc(String(num))}">${esc(data.title)}</a></td>
+      <td><a href="${basePath}/issues/${esc(String(num))}">#${esc(String(num))}</a></td>
+      <td><a href="${basePath}/issues/${esc(String(num))}">${esc(data.title)}</a></td>
       <td>${statusBadge(status)}</td>
       <td class="meta">${shortDate(rec.dateCreated)}</td>
     </tr>`;
@@ -139,18 +162,22 @@ export async function issuesListPage(ctx: AgentContext): Promise<string> {
       </table>
     </div>`;
 
-  return layout('Issues', repoName(repo), html);
+  return layout('Issues', repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /issues/:number — issue detail
+// GET /:did/issues/:number — issue detail
 // ---------------------------------------------------------------------------
 
-export async function issueDetailPage(ctx: AgentContext, number: string): Promise<string | null> {
-  const repo = await getRepoRecord(ctx);
+export async function issueDetailPage(
+  ctx: AgentContext, targetDid: string, basePath: string, number: string,
+): Promise<string | null> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
   if (!repo) { return null; }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
+    from,
     filter: { contextId: repo.contextId, tags: { number } },
   });
 
@@ -163,6 +190,7 @@ export async function issueDetailPage(ctx: AgentContext, number: string): Promis
 
   // Fetch comments.
   const { records: comments } = await ctx.issues.records.query('repo/issue/comment' as any, {
+    from,
     filter   : { contextId: rec.contextId },
     dateSort : DateSort.CreatedAscending,
   });
@@ -188,26 +216,28 @@ export async function issueDetailPage(ctx: AgentContext, number: string): Promis
         ${commentsHtml}
       </div>
     ` : ''}
-    <p><a href="/issues">&larr; Back to issues</a></p>`;
+    <p><a href="${basePath}/issues">&larr; Back to issues</a></p>`;
 
-  return layout(`Issue #${number}`, repoName(repo), html);
+  return layout(`Issue #${number}`, repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /patches — patches list
+// GET /:did/patches — patches list
 // ---------------------------------------------------------------------------
 
-export async function patchesListPage(ctx: AgentContext): Promise<string> {
-  const repo = await getRepoRecord(ctx);
-  if (!repo) { return layout('Patches', 'dwn-git', '<p class="empty">No repository found.</p>'); }
+export async function patchesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) { return layout('Patches', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
+    from,
     filter   : { contextId: repo.contextId },
     dateSort : DateSort.CreatedDescending,
   });
 
   if (records.length === 0) {
-    return layout('Patches', repoName(repo), '<div class="card"><p class="empty">No patches yet.</p></div>');
+    return layout('Patches', repoName(repo), '<div class="card"><p class="empty">No patches yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -219,8 +249,8 @@ export async function patchesListPage(ctx: AgentContext): Promise<string> {
     const base = tags?.baseBranch ?? '';
     const head = tags?.headBranch ?? '';
     rows += `<tr>
-      <td><a href="/patches/${esc(String(num))}">#${esc(String(num))}</a></td>
-      <td><a href="/patches/${esc(String(num))}">${esc(data.title)}</a></td>
+      <td><a href="${basePath}/patches/${esc(String(num))}">#${esc(String(num))}</a></td>
+      <td><a href="${basePath}/patches/${esc(String(num))}">${esc(data.title)}</a></td>
       <td>${statusBadge(status)}</td>
       <td class="meta">${esc(base)}${head ? ` &larr; ${esc(head)}` : ''}</td>
       <td class="meta">${shortDate(rec.dateCreated)}</td>
@@ -236,18 +266,22 @@ export async function patchesListPage(ctx: AgentContext): Promise<string> {
       </table>
     </div>`;
 
-  return layout('Patches', repoName(repo), html);
+  return layout('Patches', repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /patches/:number — patch detail
+// GET /:did/patches/:number — patch detail
 // ---------------------------------------------------------------------------
 
-export async function patchDetailPage(ctx: AgentContext, number: string): Promise<string | null> {
-  const repo = await getRepoRecord(ctx);
+export async function patchDetailPage(
+  ctx: AgentContext, targetDid: string, basePath: string, number: string,
+): Promise<string | null> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
   if (!repo) { return null; }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
+    from,
     filter: { contextId: repo.contextId, tags: { number } },
   });
 
@@ -262,6 +296,7 @@ export async function patchDetailPage(ctx: AgentContext, number: string): Promis
 
   // Fetch reviews.
   const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
+    from,
     filter   : { contextId: rec.contextId },
     dateSort : DateSort.CreatedAscending,
   });
@@ -292,26 +327,28 @@ export async function patchDetailPage(ctx: AgentContext, number: string): Promis
         ${reviewsHtml}
       </div>
     ` : ''}
-    <p><a href="/patches">&larr; Back to patches</a></p>`;
+    <p><a href="${basePath}/patches">&larr; Back to patches</a></p>`;
 
-  return layout(`Patch #${number}`, repoName(repo), html);
+  return layout(`Patch #${number}`, repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /releases — releases list
+// GET /:did/releases — releases list
 // ---------------------------------------------------------------------------
 
-export async function releasesListPage(ctx: AgentContext): Promise<string> {
-  const repo = await getRepoRecord(ctx);
-  if (!repo) { return layout('Releases', 'dwn-git', '<p class="empty">No repository found.</p>'); }
+export async function releasesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) { return layout('Releases', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.releases.records.query('repo/release' as any, {
+    from,
     filter   : { contextId: repo.contextId },
     dateSort : DateSort.CreatedDescending,
   });
 
   if (records.length === 0) {
-    return layout('Releases', repoName(repo), '<div class="card"><p class="empty">No releases yet.</p></div>');
+    return layout('Releases', repoName(repo), '<div class="card"><p class="empty">No releases yet.</p></div>', basePath);
   }
 
   let cards = '';
@@ -334,22 +371,24 @@ export async function releasesListPage(ctx: AgentContext): Promise<string> {
   }
 
   const html = `<h2>Releases (${records.length})</h2>${cards}`;
-  return layout('Releases', repoName(repo), html);
+  return layout('Releases', repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /wiki — wiki list
+// GET /:did/wiki — wiki list
 // ---------------------------------------------------------------------------
 
-export async function wikiListPage(ctx: AgentContext): Promise<string> {
-  const repo = await getRepoRecord(ctx);
+export async function wikiListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
 
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
+    from,
     dateSort: DateSort.CreatedDescending,
   });
 
   if (records.length === 0) {
-    return layout('Wiki', repoName(repo), '<div class="card"><p class="empty">No wiki pages yet.</p></div>');
+    return layout('Wiki', repoName(repo), '<div class="card"><p class="empty">No wiki pages yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -358,7 +397,7 @@ export async function wikiListPage(ctx: AgentContext): Promise<string> {
     const slug = tags?.slug ?? '';
     const title = tags?.title ?? slug;
     rows += `<tr>
-      <td><a href="/wiki/${esc(slug)}">${esc(title)}</a></td>
+      <td><a href="${basePath}/wiki/${esc(slug)}">${esc(title)}</a></td>
       <td class="meta">${shortDate(rec.dateCreated)}</td>
     </tr>`;
   }
@@ -372,17 +411,21 @@ export async function wikiListPage(ctx: AgentContext): Promise<string> {
       </table>
     </div>`;
 
-  return layout('Wiki', repoName(repo), html);
+  return layout('Wiki', repoName(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
-// GET /wiki/:slug — wiki page detail
+// GET /:did/wiki/:slug — wiki page detail
 // ---------------------------------------------------------------------------
 
-export async function wikiDetailPage(ctx: AgentContext, slug: string): Promise<string | null> {
-  const repo = await getRepoRecord(ctx);
+export async function wikiDetailPage(
+  ctx: AgentContext, targetDid: string, basePath: string, slug: string,
+): Promise<string | null> {
+  const from = fromOpt(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid);
 
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
+    from,
     filter: { tags: { slug } },
   });
 
@@ -400,7 +443,7 @@ export async function wikiDetailPage(ctx: AgentContext, slug: string): Promise<s
       <p class="meta">Last updated: ${shortDate(rec.dateCreated)}</p>
       <div class="wiki-body" style="margin-top:16px">${renderBody(body)}</div>
     </div>
-    <p><a href="/wiki">&larr; Back to wiki</a></p>`;
+    <p><a href="${basePath}/wiki">&larr; Back to wiki</a></p>`;
 
-  return layout(title, repoName(repo), html);
+  return layout(title, repoName(repo), html, basePath);
 }

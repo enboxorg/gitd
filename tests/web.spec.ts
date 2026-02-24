@@ -5,6 +5,9 @@
  * The test agent is created once in `beforeAll`, records are seeded, and
  * then each test calls `handleRequest()` directly with a constructed URL.
  * No HTTP server is started.
+ *
+ * URL scheme: `/:did/...` — the target DID is embedded in the path,
+ * allowing the web UI to view ANY DWN-enabled git repo.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
@@ -38,8 +41,15 @@ const DATA_PATH = '__TESTDATA__/web-agent';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Build a URL with the given path, prefixed by the agent's DID. */
+let testDid: string;
+
 function url(path: string): URL {
   return new URL(path, 'http://localhost:8080');
+}
+
+function didUrl(subPath: string): URL {
+  return url(`/${testDid}${subPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +81,7 @@ describe('dwn-git web UI', () => {
       sync         : 'off',
     });
     const { web5, did } = result;
+    testDid = did;
 
     const repo = web5.using(ForgeRepoProtocol);
     const refs = web5.using(ForgeRefsProtocol);
@@ -167,12 +178,31 @@ describe('dwn-git web UI', () => {
   });
 
   // =========================================================================
-  // Overview page
+  // Landing page
   // =========================================================================
 
   describe('GET /', () => {
-    it('should return 200 with repo overview', async () => {
+    it('should return 200 with landing page', async () => {
       const res = await handleRequest(ctx, url('/'));
+      expect(res.status).toBe(200);
+      expect(res.body).toContain('dwn-git');
+      expect(res.body).toContain('Browse');
+    });
+
+    it('should include the local agent DID as a link', async () => {
+      const res = await handleRequest(ctx, url('/'));
+      expect(res.body).toContain(ctx.did);
+      expect(res.body).toContain(`href="/${ctx.did}"`);
+    });
+  });
+
+  // =========================================================================
+  // Overview page
+  // =========================================================================
+
+  describe('GET /:did', () => {
+    it('should return 200 with repo overview', async () => {
+      const res = await handleRequest(ctx, didUrl('/'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('test-repo');
       expect(res.body).toContain('A test repository');
@@ -181,20 +211,24 @@ describe('dwn-git web UI', () => {
     });
 
     it('should show issue, patch, and release counts', async () => {
-      const res = await handleRequest(ctx, url('/'));
+      const res = await handleRequest(ctx, didUrl('/'));
       expect(res.status).toBe(200);
-      // 2 total issues, 1 open.
       expect(res.body).toContain('Issues');
       expect(res.body).toContain('1 open');
-      // 1 patch.
       expect(res.body).toContain('Patches');
-      // 1 release.
       expect(res.body).toContain('Releases');
     });
 
-    it('should include the DID', async () => {
-      const res = await handleRequest(ctx, url('/'));
+    it('should display the target DID', async () => {
+      const res = await handleRequest(ctx, didUrl('/'));
       expect(res.body).toContain(ctx.did);
+    });
+
+    it('should return 502 for an unresolvable DID', async () => {
+      const res = await handleRequest(ctx, url('/did:jwk:unknown/'));
+      expect(res.status).toBe(502);
+      expect(res.body).toContain('Cannot reach DWN');
+      expect(res.body).toContain('did:jwk:unknown');
     });
   });
 
@@ -202,24 +236,24 @@ describe('dwn-git web UI', () => {
   // Issues list
   // =========================================================================
 
-  describe('GET /issues', () => {
+  describe('GET /:did/issues', () => {
     it('should return 200 with issues list', async () => {
-      const res = await handleRequest(ctx, url('/issues'));
+      const res = await handleRequest(ctx, didUrl('/issues'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Fix the widget');
       expect(res.body).toContain('Old bug');
     });
 
-    it('should show issue numbers as links', async () => {
-      const res = await handleRequest(ctx, url('/issues'));
-      expect(res.body).toContain('href="/issues/1"');
+    it('should show issue numbers as DID-scoped links', async () => {
+      const res = await handleRequest(ctx, didUrl('/issues'));
+      expect(res.body).toContain(`href="/${testDid}/issues/1"`);
       expect(res.body).toContain('#1');
-      expect(res.body).toContain('href="/issues/2"');
+      expect(res.body).toContain(`href="/${testDid}/issues/2"`);
       expect(res.body).toContain('#2');
     });
 
     it('should show status badges', async () => {
-      const res = await handleRequest(ctx, url('/issues'));
+      const res = await handleRequest(ctx, didUrl('/issues'));
       expect(res.body).toContain('OPEN');
       expect(res.body).toContain('CLOSED');
     });
@@ -229,32 +263,32 @@ describe('dwn-git web UI', () => {
   // Issue detail
   // =========================================================================
 
-  describe('GET /issues/:number', () => {
+  describe('GET /:did/issues/:number', () => {
     it('should return 200 with issue detail', async () => {
-      const res = await handleRequest(ctx, url('/issues/1'));
+      const res = await handleRequest(ctx, didUrl('/issues/1'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Fix the widget');
       expect(res.body).toContain('The widget is broken.');
     });
 
     it('should show comments', async () => {
-      const res = await handleRequest(ctx, url('/issues/1'));
+      const res = await handleRequest(ctx, didUrl('/issues/1'));
       expect(res.body).toContain('I can reproduce this.');
       expect(res.body).toContain('Comments (1)');
     });
 
     it('should show status badge', async () => {
-      const res = await handleRequest(ctx, url('/issues/1'));
+      const res = await handleRequest(ctx, didUrl('/issues/1'));
       expect(res.body).toContain('OPEN');
     });
 
-    it('should include back link', async () => {
-      const res = await handleRequest(ctx, url('/issues/1'));
-      expect(res.body).toContain('href="/issues"');
+    it('should include DID-scoped back link', async () => {
+      const res = await handleRequest(ctx, didUrl('/issues/1'));
+      expect(res.body).toContain(`href="/${testDid}/issues"`);
     });
 
     it('should return 404 for non-existent issue', async () => {
-      const res = await handleRequest(ctx, url('/issues/999'));
+      const res = await handleRequest(ctx, didUrl('/issues/999'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Issue not found');
     });
@@ -264,22 +298,22 @@ describe('dwn-git web UI', () => {
   // Patches list
   // =========================================================================
 
-  describe('GET /patches', () => {
+  describe('GET /:did/patches', () => {
     it('should return 200 with patches list', async () => {
-      const res = await handleRequest(ctx, url('/patches'));
+      const res = await handleRequest(ctx, didUrl('/patches'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Add feature X');
     });
 
     it('should show branch info', async () => {
-      const res = await handleRequest(ctx, url('/patches'));
+      const res = await handleRequest(ctx, didUrl('/patches'));
       expect(res.body).toContain('main');
       expect(res.body).toContain('feat-x');
     });
 
-    it('should show patch number as link', async () => {
-      const res = await handleRequest(ctx, url('/patches'));
-      expect(res.body).toContain('href="/patches/1"');
+    it('should show DID-scoped patch links', async () => {
+      const res = await handleRequest(ctx, didUrl('/patches'));
+      expect(res.body).toContain(`href="/${testDid}/patches/1"`);
       expect(res.body).toContain('#1');
     });
   });
@@ -288,35 +322,35 @@ describe('dwn-git web UI', () => {
   // Patch detail
   // =========================================================================
 
-  describe('GET /patches/:number', () => {
+  describe('GET /:did/patches/:number', () => {
     it('should return 200 with patch detail', async () => {
-      const res = await handleRequest(ctx, url('/patches/1'));
+      const res = await handleRequest(ctx, didUrl('/patches/1'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Add feature X');
       expect(res.body).toContain('Implements feature X.');
     });
 
     it('should show reviews', async () => {
-      const res = await handleRequest(ctx, url('/patches/1'));
+      const res = await handleRequest(ctx, didUrl('/patches/1'));
       expect(res.body).toContain('Looks good to me.');
       expect(res.body).toContain('Reviews (1)');
       expect(res.body).toContain('APPROVE');
     });
 
     it('should show branch info and status', async () => {
-      const res = await handleRequest(ctx, url('/patches/1'));
+      const res = await handleRequest(ctx, didUrl('/patches/1'));
       expect(res.body).toContain('main');
       expect(res.body).toContain('feat-x');
       expect(res.body).toContain('OPEN');
     });
 
-    it('should include back link', async () => {
-      const res = await handleRequest(ctx, url('/patches/1'));
-      expect(res.body).toContain('href="/patches"');
+    it('should include DID-scoped back link', async () => {
+      const res = await handleRequest(ctx, didUrl('/patches/1'));
+      expect(res.body).toContain(`href="/${testDid}/patches"`);
     });
 
     it('should return 404 for non-existent patch', async () => {
-      const res = await handleRequest(ctx, url('/patches/999'));
+      const res = await handleRequest(ctx, didUrl('/patches/999'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Patch not found');
     });
@@ -326,16 +360,16 @@ describe('dwn-git web UI', () => {
   // Releases list
   // =========================================================================
 
-  describe('GET /releases', () => {
+  describe('GET /:did/releases', () => {
     it('should return 200 with releases list', async () => {
-      const res = await handleRequest(ctx, url('/releases'));
+      const res = await handleRequest(ctx, didUrl('/releases'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('v1.0.0');
       expect(res.body).toContain('Initial release.');
     });
 
     it('should show release count', async () => {
-      const res = await handleRequest(ctx, url('/releases'));
+      const res = await handleRequest(ctx, didUrl('/releases'));
       expect(res.body).toContain('Releases (1)');
     });
   });
@@ -344,20 +378,20 @@ describe('dwn-git web UI', () => {
   // Wiki list
   // =========================================================================
 
-  describe('GET /wiki', () => {
+  describe('GET /:did/wiki', () => {
     it('should return 200 with wiki page list', async () => {
-      const res = await handleRequest(ctx, url('/wiki'));
+      const res = await handleRequest(ctx, didUrl('/wiki'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Getting Started');
     });
 
-    it('should link to wiki page by slug', async () => {
-      const res = await handleRequest(ctx, url('/wiki'));
-      expect(res.body).toContain('href="/wiki/getting-started"');
+    it('should link to wiki page with DID-scoped slug', async () => {
+      const res = await handleRequest(ctx, didUrl('/wiki'));
+      expect(res.body).toContain(`href="/${testDid}/wiki/getting-started"`);
     });
 
     it('should show page count', async () => {
-      const res = await handleRequest(ctx, url('/wiki'));
+      const res = await handleRequest(ctx, didUrl('/wiki'));
       expect(res.body).toContain('Wiki (1)');
     });
   });
@@ -366,21 +400,21 @@ describe('dwn-git web UI', () => {
   // Wiki detail
   // =========================================================================
 
-  describe('GET /wiki/:slug', () => {
+  describe('GET /:did/wiki/:slug', () => {
     it('should return 200 with wiki page content', async () => {
-      const res = await handleRequest(ctx, url('/wiki/getting-started'));
+      const res = await handleRequest(ctx, didUrl('/wiki/getting-started'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Getting Started');
       expect(res.body).toContain('Welcome to the wiki.');
     });
 
-    it('should include back link', async () => {
-      const res = await handleRequest(ctx, url('/wiki/getting-started'));
-      expect(res.body).toContain('href="/wiki"');
+    it('should include DID-scoped back link', async () => {
+      const res = await handleRequest(ctx, didUrl('/wiki/getting-started'));
+      expect(res.body).toContain(`href="/${testDid}/wiki"`);
     });
 
     it('should return 404 for non-existent wiki page', async () => {
-      const res = await handleRequest(ctx, url('/wiki/nonexistent'));
+      const res = await handleRequest(ctx, didUrl('/wiki/nonexistent'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Wiki page not found');
     });
@@ -391,14 +425,19 @@ describe('dwn-git web UI', () => {
   // =========================================================================
 
   describe('unknown routes', () => {
-    it('should return 404 for unknown paths', async () => {
+    it('should return 404 for paths without a DID prefix', async () => {
       const res = await handleRequest(ctx, url('/nonexistent'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Page not found');
     });
 
-    it('should return 404 for sub-paths that do not match', async () => {
-      const res = await handleRequest(ctx, url('/issues/abc'));
+    it('should return 404 for unknown sub-paths under a DID', async () => {
+      const res = await handleRequest(ctx, didUrl('/nonexistent'));
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for non-numeric issue IDs', async () => {
+      const res = await handleRequest(ctx, didUrl('/issues/abc'));
       expect(res.status).toBe(404);
     });
   });
@@ -409,23 +448,23 @@ describe('dwn-git web UI', () => {
 
   describe('HTML structure', () => {
     it('should include proper HTML document structure', async () => {
-      const res = await handleRequest(ctx, url('/'));
+      const res = await handleRequest(ctx, didUrl('/'));
       expect(res.body).toContain('<!DOCTYPE html>');
       expect(res.body).toContain('<html lang="en">');
       expect(res.body).toContain('</html>');
     });
 
-    it('should include navigation links', async () => {
-      const res = await handleRequest(ctx, url('/'));
-      expect(res.body).toContain('href="/"');
-      expect(res.body).toContain('href="/issues"');
-      expect(res.body).toContain('href="/patches"');
-      expect(res.body).toContain('href="/releases"');
-      expect(res.body).toContain('href="/wiki"');
+    it('should include DID-scoped navigation links', async () => {
+      const res = await handleRequest(ctx, didUrl('/'));
+      expect(res.body).toContain(`href="/${testDid}/"`);
+      expect(res.body).toContain(`href="/${testDid}/issues"`);
+      expect(res.body).toContain(`href="/${testDid}/patches"`);
+      expect(res.body).toContain(`href="/${testDid}/releases"`);
+      expect(res.body).toContain(`href="/${testDid}/wiki"`);
     });
 
     it('should set page title with repo name', async () => {
-      const res = await handleRequest(ctx, url('/'));
+      const res = await handleRequest(ctx, didUrl('/'));
       expect(res.body).toContain('<title>Overview');
       expect(res.body).toContain('test-repo');
       expect(res.body).toContain('dwn-git</title>');

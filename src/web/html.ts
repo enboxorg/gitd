@@ -11,8 +11,13 @@
 // Layout
 // ---------------------------------------------------------------------------
 
-/** Wrap page content in a full HTML document with navigation. */
-export function layout(title: string, repoName: string, body: string): string {
+/**
+ * Wrap page content in a full HTML document with navigation.
+ *
+ * @param basePath - URL prefix for all nav links, e.g. `/did:dht:abc123`
+ */
+export function layout(title: string, repoName: string, body: string, basePath: string = ''): string {
+  const base = basePath || '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,22 +54,24 @@ export function layout(title: string, repoName: string, body: string): string {
     th { font-weight: 600; background: #f6f8fa; }
     pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
     .wiki-body { line-height: 1.8; }
+    .did-input { width: 100%; padding: 10px 14px; font-size: 1em; border: 1px solid #d0d7de;
+      border-radius: 6px; font-family: monospace; }
   </style>
 </head>
 <body>
   <header>
     <div class="container">
-      <a href="/" class="repo-name">${esc(repoName)}</a>
+      <a href="${base || '/'}" class="repo-name">${esc(repoName)}</a>
       <span style="color:#8b949e;margin-left:8px">dwn-git</span>
     </div>
   </header>
   <nav>
     <div class="container">
-      <a href="/">Overview</a>
-      <a href="/issues">Issues</a>
-      <a href="/patches">Patches</a>
-      <a href="/releases">Releases</a>
-      <a href="/wiki">Wiki</a>
+      <a href="${base}/">Overview</a>
+      <a href="${base}/issues">Issues</a>
+      <a href="${base}/patches">Patches</a>
+      <a href="${base}/releases">Releases</a>
+      <a href="${base}/wiki">Wiki</a>
     </div>
   </nav>
   <main>

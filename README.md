@@ -124,8 +124,10 @@ dwn-git whoami                    # Show connected DID
 ### Web UI
 
 - Read-only server-rendered HTML interface — no client-side JavaScript, no build step
-- Browse repo overview, issues, patches, releases, and wiki pages
-- Routes: `/` (overview), `/issues`, `/issues/:n`, `/patches`, `/patches/:n`, `/releases`, `/wiki`, `/wiki/:slug`
+- **Browse ANY DWN-enabled git repo** by entering a DID — works as a universal viewer
+- Landing page at `/` with DID input form; all routes are DID-scoped: `/:did/`, `/:did/issues`, etc.
+- Routes: `/:did` (overview), `/:did/issues`, `/:did/issues/:n`, `/:did/patches`, `/:did/patches/:n`, `/:did/releases`, `/:did/wiki`, `/:did/wiki/:slug`
+- Remote DWN queries use the SDK's `from` parameter — resolved via the target DID's service endpoints
 - Start with `dwn-git web [--port <port>]` (default: 8080, configurable via `DWN_GIT_WEB_PORT`)
 
 ### GitHub Migration
