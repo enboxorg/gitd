@@ -68,43 +68,46 @@ export const ForgeReleasesDefinition = {
     },
   },
   structure: {
-    release: {
-      $actions: [
-        { who: 'anyone', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
-      ],
-      $tags: {
-        $requiredTags       : ['tagName', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        tagName             : { type: 'string' },
-        repoRecordId        : { type: 'string' },
-        commitSha           : { type: 'string' },
-        prerelease          : { type: 'boolean' },
-        draft               : { type: 'boolean' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      asset: {
-        $immutable : true,
-        $actions   : [
+      release: {
+        $actions: [
           { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
         ],
         $tags: {
-          $requiredTags       : ['filename', 'contentType'],
+          $requiredTags       : ['tagName'],
           $allowUndefinedTags : false,
-          filename            : { type: 'string' },
-          contentType         : { type: 'string' },
-          size                : { type: 'integer' },
+          tagName             : { type: 'string' },
+          commitSha           : { type: 'string' },
+          prerelease          : { type: 'boolean' },
+          draft               : { type: 'boolean' },
         },
-      },
 
-      signature: {
-        $immutable   : true,
-        $recordLimit : { max: 1, strategy: 'reject' },
-        $actions     : [
-          { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-        ],
+        asset: {
+          $immutable : true,
+          $actions   : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['filename', 'contentType'],
+            $allowUndefinedTags : false,
+            filename            : { type: 'string' },
+            contentType         : { type: 'string' },
+            size                : { type: 'integer' },
+          },
+        },
+
+        signature: {
+          $immutable   : true,
+          $recordLimit : { max: 1, strategy: 'reject' },
+          $actions     : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+          ],
+        },
       },
     },
   },

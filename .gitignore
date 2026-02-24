@@ -1,4 +1,5 @@
 node_modules/
 dist/
 coverage/
+__TESTDATA__/
 *.tsbuildinfo

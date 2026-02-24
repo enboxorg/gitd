@@ -133,36 +133,39 @@ describe('@enbox/dwn-git', () => {
       expect(ForgeIssuesDefinition.types.assignment).toBeDefined();
     });
 
-    it('should require status and repoRecordId tags on issue', () => {
-      const tags = ForgeIssuesDefinition.structure.issue.$tags;
+    it('should have a $ref node for repo', () => {
+      expect(ForgeIssuesDefinition.structure.repo.$ref).toBe('repo:repo');
+    });
+
+    it('should require status tag on issue', () => {
+      const tags = ForgeIssuesDefinition.structure.repo.issue.$tags;
       expect(tags?.$requiredTags).toContain('status');
-      expect(tags?.$requiredTags).toContain('repoRecordId');
       expect(tags?.$allowUndefinedTags).toBe(false);
     });
 
     it('should restrict issue status to open and closed', () => {
-      const status = ForgeIssuesDefinition.structure.issue.$tags?.status as { enum: string[] };
+      const status = ForgeIssuesDefinition.structure.repo.issue.$tags?.status as { enum: string[] };
       expect(status.enum).toEqual(['open', 'closed']);
     });
 
     it('should nest comment, label, statusChange, and assignment under issue', () => {
-      expect(ForgeIssuesDefinition.structure.issue.comment).toBeDefined();
-      expect(ForgeIssuesDefinition.structure.issue.label).toBeDefined();
-      expect(ForgeIssuesDefinition.structure.issue.statusChange).toBeDefined();
-      expect(ForgeIssuesDefinition.structure.issue.assignment).toBeDefined();
+      expect(ForgeIssuesDefinition.structure.repo.issue.comment).toBeDefined();
+      expect(ForgeIssuesDefinition.structure.repo.issue.label).toBeDefined();
+      expect(ForgeIssuesDefinition.structure.repo.issue.statusChange).toBeDefined();
+      expect(ForgeIssuesDefinition.structure.repo.issue.assignment).toBeDefined();
     });
 
     it('should nest reaction under comment (3-level nesting)', () => {
-      expect(ForgeIssuesDefinition.structure.issue.comment.reaction).toBeDefined();
+      expect(ForgeIssuesDefinition.structure.repo.issue.comment.reaction).toBeDefined();
     });
 
     it('should mark label and statusChange as $immutable', () => {
-      expect(ForgeIssuesDefinition.structure.issue.label.$immutable).toBe(true);
-      expect(ForgeIssuesDefinition.structure.issue.statusChange.$immutable).toBe(true);
+      expect(ForgeIssuesDefinition.structure.repo.issue.label.$immutable).toBe(true);
+      expect(ForgeIssuesDefinition.structure.repo.issue.statusChange.$immutable).toBe(true);
     });
 
     it('should use cross-protocol repo roles', () => {
-      const actions = ForgeIssuesDefinition.structure.issue.$actions!;
+      const actions = ForgeIssuesDefinition.structure.repo.issue.$actions!;
       const contributorAction = actions.find((a) => a.role === 'repo:repo/contributor');
       const maintainerAction = actions.find((a) => a.role === 'repo:repo/maintainer');
       expect(contributorAction).toBeDefined();
@@ -170,8 +173,8 @@ describe('@enbox/dwn-git', () => {
     });
 
     it('should allow issue author to update their own issue', () => {
-      const actions = ForgeIssuesDefinition.structure.issue.$actions!;
-      const authorAction = actions.find((a) => a.who === 'author' && a.of === 'issue');
+      const actions = ForgeIssuesDefinition.structure.repo.issue.$actions!;
+      const authorAction = actions.find((a) => a.who === 'author' && a.of === 'repo/issue');
       expect(authorAction).toBeDefined();
       expect(authorAction!.can).toContain('update');
     });
@@ -207,58 +210,61 @@ describe('@enbox/dwn-git', () => {
       expect(ForgePatchesDefinition.types.mergeResult).toBeDefined();
     });
 
-    it('should require status, repoRecordId, and baseBranch tags on patch', () => {
-      const tags = ForgePatchesDefinition.structure.patch.$tags;
+    it('should have a $ref node for repo', () => {
+      expect(ForgePatchesDefinition.structure.repo.$ref).toBe('repo:repo');
+    });
+
+    it('should require status and baseBranch tags on patch', () => {
+      const tags = ForgePatchesDefinition.structure.repo.patch.$tags;
       expect(tags?.$requiredTags).toContain('status');
-      expect(tags?.$requiredTags).toContain('repoRecordId');
       expect(tags?.$requiredTags).toContain('baseBranch');
     });
 
     it('should restrict patch status to draft, open, closed, merged', () => {
-      const status = ForgePatchesDefinition.structure.patch.$tags?.status as { enum: string[] };
+      const status = ForgePatchesDefinition.structure.repo.patch.$tags?.status as { enum: string[] };
       expect(status.enum).toEqual(['draft', 'open', 'closed', 'merged']);
     });
 
     it('should nest revision, review, statusChange, and mergeResult under patch', () => {
-      expect(ForgePatchesDefinition.structure.patch.revision).toBeDefined();
-      expect(ForgePatchesDefinition.structure.patch.review).toBeDefined();
-      expect(ForgePatchesDefinition.structure.patch.statusChange).toBeDefined();
-      expect(ForgePatchesDefinition.structure.patch.mergeResult).toBeDefined();
+      expect(ForgePatchesDefinition.structure.repo.patch.revision).toBeDefined();
+      expect(ForgePatchesDefinition.structure.repo.patch.review).toBeDefined();
+      expect(ForgePatchesDefinition.structure.repo.patch.statusChange).toBeDefined();
+      expect(ForgePatchesDefinition.structure.repo.patch.mergeResult).toBeDefined();
     });
 
     it('should nest reviewComment under review (3-level nesting)', () => {
-      expect(ForgePatchesDefinition.structure.patch.review.reviewComment).toBeDefined();
+      expect(ForgePatchesDefinition.structure.repo.patch.review.reviewComment).toBeDefined();
     });
 
     it('should mark revision, review, statusChange, and mergeResult as $immutable', () => {
-      expect(ForgePatchesDefinition.structure.patch.revision.$immutable).toBe(true);
-      expect(ForgePatchesDefinition.structure.patch.review.$immutable).toBe(true);
-      expect(ForgePatchesDefinition.structure.patch.statusChange.$immutable).toBe(true);
-      expect(ForgePatchesDefinition.structure.patch.mergeResult.$immutable).toBe(true);
+      expect(ForgePatchesDefinition.structure.repo.patch.revision.$immutable).toBe(true);
+      expect(ForgePatchesDefinition.structure.repo.patch.review.$immutable).toBe(true);
+      expect(ForgePatchesDefinition.structure.repo.patch.statusChange.$immutable).toBe(true);
+      expect(ForgePatchesDefinition.structure.repo.patch.mergeResult.$immutable).toBe(true);
     });
 
     it('should enforce $recordLimit on mergeResult singleton', () => {
-      expect(ForgePatchesDefinition.structure.patch.mergeResult.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
+      expect(ForgePatchesDefinition.structure.repo.patch.mergeResult.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
     });
 
     it('should restrict review verdict to approve, reject, comment', () => {
-      const verdict = ForgePatchesDefinition.structure.patch.review.$tags?.verdict as { enum: string[] };
+      const verdict = ForgePatchesDefinition.structure.repo.patch.review.$tags?.verdict as { enum: string[] };
       expect(verdict.enum).toEqual(['approve', 'reject', 'comment']);
     });
 
     it('should restrict mergeResult strategy to merge, squash, rebase', () => {
-      const strategy = ForgePatchesDefinition.structure.patch.mergeResult.$tags?.strategy as { enum: string[] };
+      const strategy = ForgePatchesDefinition.structure.repo.patch.mergeResult.$tags?.strategy as { enum: string[] };
       expect(strategy.enum).toEqual(['merge', 'squash', 'rebase']);
     });
 
     it('should allow patch author to create revisions and status changes', () => {
-      const revisionActions = ForgePatchesDefinition.structure.patch.revision.$actions!;
-      const authorRevision = revisionActions.find((a) => a.who === 'author' && a.of === 'patch');
+      const revisionActions = ForgePatchesDefinition.structure.repo.patch.revision.$actions!;
+      const authorRevision = revisionActions.find((a) => a.who === 'author' && a.of === 'repo/patch');
       expect(authorRevision).toBeDefined();
       expect(authorRevision!.can).toContain('create');
 
-      const statusActions = ForgePatchesDefinition.structure.patch.statusChange.$actions!;
-      const authorStatus = statusActions.find((a) => a.who === 'author' && a.of === 'patch');
+      const statusActions = ForgePatchesDefinition.structure.repo.patch.statusChange.$actions!;
+      const authorStatus = statusActions.find((a) => a.who === 'author' && a.of === 'repo/patch');
       expect(authorStatus).toBeDefined();
       expect(authorStatus!.can).toContain('create');
     });
@@ -291,26 +297,29 @@ describe('@enbox/dwn-git', () => {
       expect(ForgeCiDefinition.types.artifact).toBeDefined();
     });
 
-    it('should require commitSha, status, and repoRecordId tags on checkSuite', () => {
-      const tags = ForgeCiDefinition.structure.checkSuite.$tags;
+    it('should have a $ref node for repo', () => {
+      expect(ForgeCiDefinition.structure.repo.$ref).toBe('repo:repo');
+    });
+
+    it('should require commitSha and status tags on checkSuite', () => {
+      const tags = ForgeCiDefinition.structure.repo.checkSuite.$tags;
       expect(tags?.$requiredTags).toContain('commitSha');
       expect(tags?.$requiredTags).toContain('status');
-      expect(tags?.$requiredTags).toContain('repoRecordId');
     });
 
     it('should restrict checkSuite status to queued, in_progress, completed', () => {
-      const status = ForgeCiDefinition.structure.checkSuite.$tags?.status as { enum: string[] };
+      const status = ForgeCiDefinition.structure.repo.checkSuite.$tags?.status as { enum: string[] };
       expect(status.enum).toEqual(['queued', 'in_progress', 'completed']);
     });
 
     it('should restrict checkSuite conclusion to success, failure, cancelled, skipped', () => {
-      const conclusion = ForgeCiDefinition.structure.checkSuite.$tags?.conclusion as { enum: string[] };
+      const conclusion = ForgeCiDefinition.structure.repo.checkSuite.$tags?.conclusion as { enum: string[] };
       expect(conclusion.enum).toEqual(['success', 'failure', 'cancelled', 'skipped']);
     });
 
     it('should nest checkRun under checkSuite and artifact under checkRun (3-level)', () => {
-      expect(ForgeCiDefinition.structure.checkSuite.checkRun).toBeDefined();
-      expect(ForgeCiDefinition.structure.checkSuite.checkRun.artifact).toBeDefined();
+      expect(ForgeCiDefinition.structure.repo.checkSuite.checkRun).toBeDefined();
+      expect(ForgeCiDefinition.structure.repo.checkSuite.checkRun.artifact).toBeDefined();
     });
 
     it('should accept binary formats for artifact', () => {
@@ -319,13 +328,13 @@ describe('@enbox/dwn-git', () => {
     });
 
     it('should allow checkSuite author to create checkRuns and artifacts', () => {
-      const runActions = ForgeCiDefinition.structure.checkSuite.checkRun.$actions!;
-      const authorRun = runActions.find((a) => a.who === 'author' && a.of === 'checkSuite');
+      const runActions = ForgeCiDefinition.structure.repo.checkSuite.checkRun.$actions!;
+      const authorRun = runActions.find((a) => a.who === 'author' && a.of === 'repo/checkSuite');
       expect(authorRun).toBeDefined();
       expect(authorRun!.can).toContain('create');
 
-      const artifactActions = ForgeCiDefinition.structure.checkSuite.checkRun.artifact.$actions!;
-      const authorArtifact = artifactActions.find((a) => a.who === 'author' && a.of === 'checkSuite');
+      const artifactActions = ForgeCiDefinition.structure.repo.checkSuite.checkRun.artifact.$actions!;
+      const authorArtifact = artifactActions.find((a) => a.who === 'author' && a.of === 'repo/checkSuite');
       expect(authorArtifact).toBeDefined();
       expect(authorArtifact!.can).toContain('create');
     });
@@ -358,34 +367,37 @@ describe('@enbox/dwn-git', () => {
       expect(ForgeReleasesDefinition.types.signature).toBeDefined();
     });
 
-    it('should require tagName and repoRecordId tags on release', () => {
-      const tags = ForgeReleasesDefinition.structure.release.$tags;
+    it('should have a $ref node for repo', () => {
+      expect(ForgeReleasesDefinition.structure.repo.$ref).toBe('repo:repo');
+    });
+
+    it('should require tagName tag on release', () => {
+      const tags = ForgeReleasesDefinition.structure.repo.release.$tags;
       expect(tags?.$requiredTags).toContain('tagName');
-      expect(tags?.$requiredTags).toContain('repoRecordId');
     });
 
     it('should nest asset and signature under release', () => {
-      expect(ForgeReleasesDefinition.structure.release.asset).toBeDefined();
-      expect(ForgeReleasesDefinition.structure.release.signature).toBeDefined();
+      expect(ForgeReleasesDefinition.structure.repo.release.asset).toBeDefined();
+      expect(ForgeReleasesDefinition.structure.repo.release.signature).toBeDefined();
     });
 
     it('should mark asset and signature as $immutable', () => {
-      expect(ForgeReleasesDefinition.structure.release.asset.$immutable).toBe(true);
-      expect(ForgeReleasesDefinition.structure.release.signature.$immutable).toBe(true);
+      expect(ForgeReleasesDefinition.structure.repo.release.asset.$immutable).toBe(true);
+      expect(ForgeReleasesDefinition.structure.repo.release.signature.$immutable).toBe(true);
     });
 
     it('should enforce $recordLimit on signature singleton', () => {
-      expect(ForgeReleasesDefinition.structure.release.signature.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
+      expect(ForgeReleasesDefinition.structure.repo.release.signature.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
     });
 
     it('should allow anyone to read releases, assets, and signatures', () => {
-      const releaseActions = ForgeReleasesDefinition.structure.release.$actions!;
+      const releaseActions = ForgeReleasesDefinition.structure.repo.release.$actions!;
       expect(releaseActions.find((a) => a.who === 'anyone')!.can).toContain('read');
 
-      const assetActions = ForgeReleasesDefinition.structure.release.asset.$actions!;
+      const assetActions = ForgeReleasesDefinition.structure.repo.release.asset.$actions!;
       expect(assetActions.find((a) => a.who === 'anyone')!.can).toContain('read');
 
-      const sigActions = ForgeReleasesDefinition.structure.release.signature.$actions!;
+      const sigActions = ForgeReleasesDefinition.structure.repo.release.signature.$actions!;
       expect(sigActions.find((a) => a.who === 'anyone')!.can).toContain('read');
     });
 
@@ -394,7 +406,7 @@ describe('@enbox/dwn-git', () => {
     });
 
     it('should use maintainer role for release management', () => {
-      const actions = ForgeReleasesDefinition.structure.release.$actions!;
+      const actions = ForgeReleasesDefinition.structure.repo.release.$actions!;
       const maintainerAction = actions.find((a) => a.role === 'repo:repo/maintainer');
       expect(maintainerAction).toBeDefined();
       expect(maintainerAction!.can).toContain('create');
@@ -629,19 +641,22 @@ describe('@enbox/dwn-git', () => {
       expect(ForgeWikiDefinition.types.pageHistory).toBeDefined();
     });
 
-    it('should require slug, title, and repoRecordId tags on page', () => {
-      const tags = ForgeWikiDefinition.structure.page.$tags;
+    it('should have a $ref node for repo', () => {
+      expect(ForgeWikiDefinition.structure.repo.$ref).toBe('repo:repo');
+    });
+
+    it('should require slug and title tags on page', () => {
+      const tags = ForgeWikiDefinition.structure.repo.page.$tags;
       expect(tags?.$requiredTags).toContain('slug');
       expect(tags?.$requiredTags).toContain('title');
-      expect(tags?.$requiredTags).toContain('repoRecordId');
     });
 
     it('should nest pageHistory under page', () => {
-      expect(ForgeWikiDefinition.structure.page.pageHistory).toBeDefined();
+      expect(ForgeWikiDefinition.structure.repo.page.pageHistory).toBeDefined();
     });
 
     it('should mark pageHistory as $immutable', () => {
-      expect(ForgeWikiDefinition.structure.page.pageHistory.$immutable).toBe(true);
+      expect(ForgeWikiDefinition.structure.repo.page.pageHistory.$immutable).toBe(true);
     });
 
     it('should use markdown format for pages', () => {
@@ -649,15 +664,15 @@ describe('@enbox/dwn-git', () => {
     });
 
     it('should allow anyone to read pages and page history', () => {
-      const pageActions = ForgeWikiDefinition.structure.page.$actions!;
+      const pageActions = ForgeWikiDefinition.structure.repo.page.$actions!;
       expect(pageActions.find((a) => a.who === 'anyone')!.can).toContain('read');
 
-      const historyActions = ForgeWikiDefinition.structure.page.pageHistory.$actions!;
+      const historyActions = ForgeWikiDefinition.structure.repo.page.pageHistory.$actions!;
       expect(historyActions.find((a) => a.who === 'anyone')!.can).toContain('read');
     });
 
     it('should use cross-protocol repo roles for page management', () => {
-      const pageActions = ForgeWikiDefinition.structure.page.$actions!;
+      const pageActions = ForgeWikiDefinition.structure.repo.page.$actions!;
       const maintainer = pageActions.find((a) => a.role === 'repo:repo/maintainer');
       const contributor = pageActions.find((a) => a.role === 'repo:repo/contributor');
       expect(maintainer).toBeDefined();

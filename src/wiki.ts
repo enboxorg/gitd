@@ -62,27 +62,30 @@ export const ForgeWikiDefinition = {
     },
   },
   structure: {
-    page: {
-      $actions: [
-        { who: 'anyone', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
-        { role: 'repo:repo/contributor', can: ['create', 'update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['slug', 'title', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        slug                : { type: 'string' },
-        title               : { type: 'string' },
-        repoRecordId        : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      pageHistory: {
-        $immutable : true,
-        $actions   : [
+      page: {
+        $actions: [
           { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-          { role: 'repo:repo/contributor', can: ['create'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+          { role: 'repo:repo/contributor', can: ['create', 'update'] },
         ],
+        $tags: {
+          $requiredTags       : ['slug', 'title'],
+          $allowUndefinedTags : false,
+          slug                : { type: 'string' },
+          title               : { type: 'string' },
+        },
+
+        pageHistory: {
+          $immutable : true,
+          $actions   : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+            { role: 'repo:repo/contributor', can: ['create'] },
+          ],
+        },
       },
     },
   },

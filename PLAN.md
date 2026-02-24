@@ -102,6 +102,8 @@ External contributions (from strangers) follow one of these patterns:
 
 Rather than one monolithic protocol, `dwn-git` uses 10 composable protocols. Each handles one domain (repo, issues, patches, etc.) and references the others via `uses` for cross-protocol role authorization. This mirrors how `@enbox/protocols` composes `ListsDefinition` with `SocialGraphDefinition`.
 
+**`$ref` wrapping**: The DWN SDK requires composing protocols to include a `$ref` node in their `structure` that references the foreign protocol's root type. For `dwn-git`, all 5 protocols that compose with `forge-repo` (issues, patches, ci, releases, wiki) wrap their top-level type inside a `repo: { $ref: 'repo:repo' }` node. This means protocolPaths include the `repo/` prefix (e.g., `'repo/issue'` instead of `'issue'`). At write time, the `parentContextId` of the `$ref` child (e.g., the issue) is set to the `contextId` of the referenced repo record, establishing the cross-protocol link without needing a `repoRecordId` tag.
+
 ### 3.3 Immutability where it matters
 
 `$immutable` is used aggressively for audit trails: status changes, reviews, revisions, release assets, package versions. These records cannot be silently edited — if you need to change your mind, you create a new record. This provides the same guarantees as git's content-addressed storage, extended to social artifacts.
@@ -241,83 +243,86 @@ export const ForgeIssuesDefinition = {
     assignment   : { schema: 'https://enbox.org/schemas/forge/assignment',    dataFormats: ['application/json'] },
   },
   structure: {
-    issue: {
-      $actions: [
-        { role: 'repo:repo/contributor', can: ['create', 'read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
-        { role: 'repo:repo/triager', can: ['read', 'update'] },
-        { who: 'author', of: 'issue', can: ['update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['status', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        status              : { type: 'string', enum: ['open', 'closed'] },
-        repoRecordId        : { type: 'string' },
-        priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-        milestone           : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      comment: {
+      issue: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
-          { who: 'author', of: 'issue/comment', can: ['update', 'delete'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+          { role: 'repo:repo/triager', can: ['create', 'read', 'co-update'] },
+          { who: 'author', of: 'repo/issue', can: ['create', 'update'] },
         ],
+        $tags: {
+          $requiredTags       : ['status'],
+          $allowUndefinedTags : false,
+          status              : { type: 'string', enum: ['open', 'closed'] },
+          priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          milestone           : { type: 'string' },
+        },
 
-        reaction: {
+        comment: {
           $actions: [
-            { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            { who: 'author', of: 'repo/issue/comment', can: ['create', 'update', 'delete'] },
           ],
-          $tags: {
-            $requiredTags       : ['emoji'],
-            $allowUndefinedTags : false,
-            emoji               : { type: 'string', maxLength: 10 },
+
+          reaction: {
+            $actions: [
+              { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            ],
+            $tags: {
+              $requiredTags       : ['emoji'],
+              $allowUndefinedTags : false,
+              emoji               : { type: 'string', maxLength: 10 },
+            },
           },
         },
-      },
 
-      label: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
-          { role: 'repo:repo/triager', can: ['create', 'delete'] },
-        ],
-        $tags: {
-          $requiredTags       : ['name', 'color'],
-          $allowUndefinedTags : false,
-          name                : { type: 'string' },
-          color               : { type: 'string' },
+        label: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['name', 'color'],
+            $allowUndefinedTags : false,
+            name                : { type: 'string' },
+            color               : { type: 'string' },
+          },
         },
-      },
 
-      statusChange: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-          { role: 'repo:repo/triager', can: ['create'] },
-          { who: 'author', of: 'issue', can: ['create'] },
-        ],
-        $tags: {
-          $requiredTags       : ['from', 'to'],
-          $allowUndefinedTags : false,
-          from                : { type: 'string', enum: ['open', 'closed'] },
-          to                  : { type: 'string', enum: ['open', 'closed'] },
+        statusChange: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+            { role: 'repo:repo/triager', can: ['create'] },
+            { who: 'author', of: 'repo/issue', can: ['create'] },
+          ],
+          $tags: {
+            $requiredTags       : ['from', 'to'],
+            $allowUndefinedTags : false,
+            from                : { type: 'string', enum: ['open', 'closed'] },
+            to                  : { type: 'string', enum: ['open', 'closed'] },
+          },
         },
-      },
 
-      assignment: {
-        $actions: [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
-          { role: 'repo:repo/triager', can: ['create', 'delete'] },
-        ],
-        $tags: {
-          $requiredTags       : ['assigneeDid'],
-          $allowUndefinedTags : false,
-          assigneeDid         : { type: 'string' },
+        assignment: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['assigneeDid'],
+            $allowUndefinedTags : false,
+            assigneeDid         : { type: 'string' },
+          },
         },
       },
     },
@@ -342,8 +347,10 @@ export type StatusChangeData = { reason?: string };
 **Key decisions:**
 - **No `{ who: 'anyone', can: ['create'] }`** — only users with a contributor or maintainer role can create issues directly on the repo owner's DWN. External issue reports live on the reporter's own DWN (see [Section 7](#7-namespace-based-contribution-model)).
 - **`statusChange` and `label` are `$immutable`** — these are audit events, not editable records.
-- **`repoRecordId` tag** links issues to a specific repo context, enabling filtered queries.
+- **`$ref` wrapping** — the `repo: { $ref: 'repo:repo' }` node links issues to a specific repo context via `parentContextId`, replacing the previous `repoRecordId` tag approach. ProtocolPaths include the `repo/` prefix (e.g., `'repo/issue'`, `'repo/issue/comment'`).
 - **Cross-protocol roles** via `repo:repo/maintainer` reference the forge-repo protocol.
+- **`who: 'author'` paths** must use the full protocolPath including the `repo/` prefix (e.g., `'repo/issue'`, not `'issue'`).
+- **Triager uses `co-update`** instead of `update` — triagers are not the author, so they need `co-update` for non-author updates.
 
 ### 4.3 Patches Protocol (`forge-patches`)
 
@@ -363,85 +370,88 @@ export const ForgePatchesDefinition = {
     mergeResult   : { schema: 'https://enbox.org/schemas/forge/merge-result',       dataFormats: ['application/json'] },
   },
   structure: {
-    patch: {
-      $actions: [
-        { role: 'repo:repo/contributor', can: ['create', 'read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
-        { who: 'author', of: 'patch', can: ['update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['status', 'repoRecordId', 'baseBranch'],
-        $allowUndefinedTags : false,
-        status              : { type: 'string', enum: ['draft', 'open', 'closed', 'merged'] },
-        repoRecordId        : { type: 'string' },
-        baseBranch          : { type: 'string' },
-        headBranch          : { type: 'string' },
-        sourceDid           : { type: 'string' },  // For cross-DWN patches: author's DID
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      revision: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { who: 'author', of: 'patch', can: ['create'] },
-        ],
-        $tags: {
-          $requiredTags       : ['headCommit', 'baseCommit'],
-          $allowUndefinedTags : false,
-          headCommit          : { type: 'string' },
-          baseCommit          : { type: 'string' },
-          commitCount         : { type: 'integer', minimum: 1 },
-        },
-      },
-
-      review: {
-        $immutable : true,
-        $actions   : [
+      patch: {
+        $actions: [
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+          { who: 'author', of: 'repo/patch', can: ['create', 'update'] },
         ],
         $tags: {
-          $requiredTags       : ['verdict'],
+          $requiredTags       : ['status', 'baseBranch'],
           $allowUndefinedTags : false,
-          verdict             : { type: 'string', enum: ['approve', 'reject', 'comment'] },
-          revisionRecordId    : { type: 'string' },
+          status              : { type: 'string', enum: ['draft', 'open', 'closed', 'merged'] },
+          baseBranch          : { type: 'string' },
+          headBranch          : { type: 'string' },
+          sourceDid           : { type: 'string' },  // For cross-DWN patches: author's DID
         },
 
-        reviewComment: {
-          $actions: [
+        revision: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { who: 'author', of: 'repo/patch', can: ['create'] },
+          ],
+          $tags: {
+            $requiredTags       : ['headCommit', 'baseCommit'],
+            $allowUndefinedTags : false,
+            headCommit          : { type: 'string' },
+            baseCommit          : { type: 'string' },
+            commitCount         : { type: 'integer', minimum: 1 },
+          },
+        },
+
+        review: {
+          $immutable : true,
+          $actions   : [
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read'] },
           ],
           $tags: {
-            $allowUndefinedTags : true,
-            path                : { type: 'string' },
-            line                : { type: 'integer' },
-            side                : { type: 'string', enum: ['left', 'right'] },
+            $requiredTags       : ['verdict'],
+            $allowUndefinedTags : false,
+            verdict             : { type: 'string', enum: ['approve', 'reject', 'comment'] },
+            revisionRecordId    : { type: 'string' },
+          },
+
+          reviewComment: {
+            $actions: [
+              { role: 'repo:repo/contributor', can: ['create', 'read'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+            ],
+            $tags: {
+              $allowUndefinedTags : true,
+              path                : { type: 'string' },
+              line                : { type: 'integer' },
+              side                : { type: 'string', enum: ['left', 'right'] },
+            },
           },
         },
-      },
 
-      statusChange: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-          { who: 'author', of: 'patch', can: ['create'] },
-        ],
-      },
+        statusChange: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+            { who: 'author', of: 'repo/patch', can: ['create'] },
+          ],
+        },
 
-      mergeResult: {
-        $immutable   : true,
-        $recordLimit : { max: 1, strategy: 'reject' },
-        $actions     : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-        ],
-        $tags: {
-          $requiredTags       : ['mergeCommit', 'strategy'],
-          $allowUndefinedTags : false,
-          mergeCommit         : { type: 'string' },
-          strategy            : { type: 'string', enum: ['merge', 'squash', 'rebase'] },
+        mergeResult: {
+          $immutable   : true,
+          $recordLimit : { max: 1, strategy: 'reject' },
+          $actions     : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+          ],
+          $tags: {
+            $requiredTags       : ['mergeCommit', 'strategy'],
+            $allowUndefinedTags : false,
+            mergeCommit         : { type: 'string' },
+            strategy            : { type: 'string', enum: ['merge', 'squash', 'rebase'] },
+          },
         },
       },
     },
@@ -493,40 +503,43 @@ export const ForgeCiDefinition = {
     artifact   : { dataFormats: ['application/octet-stream', 'application/gzip'] },
   },
   structure: {
-    checkSuite: {
-      $actions: [
-        { role: 'repo:repo/contributor', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['commitSha', 'status', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        commitSha           : { type: 'string' },
-        status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
-        conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
-        repoRecordId        : { type: 'string' },
-        branch              : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      checkRun: {
+      checkSuite: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['read'] },
-          { who: 'author', of: 'checkSuite', can: ['create', 'update'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update'] },
         ],
         $tags: {
-          $requiredTags       : ['name', 'status'],
+          $requiredTags       : ['commitSha', 'status'],
           $allowUndefinedTags : false,
-          name                : { type: 'string' },
+          commitSha           : { type: 'string' },
           status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
           conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
+          branch              : { type: 'string' },
         },
 
-        artifact: {
-          $actions : [
+        checkRun: {
+          $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
-            { who: 'author', of: 'checkSuite', can: ['create'] },
+            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update'] },
           ],
-          $size: { max: 104857600 },  // 100MB per artifact
+          $tags: {
+            $requiredTags       : ['name', 'status'],
+            $allowUndefinedTags : false,
+            name                : { type: 'string' },
+            status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
+            conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
+          },
+
+          artifact: {
+            $actions : [
+              { role: 'repo:repo/contributor', can: ['read'] },
+              { who: 'author', of: 'repo/checkSuite', can: ['create'] },
+            ],
+            $size: { max: 104857600 },  // 100MB per artifact
+          },
         },
       },
     },
@@ -551,43 +564,46 @@ export const ForgeReleasesDefinition = {
     signature : { dataFormats: ['application/pgp-signature', 'application/json'] },
   },
   structure: {
-    release: {
-      $actions: [
-        { who: 'anyone', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
-      ],
-      $tags: {
-        $requiredTags       : ['tagName', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        tagName             : { type: 'string' },
-        repoRecordId        : { type: 'string' },
-        commitSha           : { type: 'string' },
-        prerelease          : { type: 'boolean' },
-        draft               : { type: 'boolean' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      asset: {
-        $immutable : true,   // Published binaries must not be silently replaced (supply chain security)
-        $actions   : [
+      release: {
+        $actions: [
           { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
         ],
         $tags: {
-          $requiredTags       : ['filename', 'contentType'],
+          $requiredTags       : ['tagName'],
           $allowUndefinedTags : false,
-          filename            : { type: 'string' },
-          contentType         : { type: 'string' },
-          size                : { type: 'integer' },
+          tagName             : { type: 'string' },
+          commitSha           : { type: 'string' },
+          prerelease          : { type: 'boolean' },
+          draft               : { type: 'boolean' },
         },
-      },
 
-      signature: {
-        $immutable   : true,
-        $recordLimit : { max: 1, strategy: 'reject' },
-        $actions     : [
-          { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-        ],
+        asset: {
+          $immutable : true,   // Published binaries must not be silently replaced (supply chain security)
+          $actions   : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['filename', 'contentType'],
+            $allowUndefinedTags : false,
+            filename            : { type: 'string' },
+            contentType         : { type: 'string' },
+            size                : { type: 'integer' },
+          },
+        },
+
+        signature: {
+          $immutable   : true,
+          $recordLimit : { max: 1, strategy: 'reject' },
+          $actions     : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+          ],
+        },
       },
     },
   },
@@ -753,27 +769,30 @@ export const ForgeWikiDefinition = {
     pageHistory : { schema: 'https://enbox.org/schemas/forge/wiki-history', dataFormats: ['application/json'] },
   },
   structure: {
-    page: {
-      $actions: [
-        { who: 'anyone', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
-        { role: 'repo:repo/contributor', can: ['create', 'update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['slug', 'title', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        slug                : { type: 'string' },
-        title               : { type: 'string' },
-        repoRecordId        : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      pageHistory: {
-        $immutable : true,
-        $actions   : [
+      page: {
+        $actions: [
           { who: 'anyone', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-          { role: 'repo:repo/contributor', can: ['create'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+          { role: 'repo:repo/contributor', can: ['create', 'update'] },
         ],
+        $tags: {
+          $requiredTags       : ['slug', 'title'],
+          $allowUndefinedTags : false,
+          slug                : { type: 'string' },
+          title               : { type: 'string' },
+        },
+
+        pageHistory: {
+          $immutable : true,
+          $actions   : [
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+            { role: 'repo:repo/contributor', can: ['create'] },
+          ],
+        },
       },
     },
   },
@@ -1089,15 +1108,15 @@ await agent.dwn.processRequest({
   messageType  : DwnInterface.RecordsWrite,
   messageParams: {
     protocol        : 'https://enbox.org/protocols/forge/patches',
-    protocolPath    : 'patch',
+    protocolPath    : 'repo/patch',
     protocolRole    : 'repo:repo/contributor',
+    parentContextId : bobsRepoContextId,  // Links to repo via $ref
     dataFormat      : 'application/json',
     tags            : {
-      status       : 'open',
-      repoRecordId : bobsRepoRecordId,
-      baseBranch   : 'main',
-      headBranch   : 'feature-x',
-      sourceDid    : aliceDid,
+      status     : 'open',
+      baseBranch : 'main',
+      headBranch : 'feature-x',
+      sourceDid  : aliceDid,
     },
   },
   dataStream: new Blob([JSON.stringify({ title: 'Add feature X', body: '...' })]),
@@ -1123,7 +1142,7 @@ DWN records support arbitrary data sizes via streaming. For a git LFS equivalent
 ### 10.3 Performance at Scale
 
 The core bottleneck: querying thousands of records. Mitigations:
-- **Tag-based filtering** pushes selectivity into the DWN (`tags: { status: 'open', repoRecordId: '...' }`)
+- **Tag-based filtering** pushes selectivity into the DWN (`tags: { status: 'open' }`), combined with `contextId`-scoped queries that leverage the `$ref` repo context
 - **Pagination** with cursors for large result sets
 - **`RecordsCount`** for efficient counting without fetching full records
 - **`RecordsSubscribe`** for real-time updates (no polling)
@@ -1163,7 +1182,7 @@ A migration tool:
 
 ## 11. Implementation Roadmap
 
-### Phase 0: Protocols & Scaffolding (current)
+### Phase 0: Protocols & Scaffolding (complete)
 
 - [x] Architecture document (this file)
 - [x] TypeScript protocol definitions for all 10 protocols
@@ -1171,14 +1190,15 @@ A migration tool:
 - [x] Structural tests (220 tests, 615 assertions)
 - [x] Package setup (bun, TypeScript, ESLint, build)
 
-### Phase 1: Core Protocols (MVP)
+### Phase 1: Core Protocols (current)
 
 The smallest useful forge — repos, issues, patches.
 
-- [ ] **forge-repo**: repo CRUD, collaborator role management
-- [ ] **forge-issues**: issue CRUD, comments, labels, status changes
-- [ ] **forge-patches**: PR CRUD, revisions, reviews, merge results
-- [ ] Integration tests against a real DWN instance
+- [x] **forge-repo**: repo CRUD, collaborator role management — protocol definition complete, integration-tested
+- [x] **forge-issues**: issue CRUD, comments, labels, status changes — protocol definition complete, integration-tested (cross-protocol roles via `$ref`)
+- [x] **forge-patches**: PR CRUD, revisions, reviews, merge results — protocol definition complete, integration-tested (cross-protocol roles via `$ref`)
+- [x] Integration tests against a real DWN instance — 15 tests covering repo, issues, patches, CI, and role revocation (242 total tests, 738 assertions)
+- [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
 - [ ] CLI prototype: `dwn-git init`, `dwn-git issue create`, `dwn-git patch create`
 
 ### Phase 2: Git Transport

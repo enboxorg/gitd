@@ -65,39 +65,42 @@ export const ForgeCiDefinition = {
     },
   },
   structure: {
-    checkSuite: {
-      $actions: [
-        { role: 'repo:repo/contributor', can: ['read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['commitSha', 'status', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        commitSha           : { type: 'string' },
-        status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
-        conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
-        repoRecordId        : { type: 'string' },
-        branch              : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      checkRun: {
+      checkSuite: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['read'] },
-          { who: 'author', of: 'checkSuite', can: ['create', 'update'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update'] },
         ],
         $tags: {
-          $requiredTags       : ['name', 'status'],
+          $requiredTags       : ['commitSha', 'status'],
           $allowUndefinedTags : false,
-          name                : { type: 'string' },
+          commitSha           : { type: 'string' },
           status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
           conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
+          branch              : { type: 'string' },
         },
 
-        artifact: {
+        checkRun: {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
-            { who: 'author', of: 'checkSuite', can: ['create'] },
+            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update'] },
           ],
+          $tags: {
+            $requiredTags       : ['name', 'status'],
+            $allowUndefinedTags : false,
+            name                : { type: 'string' },
+            status              : { type: 'string', enum: ['queued', 'in_progress', 'completed'] },
+            conclusion          : { type: 'string', enum: ['success', 'failure', 'cancelled', 'skipped'] },
+          },
+
+          artifact: {
+            $actions: [
+              { role: 'repo:repo/contributor', can: ['read'] },
+              { who: 'author', of: 'repo/checkSuite', can: ['create'] },
+            ],
+          },
         },
       },
     },

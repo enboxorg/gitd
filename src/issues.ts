@@ -102,83 +102,86 @@ export const ForgeIssuesDefinition = {
     },
   },
   structure: {
-    issue: {
-      $actions: [
-        { role: 'repo:repo/contributor', can: ['create', 'read'] },
-        { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
-        { role: 'repo:repo/triager', can: ['read', 'update'] },
-        { who: 'author', of: 'issue', can: ['update'] },
-      ],
-      $tags: {
-        $requiredTags       : ['status', 'repoRecordId'],
-        $allowUndefinedTags : false,
-        status              : { type: 'string', enum: ['open', 'closed'] },
-        repoRecordId        : { type: 'string' },
-        priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-        milestone           : { type: 'string' },
-      },
+    repo: {
+      $ref: 'repo:repo',
 
-      comment: {
+      issue: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
-          { who: 'author', of: 'issue/comment', can: ['update', 'delete'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+          { role: 'repo:repo/triager', can: ['create', 'read', 'co-update'] },
+          { who: 'author', of: 'repo/issue', can: ['create', 'update'] },
         ],
+        $tags: {
+          $requiredTags       : ['status'],
+          $allowUndefinedTags : false,
+          status              : { type: 'string', enum: ['open', 'closed'] },
+          priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          milestone           : { type: 'string' },
+        },
 
-        reaction: {
+        comment: {
           $actions: [
-            { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            { who: 'author', of: 'repo/issue/comment', can: ['create', 'update', 'delete'] },
           ],
-          $tags: {
-            $requiredTags       : ['emoji'],
-            $allowUndefinedTags : false,
-            emoji               : { type: 'string', maxLength: 10 },
+
+          reaction: {
+            $actions: [
+              { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            ],
+            $tags: {
+              $requiredTags       : ['emoji'],
+              $allowUndefinedTags : false,
+              emoji               : { type: 'string', maxLength: 10 },
+            },
           },
         },
-      },
 
-      label: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
-          { role: 'repo:repo/triager', can: ['create', 'delete'] },
-        ],
-        $tags: {
-          $requiredTags       : ['name', 'color'],
-          $allowUndefinedTags : false,
-          name                : { type: 'string' },
-          color               : { type: 'string' },
+        label: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['name', 'color'],
+            $allowUndefinedTags : false,
+            name                : { type: 'string' },
+            color               : { type: 'string' },
+          },
         },
-      },
 
-      statusChange: {
-        $immutable : true,
-        $actions   : [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create'] },
-          { role: 'repo:repo/triager', can: ['create'] },
-          { who: 'author', of: 'issue', can: ['create'] },
-        ],
-        $tags: {
-          $requiredTags       : ['from', 'to'],
-          $allowUndefinedTags : false,
-          from                : { type: 'string', enum: ['open', 'closed'] },
-          to                  : { type: 'string', enum: ['open', 'closed'] },
+        statusChange: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create'] },
+            { role: 'repo:repo/triager', can: ['create'] },
+            { who: 'author', of: 'repo/issue', can: ['create'] },
+          ],
+          $tags: {
+            $requiredTags       : ['from', 'to'],
+            $allowUndefinedTags : false,
+            from                : { type: 'string', enum: ['open', 'closed'] },
+            to                  : { type: 'string', enum: ['open', 'closed'] },
+          },
         },
-      },
 
-      assignment: {
-        $actions: [
-          { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
-          { role: 'repo:repo/triager', can: ['create', 'delete'] },
-        ],
-        $tags: {
-          $requiredTags       : ['assigneeDid'],
-          $allowUndefinedTags : false,
-          assigneeDid         : { type: 'string' },
+        assignment: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['assigneeDid'],
+            $allowUndefinedTags : false,
+            assigneeDid         : { type: 'string' },
+          },
         },
       },
     },
