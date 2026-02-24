@@ -2,14 +2,17 @@
  * `dwn-git serve` — start the git transport sidecar server.
  *
  * Starts a smart HTTP git server that serves bare repositories and
- * authenticates pushes using DID-signed tokens.
+ * authenticates pushes using DID-signed tokens. After each successful
+ * push, git refs are mirrored to DWN records via ForgeRefsProtocol.
  *
  * Usage: dwn-git serve [--port <port>] [--repos <path>] [--prefix <path>]
+ *                       [--public-url <url>]
  *
  * Environment:
- *   DWN_GIT_PORT     — server port (default: 9418)
- *   DWN_GIT_REPOS    — base path for bare repos (default: ./repos)
- *   DWN_GIT_PREFIX   — URL path prefix (default: none)
+ *   DWN_GIT_PORT        — server port (default: 9418)
+ *   DWN_GIT_REPOS       — base path for bare repos (default: ./repos)
+ *   DWN_GIT_PREFIX      — URL path prefix (default: none)
+ *   DWN_GIT_PUBLIC_URL  — public URL for the server (enables DID service registration)
  *
  * @module
  */
@@ -17,8 +20,12 @@
 import type { AgentContext } from '../agent.js';
 
 import { createDidSignatureVerifier } from '../../git-server/verify.js';
+import { createDwnPushAuthorizer } from '../../git-server/push-authorizer.js';
 import { createGitServer } from '../../git-server/server.js';
 import { createPushAuthenticator } from '../../git-server/auth.js';
+import { createRefSyncer } from '../../git-server/ref-sync.js';
+import { getRepoContextId } from '../repo-context.js';
+import { registerGitService } from '../../git-server/did-service.js';
 
 // ---------------------------------------------------------------------------
 // Command
@@ -28,13 +35,29 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const port = parseInt(flagValue(args, '--port') ?? process.env.DWN_GIT_PORT ?? '9418', 10);
   const basePath = flagValue(args, '--repos') ?? process.env.DWN_GIT_REPOS ?? './repos';
   const pathPrefix = flagValue(args, '--prefix') ?? process.env.DWN_GIT_PREFIX;
+  const publicUrl = flagValue(args, '--public-url') ?? process.env.DWN_GIT_PUBLIC_URL;
 
+  // Look up the repo contextId for ref syncing.
+  const repoContextId = await getRepoContextId(ctx);
+
+  // DID-based signature verification for push tokens.
   const verifySignature = createDidSignatureVerifier();
+
+  // DWN-based push authorization — checks role records.
+  const authorizePush = createDwnPushAuthorizer({
+    repo     : ctx.repo,
+    ownerDid : ctx.did,
+  });
 
   const authenticatePush = createPushAuthenticator({
     verifySignature,
-    // For now, any authenticated DID can push. Role-based auth will be
-    // added when DWN role queries are integrated.
+    authorizePush,
+  });
+
+  // Post-push ref sync — mirrors git refs to ForgeRefsProtocol DWN records.
+  const onPushComplete = createRefSyncer({
+    refs          : ctx.refs,
+    repoContextId : repoContextId,
   });
 
   const server = await createGitServer({
@@ -42,7 +65,32 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     port,
     pathPrefix,
     authenticatePush,
+    onPushComplete,
   });
+
+  // Register the git endpoint in the DID document (if public URL is provided).
+  if (publicUrl) {
+    try {
+      await registerGitService(ctx.web5, publicUrl);
+      console.log(`Registered GitTransport service: ${publicUrl}`);
+
+      // Update the repo record with the git endpoint.
+      const { records } = await ctx.repo.records.query('repo');
+      if (records.length > 0) {
+        const record = records[0];
+        const data = await record.data.json();
+        const gitEndpoints = data.gitEndpoints ?? [];
+        if (!gitEndpoints.includes(publicUrl)) {
+          gitEndpoints.push(publicUrl);
+          await record.update({
+            data: { ...data, gitEndpoints },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`Warning: Could not register git service: ${(err as Error).message}`);
+    }
+  }
 
   console.log(`dwn-git server listening on port ${server.port}`);
   console.log(`  DID:     ${ctx.did}`);
@@ -50,8 +98,14 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   if (pathPrefix) {
     console.log(`  Prefix:  ${pathPrefix}`);
   }
+  if (publicUrl) {
+    console.log(`  Public:  ${publicUrl}`);
+  }
   console.log('');
   console.log(`Clone URL: git clone http://localhost:${server.port}/${ctx.did}/<repo>`);
+  if (publicUrl) {
+    console.log(`Public:    git clone did::${ctx.did}/<repo>`);
+  }
   console.log('');
   console.log('Press Ctrl+C to stop.');
 
