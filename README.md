@@ -68,6 +68,15 @@ dwn-git registry versions my-pkg # List published versions
 dwn-git registry list             # List all packages
 dwn-git registry yank my-pkg 1.0.0
 
+# Attestations & verification
+dwn-git registry attest my-pkg 1.0.0 --claim reproducible-build
+dwn-git registry attestations my-pkg 1.0.0
+dwn-git registry verify my-pkg 1.0.0 --trusted did:jwk:build-svc
+
+# Package resolution & trust chain
+dwn-git registry resolve did:dht:abc/my-pkg@1.0.0
+dwn-git registry verify-deps did:dht:abc/my-pkg@1.0.0 --trusted did:jwk:ci
+
 # Wiki
 dwn-git wiki create getting-started "Getting Started" --body "# Welcome"
 dwn-git wiki show getting-started
@@ -166,6 +175,26 @@ dwn-git whoami                    # Show connected DID
 - CORS enabled, `X-GitHub-Media-Type: github.v3` header
 - Start with `dwn-git github-api [--port <port>]` (default: 8181, configurable via `DWN_GIT_GITHUB_API_PORT`)
 
+### Attestation System
+
+- Third-party build verification via `$immutable` attestation records
+- Attestors (CI services, auditors) create signed claims about package versions
+- Claims include `reproducible-build`, `code-review`, `security-audit`, etc.
+- Optional `sourceCommit` and `sourceRepo` fields link attestations to specific builds
+- `dwn-git registry attest <name> <version> --claim <claim>` to create attestations
+- `dwn-git registry attestations <name> <version>` to list all attestations
+- `dwn-git registry verify <name> <version> [--trusted <did>,...]` to verify integrity
+
+### Package Resolver & Trust Chain
+
+- Resolves DID-scoped packages from remote DWNs: `did:dht:abc123/my-pkg@1.0.0`
+- Resolution flow: resolve DID -> query package -> query version -> fetch tarball
+- Verification checks: package exists, publisher match, version author, tarball integrity, attestations
+- Recursive dependency trust chain validation with cycle detection and depth limiting
+- `dwn-git registry resolve <did>/<name>@<version>` to resolve and inspect a remote package
+- `dwn-git registry verify-deps <did>/<name>@<version>` to build and verify the full dependency tree
+- No central authority — the entire chain is verifiable via DIDs and DWN record signatures
+
 ## Architecture
 
 See [PLAN.md](./PLAN.md) for the full architecture document covering:
@@ -220,6 +249,9 @@ import { IndexerStore, IndexerCrawler, handleApiRequest } from '@enbox/dwn-git/i
 
 // GitHub API compatibility shim
 import { handleShimRequest, startShimServer } from '@enbox/dwn-git/github-shim';
+
+// Package resolver and trust chain
+import { resolveFullPackage, verifyPackageVersion, buildTrustChain } from '@enbox/dwn-git/resolver';
 ```
 
 ## Development
@@ -234,7 +266,7 @@ bun test               # Run all tests
 
 ## Status
 
-**Phase 5 complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, read-only web UI, indexer service, and GitHub API compatibility shim. 666+ tests across 17 test files. See PLAN.md Section 12 for the full roadmap.
+**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, and GitHub API compatibility shim. 707+ tests across 18 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 

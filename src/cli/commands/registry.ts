@@ -11,6 +11,12 @@
  *   dwn-git registry versions <name>
  *   dwn-git registry list [--ecosystem <npm|cargo|pip|go>]
  *   dwn-git registry yank <name> <version>
+ *   dwn-git registry attest <name> <version> --claim <claim>
+ *       [--source-commit <sha>] [--source-repo <did/id>]
+ *   dwn-git registry attestations <name> <version>
+ *   dwn-git registry verify <name> <version> [--trusted <did>,...]
+ *   dwn-git registry resolve <did>/<name>@<version>
+ *   dwn-git registry verify-deps <did>/<name>@<version> [--trusted <did>,...]
  *
  * @module
  */
@@ -20,8 +26,10 @@ import type { AgentContext } from '../agent.js';
 import { readFile, stat } from 'node:fs/promises';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
-
 import { flagValue } from '../flags.js';
+
+import { buildTrustChain, formatTrustChain, parseSpecifier, resolveFullPackage } from '../../resolver/index.js';
+import { fetchAttestations, verifyPackageVersion } from '../../resolver/verify.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -38,8 +46,13 @@ export async function registryCommand(ctx: AgentContext, args: string[]): Promis
     case 'list':
     case 'ls': return registryList(ctx, rest);
     case 'yank': return registryYank(ctx, rest);
+    case 'attest': return registryAttest(ctx, rest);
+    case 'attestations': return registryAttestations(ctx, rest);
+    case 'verify': return registryVerify(ctx, rest);
+    case 'resolve': return registryResolve(ctx, rest);
+    case 'verify-deps': return registryVerifyDeps(ctx, rest);
     default:
-      console.error('Usage: dwn-git registry <publish|info|versions|list|yank>');
+      console.error('Usage: dwn-git registry <publish|info|versions|list|yank|attest|attestations|verify|resolve|verify-deps>');
       process.exit(1);
   }
 }
@@ -281,6 +294,219 @@ async function registryYank(ctx: AgentContext, args: string[]): Promise<void> {
   // we note that $immutable versions cannot be mutated and print a message.
   console.log(`Note: Version records are immutable. ${name}@${version} cannot be modified.`);
   console.log('To deprecate, publish a new version or update the package description.');
+}
+
+// ---------------------------------------------------------------------------
+// registry attest
+// ---------------------------------------------------------------------------
+
+async function registryAttest(ctx: AgentContext, args: string[]): Promise<void> {
+  const name = args[0];
+  const version = args[1];
+  const claim = flagValue(args, '--claim');
+  const sourceCommit = flagValue(args, '--source-commit');
+  const sourceRepo = flagValue(args, '--source-repo');
+
+  if (!name || !version || !claim) {
+    console.error('Usage: dwn-git registry attest <name> <version> --claim <claim> [--source-commit <sha>] [--source-repo <did/id>]');
+    process.exit(1);
+  }
+
+  // Find the package and version.
+  const pkg = await findPackageByName(ctx, name);
+  if (!pkg) {
+    console.error(`Package "${name}" not found.`);
+    process.exit(1);
+  }
+
+  const verRecord = await findVersion(ctx, pkg.contextId, version);
+  if (!verRecord) {
+    console.error(`Version ${version} not found for ${name}.`);
+    process.exit(1);
+  }
+
+  // Create the attestation record.
+  const attestationData: Record<string, string> = {
+    attestorDid: ctx.did,
+    claim,
+  };
+  if (sourceCommit) { attestationData.sourceCommit = sourceCommit; }
+  if (sourceRepo) { attestationData.sourceRepo = sourceRepo; }
+
+  const { status } = await ctx.registry.records.create('package/version/attestation' as any, {
+    data            : attestationData,
+    parentContextId : verRecord.contextId,
+  } as any);
+
+  if (status.code >= 300) {
+    console.error(`Failed to create attestation: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  console.log(`Attestation created for ${name}@${version}`);
+  console.log(`  Attestor: ${ctx.did}`);
+  console.log(`  Claim:    ${claim}`);
+  if (sourceCommit) { console.log(`  Commit:   ${sourceCommit}`); }
+  if (sourceRepo) { console.log(`  Repo:     ${sourceRepo}`); }
+}
+
+// ---------------------------------------------------------------------------
+// registry attestations
+// ---------------------------------------------------------------------------
+
+async function registryAttestations(ctx: AgentContext, args: string[]): Promise<void> {
+  const name = args[0];
+  const version = args[1];
+
+  if (!name || !version) {
+    console.error('Usage: dwn-git registry attestations <name> <version>');
+    process.exit(1);
+  }
+
+  const pkg = await findPackageByName(ctx, name);
+  if (!pkg) {
+    console.error(`Package "${name}" not found.`);
+    process.exit(1);
+  }
+
+  const verRecord = await findVersion(ctx, pkg.contextId, version);
+  if (!verRecord) {
+    console.error(`Version ${version} not found for ${name}.`);
+    process.exit(1);
+  }
+
+  const attestations = await fetchAttestations(ctx, ctx.did, verRecord.contextId ?? '');
+
+  if (attestations.length === 0) {
+    console.log(`No attestations for ${name}@${version}.`);
+    return;
+  }
+
+  console.log(`Attestations for ${name}@${version} (${attestations.length}):\n`);
+  for (const att of attestations) {
+    console.log(`  Attestor:  ${att.attestorDid}`);
+    console.log(`  Claim:     ${att.claim}`);
+    if (att.sourceCommit) { console.log(`  Commit:    ${att.sourceCommit}`); }
+    if (att.sourceRepo) { console.log(`  Repo:      ${att.sourceRepo}`); }
+    console.log(`  Created:   ${att.dateCreated?.slice(0, 10) ?? ''}`);
+    console.log('');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// registry verify
+// ---------------------------------------------------------------------------
+
+async function registryVerify(ctx: AgentContext, args: string[]): Promise<void> {
+  const name = args[0];
+  const version = args[1];
+  const trustedArg = flagValue(args, '--trusted');
+  const trustedAttestors = trustedArg ? trustedArg.split(',') : [];
+
+  if (!name || !version) {
+    console.error('Usage: dwn-git registry verify <name> <version> [--trusted <did>,...]');
+    process.exit(1);
+  }
+
+  const result = await verifyPackageVersion(ctx, ctx.did, name, version, 'npm', trustedAttestors);
+
+  console.log(`Verification for ${name}@${version}:`);
+  console.log(`  Publisher: ${result.publisherDid}`);
+  console.log(`  Overall:  ${result.passed ? 'PASS' : 'FAIL'}`);
+  console.log('');
+
+  for (const check of result.checks) {
+    const mark = check.passed ? '+' : 'x';
+    console.log(`  [${mark}] ${check.check}: ${check.detail}`);
+  }
+
+  if (result.attestations.length > 0) {
+    console.log(`\n  Attestations (${result.attestations.length}):`);
+    for (const att of result.attestations) {
+      console.log(`    ${att.claim} by ${att.attestorDid}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// registry resolve
+// ---------------------------------------------------------------------------
+
+async function registryResolve(ctx: AgentContext, args: string[]): Promise<void> {
+  const specifier = args[0];
+  const ecosystem = flagValue(args, '--ecosystem') ?? 'npm';
+
+  if (!specifier) {
+    console.error('Usage: dwn-git registry resolve <did>/<name>@<version> [--ecosystem <eco>]');
+    process.exit(1);
+  }
+
+  const parsed = parseSpecifier(specifier);
+  if (!parsed) {
+    console.error(`Invalid specifier: ${specifier}`);
+    console.error('Expected format: did:method:id/name@version');
+    process.exit(1);
+  }
+
+  console.log(`Resolving ${parsed.did}/${parsed.name}@${parsed.version} (${ecosystem})...`);
+
+  const result = await resolveFullPackage(ctx, parsed.did, parsed.name, parsed.version, ecosystem);
+
+  if (!result) {
+    console.error(`Package not found: ${specifier}`);
+    process.exit(1);
+  }
+
+  console.log(`\nPackage: ${result.package.name}`);
+  console.log(`  Publisher:    ${result.package.publisherDid}`);
+  console.log(`  Ecosystem:    ${result.package.ecosystem}`);
+  if (result.package.description) { console.log(`  Description:  ${result.package.description}`); }
+  console.log(`\nVersion: ${result.version.semver}`);
+  console.log(`  Author:       ${result.version.author}`);
+  console.log(`  Created:      ${result.version.dateCreated?.slice(0, 10) ?? ''}`);
+  console.log(`  Deprecated:   ${result.version.deprecated}`);
+
+  const depCount = Object.keys(result.version.dependencies).length;
+  if (depCount > 0) {
+    console.log(`  Dependencies: ${depCount}`);
+    for (const [dep, ver] of Object.entries(result.version.dependencies)) {
+      console.log(`    ${dep}: ${ver}`);
+    }
+  }
+
+  console.log(`\nTarball: ${result.tarball ? `${result.tarball.length} bytes` : 'not found'}`);
+}
+
+// ---------------------------------------------------------------------------
+// registry verify-deps
+// ---------------------------------------------------------------------------
+
+async function registryVerifyDeps(ctx: AgentContext, args: string[]): Promise<void> {
+  const specifier = args[0];
+  const trustedArg = flagValue(args, '--trusted');
+  const trustedAttestors = trustedArg ? trustedArg.split(',') : [];
+  const ecosystem = flagValue(args, '--ecosystem') ?? 'npm';
+
+  if (!specifier) {
+    console.error('Usage: dwn-git registry verify-deps <did>/<name>@<version> [--trusted <did>,...] [--ecosystem <eco>]');
+    process.exit(1);
+  }
+
+  const parsed = parseSpecifier(specifier);
+  if (!parsed) {
+    console.error(`Invalid specifier: ${specifier}`);
+    console.error('Expected format: did:method:id/name@version');
+    process.exit(1);
+  }
+
+  console.log(`Building trust chain for ${specifier}...`);
+
+  const result = await buildTrustChain(
+    ctx, parsed.did, parsed.name, parsed.version, ecosystem, trustedAttestors,
+  );
+
+  console.log('');
+  console.log(formatTrustChain(result));
 }
 
 // ---------------------------------------------------------------------------

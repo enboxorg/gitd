@@ -45,6 +45,10 @@
     "./github-shim": {
       "types": "./dist/types/github-shim/index.d.ts",
       "import": "./dist/esm/github-shim/index.js"
+    },
+    "./resolver": {
+      "types": "./dist/types/resolver/index.d.ts",
+      "import": "./dist/esm/resolver/index.js"
     }
   },
   "keywords": [
