@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/wiki-page",
+  "title": "PageData",
+  "description": "Metadata for a wiki page whose content is stored as text/markdown",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    }
+  },
+  "required": ["title", "slug"],
+  "additionalProperties": false
+}

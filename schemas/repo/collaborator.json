@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/collaborator",
+  "title": "CollaboratorData",
+  "description": "A collaborator entry identifying a DID and optional alias, shared by maintainer, triager, and contributor roles.",
+  "type": "object",
+  "properties": {
+    "did": {
+      "type": "string"
+    },
+    "alias": {
+      "type": "string"
+    }
+  },
+  "required": ["did"],
+  "additionalProperties": false
+}

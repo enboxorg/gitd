@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/review",
+  "title": "ReviewData",
+  "description": "A patch review with an optional body.",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

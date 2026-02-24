@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/webhook",
+  "title": "WebhookData",
+  "description": "A webhook configuration specifying a callback URL, shared secret, subscribed events, and active status.",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "secret": {
+      "type": "string"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "active": {
+      "type": "boolean"
+    }
+  },
+  "required": ["url", "secret", "events", "active"],
+  "additionalProperties": false
+}

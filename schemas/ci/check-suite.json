@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/check-suite",
+  "title": "CheckSuiteData",
+  "description": "A CI check suite associated with a branch",
+  "type": "object",
+  "properties": {
+    "headBranch": {
+      "type": "string"
+    },
+    "conclusion": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": "string"
+    },
+    "completedAt": {
+      "type": "string"
+    }
+  },
+  "required": ["headBranch"],
+  "additionalProperties": false
+}

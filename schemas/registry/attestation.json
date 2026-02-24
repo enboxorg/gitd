@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/attestation",
+  "title": "AttestationData",
+  "description": "A signed attestation claim about a package or artifact",
+  "type": "object",
+  "properties": {
+    "attestorDid": {
+      "type": "string"
+    },
+    "claim": {
+      "type": "string"
+    },
+    "sourceCommit": {
+      "type": "string"
+    },
+    "sourceRepo": {
+      "type": "string"
+    }
+  },
+  "required": ["attestorDid", "claim"],
+  "additionalProperties": false
+}

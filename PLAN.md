@@ -1166,10 +1166,10 @@ A migration tool:
 ### Phase 0: Protocols & Scaffolding (current)
 
 - [x] Architecture document (this file)
-- [ ] TypeScript protocol definitions for all 10 protocols
-- [ ] JSON Schema files for each record type
-- [ ] Structural tests (protocol URIs, types, roles, tags, directives)
-- [ ] Package setup (bun, TypeScript, ESLint, build)
+- [x] TypeScript protocol definitions for all 10 protocols
+- [x] JSON Schema files for each record type (33 schemas)
+- [x] Structural tests (220 tests, 615 assertions)
+- [x] Package setup (bun, TypeScript, ESLint, build)
 
 ### Phase 1: Core Protocols (MVP)
 
@@ -1226,7 +1226,7 @@ dwn-git/
 ├── LICENSE
 ├── package.json
 ├── tsconfig.json
-├── eslint.config.cjs
+├── eslint.config.js
 ├── src/
 │   ├── index.ts                # Barrel re-export of all protocols
 │   ├── repo.ts                 # ForgeRepoDefinition + types

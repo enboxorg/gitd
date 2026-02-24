@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/settings",
+  "title": "SettingsData",
+  "description": "Repository settings including branch protection rules, merge strategies, and auto-delete behavior.",
+  "type": "object",
+  "properties": {
+    "branchProtection": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "requiredReviews": {
+            "type": "integer"
+          },
+          "requiredChecks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "mergeStrategies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["merge", "squash", "rebase"]
+      }
+    },
+    "autoDeleteBranch": {
+      "type": "boolean"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

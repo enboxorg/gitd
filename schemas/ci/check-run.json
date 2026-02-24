@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/check-run",
+  "title": "CheckRunData",
+  "description": "An individual check run within a check suite",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": "string"
+    },
+    "completedAt": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
