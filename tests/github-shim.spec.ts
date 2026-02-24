@@ -1,0 +1,727 @@
+/**
+ * GitHub API compatibility shim tests — exercises `handleShimRequest()`
+ * against a real Web5 agent populated with DWN records.
+ *
+ * The test agent is created once in `beforeAll`, records are seeded, and
+ * then each test calls `handleShimRequest()` directly with a constructed
+ * URL.  No HTTP server is started.
+ *
+ * Validates that DWN records are correctly mapped to GitHub REST API v3
+ * JSON response shapes.
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+
+import { rmSync } from 'node:fs';
+
+import { Web5 } from '@enbox/api';
+import { Web5UserAgent } from '@enbox/agent';
+
+import type { AgentContext } from '../src/cli/agent.js';
+import type { JsonResponse } from '../src/github-shim/helpers.js';
+
+import { ForgeCiProtocol } from '../src/ci.js';
+import { ForgeIssuesProtocol } from '../src/issues.js';
+import { ForgeNotificationsProtocol } from '../src/notifications.js';
+import { ForgeOrgProtocol } from '../src/org.js';
+import { ForgePatchesProtocol } from '../src/patches.js';
+import { ForgeRefsProtocol } from '../src/refs.js';
+import { ForgeRegistryProtocol } from '../src/registry.js';
+import { ForgeReleasesProtocol } from '../src/releases.js';
+import { ForgeRepoProtocol } from '../src/repo.js';
+import { ForgeSocialProtocol } from '../src/social.js';
+import { ForgeWikiProtocol } from '../src/wiki.js';
+import { handleShimRequest } from '../src/github-shim/server.js';
+import { numericId } from '../src/github-shim/helpers.js';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DATA_PATH = '__TESTDATA__/github-shim-agent';
+const BASE = 'http://localhost:8181';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let testDid: string;
+
+function url(path: string): URL {
+  return new URL(path, BASE);
+}
+
+function repoUrl(subPath: string): URL {
+  return url(`/repos/${testDid}/test-repo${subPath}`);
+}
+
+function parse(res: JsonResponse): any {
+  return JSON.parse(res.body);
+}
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+describe('GitHub API compatibility shim', () => {
+  let ctx: AgentContext;
+
+  beforeAll(async () => {
+    rmSync(DATA_PATH, { recursive: true, force: true });
+
+    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    await agent.initialize({ password: 'test-password' });
+    await agent.start({ password: 'test-password' });
+
+    const identities = await agent.identity.list();
+    let identity = identities[0];
+    if (!identity) {
+      identity = await agent.identity.create({
+        didMethod : 'jwk',
+        metadata  : { name: 'GitHub Shim Test' },
+      });
+    }
+
+    const result = await Web5.connect({
+      agent,
+      connectedDid : identity.did.uri,
+      sync         : 'off',
+    });
+    const { web5, did } = result;
+    testDid = did;
+
+    const repo = web5.using(ForgeRepoProtocol);
+    const refs = web5.using(ForgeRefsProtocol);
+    const issues = web5.using(ForgeIssuesProtocol);
+    const patches = web5.using(ForgePatchesProtocol);
+    const ci = web5.using(ForgeCiProtocol);
+    const releases = web5.using(ForgeReleasesProtocol);
+    const registry = web5.using(ForgeRegistryProtocol);
+    const social = web5.using(ForgeSocialProtocol);
+    const notifications = web5.using(ForgeNotificationsProtocol);
+    const wiki = web5.using(ForgeWikiProtocol);
+    const org = web5.using(ForgeOrgProtocol);
+
+    await repo.configure();
+    await refs.configure();
+    await issues.configure();
+    await patches.configure();
+    await ci.configure();
+    await releases.configure();
+    await registry.configure();
+    await social.configure();
+    await notifications.configure();
+    await wiki.configure();
+    await org.configure();
+
+    ctx = {
+      did, repo, refs, issues, patches, ci, releases,
+      registry, social, notifications, wiki, org, web5,
+    };
+
+    // -----------------------------------------------------------------------
+    // Seed data
+    // -----------------------------------------------------------------------
+
+    // 1. Create a repo record.
+    const { record: repoRec } = await ctx.repo.records.create('repo', {
+      data : { name: 'test-repo', description: 'A test repository', defaultBranch: 'main', dwnEndpoints: [] },
+      tags : { name: 'test-repo', visibility: 'public' },
+    });
+    const repoContextId = repoRec!.contextId ?? '';
+
+    // 2. Create an open issue.
+    const { record: issueRec } = await ctx.issues.records.create('repo/issue', {
+      data            : { title: 'Fix the widget', body: 'The widget is broken.', number: 1 },
+      tags            : { status: 'open', number: '1' },
+      parentContextId : repoContextId,
+    });
+
+    // 3. Create a comment on the issue.
+    await ctx.issues.records.create('repo/issue/comment' as any, {
+      data            : { body: 'I can reproduce this.' },
+      parentContextId : issueRec!.contextId ?? '',
+    } as any);
+
+    // 4. Create a second comment on the issue.
+    await ctx.issues.records.create('repo/issue/comment' as any, {
+      data            : { body: 'Working on a fix.' },
+      parentContextId : issueRec!.contextId ?? '',
+    } as any);
+
+    // 5. Create a closed issue.
+    await ctx.issues.records.create('repo/issue', {
+      data            : { title: 'Old bug', body: 'Already fixed.', number: 2 },
+      tags            : { status: 'closed', number: '2' },
+      parentContextId : repoContextId,
+    });
+
+    // 6. Create an open patch.
+    const { record: patchRec } = await ctx.patches.records.create('repo/patch', {
+      data            : { title: 'Add feature X', body: 'Implements feature X.', number: 1 },
+      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', number: '1' },
+      parentContextId : repoContextId,
+    });
+
+    // 7. Create a review on the patch.
+    await ctx.patches.records.create('repo/patch/review' as any, {
+      data            : { body: 'Looks good to me.' },
+      tags            : { verdict: 'approve' },
+      parentContextId : patchRec!.contextId ?? '',
+    } as any);
+
+    // 8. Create a second review.
+    await ctx.patches.records.create('repo/patch/review' as any, {
+      data            : { body: 'One nit.' },
+      tags            : { verdict: 'comment' },
+      parentContextId : patchRec!.contextId ?? '',
+    } as any);
+
+    // 9. Create a merged patch.
+    await ctx.patches.records.create('repo/patch', {
+      data            : { title: 'Fix typo', body: 'Fixed a typo in README.', number: 2 },
+      tags            : { status: 'merged', baseBranch: 'main', headBranch: 'fix-typo', number: '2' },
+      parentContextId : repoContextId,
+    });
+
+    // 10. Create a release.
+    await ctx.releases.records.create('repo/release' as any, {
+      data            : { name: 'v1.0.0', body: 'Initial release.' },
+      tags            : { tagName: 'v1.0.0' },
+      parentContextId : repoContextId,
+    } as any);
+
+    // 11. Create a pre-release.
+    await ctx.releases.records.create('repo/release' as any, {
+      data            : { name: 'v2.0.0-beta', body: 'Beta release.' },
+      tags            : { tagName: 'v2.0.0-beta', prerelease: true },
+      parentContextId : repoContextId,
+    } as any);
+  });
+
+  afterAll(() => {
+    rmSync(DATA_PATH, { recursive: true, force: true });
+  });
+
+  // =========================================================================
+  // Helpers unit tests
+  // =========================================================================
+
+  describe('numericId()', () => {
+    it('should return a positive 32-bit integer', () => {
+      const id = numericId('test-record-id');
+      expect(id).toBeGreaterThan(0);
+      expect(id).toBeLessThan(2 ** 32);
+    });
+
+    it('should be deterministic', () => {
+      expect(numericId('same-input')).toBe(numericId('same-input'));
+    });
+
+    it('should produce different values for different inputs', () => {
+      expect(numericId('input-a')).not.toBe(numericId('input-b'));
+    });
+  });
+
+  // =========================================================================
+  // Response headers
+  // =========================================================================
+
+  describe('response headers', () => {
+    it('should include GitHub API compatibility headers', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      expect(res.headers['Content-Type']).toBe('application/json; charset=utf-8');
+      expect(res.headers['X-GitHub-Media-Type']).toBe('github.v3');
+      expect(res.headers['Access-Control-Allow-Origin']).toBe('*');
+      expect(res.headers['X-RateLimit-Limit']).toBe('5000');
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo', () => {
+    it('should return 200 with repo info', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.name).toBe('test-repo');
+      expect(data.description).toBe('A test repository');
+      expect(data.default_branch).toBe('main');
+    });
+
+    it('should include owner object with DID as login', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.owner.login).toBe(testDid);
+      expect(data.owner.id).toBe(numericId(testDid));
+      expect(data.owner.type).toBe('User');
+    });
+
+    it('should include full_name as did/repo', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.full_name).toBe(`${testDid}/test-repo`);
+    });
+
+    it('should set private based on visibility', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.private).toBe(false);
+      expect(data.visibility).toBe('public');
+    });
+
+    it('should include standard GitHub fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.fork).toBe(false);
+      expect(data.has_issues).toBe(true);
+      expect(data.has_wiki).toBe(true);
+      expect(data.archived).toBe(false);
+      expect(data.disabled).toBe(false);
+    });
+
+    it('should include date fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.created_at).toBeDefined();
+      expect(data.updated_at).toBeDefined();
+      expect(data.pushed_at).toBeDefined();
+    });
+
+    it('should return 404 for non-existent DID', async () => {
+      const res = await handleShimRequest(ctx, url('/repos/did:jwk:nonexistent/repo'));
+      // Depending on DID resolution it could be 404 or 502.
+      expect([404, 502]).toContain(res.status);
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/issues
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/issues', () => {
+    it('should return open issues by default', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(1);
+      expect(data[0].title).toBe('Fix the widget');
+      expect(data[0].state).toBe('open');
+    });
+
+    it('should filter by state=closed', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=closed'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.length).toBe(1);
+      expect(data[0].title).toBe('Old bug');
+      expect(data[0].state).toBe('closed');
+    });
+
+    it('should return all issues with state=all', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=all'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.length).toBe(2);
+    });
+
+    it('should include GitHub-style issue fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=all'));
+      const data = parse(res);
+      const issue = data.find((i: any) => i.number === 1);
+      expect(issue).toBeDefined();
+      expect(issue.title).toBe('Fix the widget');
+      expect(issue.body).toBe('The widget is broken.');
+      expect(issue.user.login).toBe(testDid);
+      expect(issue.url).toContain('/issues/1');
+      expect(issue.comments_url).toContain('/issues/1/comments');
+      expect(issue.labels).toEqual([]);
+      expect(issue.locked).toBe(false);
+    });
+
+    it('should set closed_at for closed issues', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=closed'));
+      const data = parse(res);
+      expect(data[0].closed_at).toBeDefined();
+      expect(data[0].closed_at).not.toBeNull();
+    });
+
+    it('should set closed_at to null for open issues', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'));
+      const data = parse(res);
+      expect(data[0].closed_at).toBeNull();
+    });
+
+    it('should support pagination with per_page', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=all&per_page=1'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.length).toBe(1);
+    });
+
+    it('should include Link header for paginated results', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues?state=all&per_page=1'));
+      expect(res.headers['Link']).toBeDefined();
+      expect(res.headers['Link']).toContain('rel="next"');
+      expect(res.headers['Link']).toContain('rel="last"');
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/issues/:number
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/issues/:number', () => {
+    it('should return issue detail', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.number).toBe(1);
+      expect(data.title).toBe('Fix the widget');
+      expect(data.body).toBe('The widget is broken.');
+      expect(data.state).toBe('open');
+    });
+
+    it('should include comment count', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1'));
+      const data = parse(res);
+      expect(data.comments).toBe(2);
+    });
+
+    it('should return 404 for non-existent issue', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/999'));
+      expect(res.status).toBe(404);
+      const data = parse(res);
+      expect(data.message).toContain('not found');
+    });
+
+    it('should include documentation_url in 404 response', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/999'));
+      const data = parse(res);
+      expect(data.documentation_url).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/issues/:number/comments
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/issues/:number/comments', () => {
+    it('should return issue comments', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(2);
+    });
+
+    it('should include GitHub-style comment fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'));
+      const data = parse(res);
+      expect(data[0].body).toBe('I can reproduce this.');
+      expect(data[0].user.login).toBe(testDid);
+      expect(data[0].created_at).toBeDefined();
+      expect(data[0].author_association).toBe('OWNER');
+      expect(data[0].issue_url).toContain('/issues/1');
+    });
+
+    it('should return 404 for non-existent issue comments', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/999/comments'));
+      expect(res.status).toBe(404);
+    });
+
+    it('should support pagination', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments?per_page=1'));
+      const data = parse(res);
+      expect(data.length).toBe(1);
+      expect(res.headers['Link']).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/pulls
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/pulls', () => {
+    it('should return open pulls by default', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(1);
+      expect(data[0].title).toBe('Add feature X');
+      expect(data[0].state).toBe('open');
+      expect(data[0].merged).toBe(false);
+    });
+
+    it('should include merged pulls in state=closed filter', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls?state=closed'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.length).toBe(1);
+      expect(data[0].title).toBe('Fix typo');
+      expect(data[0].state).toBe('closed');
+      expect(data[0].merged).toBe(true);
+    });
+
+    it('should return all pulls with state=all', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls?state=all'));
+      const data = parse(res);
+      expect(data.length).toBe(2);
+    });
+
+    it('should include GitHub-style pull request fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'));
+      const data = parse(res);
+      const pr = data[0];
+      expect(pr.number).toBe(1);
+      expect(pr.head.ref).toBe('feat-x');
+      expect(pr.base.ref).toBe('main');
+      expect(pr.user.login).toBe(testDid);
+      expect(pr.draft).toBe(false);
+      expect(pr.diff_url).toContain('/pulls/1.diff');
+      expect(pr.patch_url).toContain('/pulls/1.patch');
+    });
+
+    it('should set merged_at for merged pulls', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls?state=closed'));
+      const data = parse(res);
+      const merged = data.find((p: any) => p.merged === true);
+      expect(merged).toBeDefined();
+      expect(merged.merged_at).toBeDefined();
+      expect(merged.merged_at).not.toBeNull();
+      expect(merged.merge_commit_sha).toBeDefined();
+    });
+
+    it('should set merged_at to null for open pulls', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'));
+      const data = parse(res);
+      expect(data[0].merged_at).toBeNull();
+      expect(data[0].merged).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/pulls/:number
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/pulls/:number', () => {
+    it('should return pull request detail', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.number).toBe(1);
+      expect(data.title).toBe('Add feature X');
+      expect(data.body).toBe('Implements feature X.');
+    });
+
+    it('should return merged pull detail with correct flags', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/2'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.number).toBe(2);
+      expect(data.state).toBe('closed');
+      expect(data.merged).toBe(true);
+    });
+
+    it('should return 404 for non-existent pull', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/999'));
+      expect(res.status).toBe(404);
+      const data = parse(res);
+      expect(data.message).toContain('not found');
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/pulls/:number/reviews
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/pulls/:number/reviews', () => {
+    it('should return pull request reviews', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(2);
+    });
+
+    it('should map verdict to GitHub review state', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      const data = parse(res);
+      const approved = data.find((r: any) => r.state === 'APPROVED');
+      expect(approved).toBeDefined();
+      expect(approved.body).toBe('Looks good to me.');
+
+      const commented = data.find((r: any) => r.state === 'COMMENTED');
+      expect(commented).toBeDefined();
+      expect(commented.body).toBe('One nit.');
+    });
+
+    it('should include GitHub-style review fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      const data = parse(res);
+      expect(data[0].user.login).toBe(testDid);
+      expect(data[0].submitted_at).toBeDefined();
+      expect(data[0].author_association).toBe('OWNER');
+      expect(data[0].pull_request_url).toContain('/pulls/1');
+    });
+
+    it('should return 404 for non-existent pull reviews', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/999/reviews'));
+      expect(res.status).toBe(404);
+    });
+
+    it('should support pagination', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews?per_page=1'));
+      const data = parse(res);
+      expect(data.length).toBe(1);
+      expect(res.headers['Link']).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/releases
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/releases', () => {
+    it('should return releases', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(2);
+    });
+
+    it('should include GitHub-style release fields', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'));
+      const data = parse(res);
+      const stable = data.find((r: any) => r.tag_name === 'v1.0.0');
+      expect(stable).toBeDefined();
+      expect(stable.name).toBe('v1.0.0');
+      expect(stable.body).toBe('Initial release.');
+      expect(stable.draft).toBe(false);
+      expect(stable.prerelease).toBe(false);
+      expect(stable.author.login).toBe(testDid);
+      expect(stable.assets).toEqual([]);
+      expect(stable.tarball_url).toContain('/tarball/v1.0.0');
+    });
+
+    it('should mark pre-releases correctly', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'));
+      const data = parse(res);
+      const beta = data.find((r: any) => r.tag_name === 'v2.0.0-beta');
+      expect(beta).toBeDefined();
+      expect(beta.prerelease).toBe(true);
+      expect(beta.name).toBe('v2.0.0-beta');
+    });
+
+    it('should support pagination', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases?per_page=1'));
+      const data = parse(res);
+      expect(data.length).toBe(1);
+      expect(res.headers['Link']).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // GET /repos/:did/:repo/releases/tags/:tag
+  // =========================================================================
+
+  describe('GET /repos/:did/:repo/releases/tags/:tag', () => {
+    it('should return release by tag name', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases/tags/v1.0.0'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.tag_name).toBe('v1.0.0');
+      expect(data.name).toBe('v1.0.0');
+      expect(data.body).toBe('Initial release.');
+    });
+
+    it('should return 404 for non-existent tag', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases/tags/v99.0.0'));
+      expect(res.status).toBe(404);
+      const data = parse(res);
+      expect(data.message).toContain('not found');
+    });
+  });
+
+  // =========================================================================
+  // GET /users/:did
+  // =========================================================================
+
+  describe('GET /users/:did', () => {
+    it('should return user profile', async () => {
+      const res = await handleShimRequest(ctx, url(`/users/${testDid}`));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.login).toBe(testDid);
+      expect(data.id).toBe(numericId(testDid));
+      expect(data.type).toBe('User');
+    });
+
+    it('should include GitHub-style user fields', async () => {
+      const res = await handleShimRequest(ctx, url(`/users/${testDid}`));
+      const data = parse(res);
+      expect(data.repos_url).toContain(`/users/${testDid}/repos`);
+      expect(data.site_admin).toBe(false);
+      expect(data.public_repos).toBe(0);
+      expect(data.followers).toBe(0);
+      expect(data.following).toBe(0);
+    });
+  });
+
+  // =========================================================================
+  // 404 handling
+  // =========================================================================
+
+  describe('unknown routes', () => {
+    it('should return 404 for unknown paths', async () => {
+      const res = await handleShimRequest(ctx, url('/nonexistent'));
+      expect(res.status).toBe(404);
+      const data = parse(res);
+      expect(data.message).toBeDefined();
+    });
+
+    it('should return 404 for unknown sub-paths under a repo', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/nonexistent'));
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for non-numeric issue IDs', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/abc'));
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for non-numeric pull IDs', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/abc'));
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // URL building
+  // =========================================================================
+
+  describe('URL building', () => {
+    it('should include base URL in all response URLs', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.url).toContain(BASE);
+      expect(data.owner.url).toContain(BASE);
+    });
+
+    it('should build correct issues_url template', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.issues_url).toContain('{/number}');
+    });
+
+    it('should build correct pulls_url template', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''));
+      const data = parse(res);
+      expect(data.pulls_url).toContain('{/number}');
+    });
+  });
+});
