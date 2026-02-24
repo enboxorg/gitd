@@ -6,6 +6,9 @@
   "main": "./dist/esm/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
+  "bin": {
+    "dwn-git": "./dist/esm/cli/main.js"
+  },
   "scripts": {
     "clean": "rimraf dist",
     "build:esm": "rimraf dist/esm dist/types && tsc -p tsconfig.json",
