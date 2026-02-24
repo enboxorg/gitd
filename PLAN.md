@@ -1201,15 +1201,16 @@ The smallest useful forge — repos, issues, patches.
 - [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
 - [x] CLI prototype: `dwn-git init`, `dwn-git issue create/list`, `dwn-git patch create/list`, `dwn-git whoami` — 12 CLI tests (254 total, 762 assertions)
 
-### Phase 2: Git Transport (in progress)
+### Phase 2: Git Transport (complete)
 
 The most novel component.
 
-- [x] **git-remote-did**: git remote helper that resolves DIDs to git endpoints — DID URL parser (`did::` and `did://` forms), DID resolution with GitTransport/DWN service discovery, exec delegation to `git-remote-https` (267 total tests, 783 assertions)
-- [ ] **GitTransport service type**: DID document service registration
-- [ ] **DWN server git sidecar**: smart HTTP git transport alongside DWN
-- [ ] **Push authentication**: DID-signed challenge/response
-- [ ] **git ref mirroring**: branch heads as DWN records for subscriptions
+- [x] **git-remote-did**: git remote helper that resolves DIDs to git endpoints — DID URL parser (`did::` and `did://` forms), DID resolution with GitTransport/DWN service discovery, exec delegation to `git-remote-https`
+- [x] **GitTransport service type**: `GitTransportService` interface, `createGitTransportService()` factory, `isGitTransportService()` / `getGitTransportServices()` query helpers
+- [x] **DWN server git sidecar**: `GitBackend` (bare repo management with DID-hashed paths), `createGitHttpHandler()` (smart HTTP v1: info/refs, upload-pack, receive-pack), `createGitServer()` (Node.js HTTP bridge), path prefix support, pluggable auth
+- [x] **Push authentication**: DID-signed token scheme over HTTP Basic auth (`did-auth` username, signed payload in password field), `createPushAuthenticator()` factory with signature verification + optional role-based authorization callbacks
+- [x] **git ref mirroring**: `ForgeRefsProtocol` — DWN protocol for branch/tag refs as records with `$ref` composition, role-based write access (maintainers only), anyone-read for subscription-based push notifications
+- 352 total tests, 921 assertions across 7 test files
 
 ### Phase 3: Extended Protocols
 
@@ -1267,10 +1268,16 @@ dwn-git/
 │   │       ├── init.ts
 │   │       ├── issue.ts
 │   │       └── patch.ts
-│   └── git-remote/             # Git remote helper
-│       ├── main.ts             # Entry point (git-remote-did binary)
-│       ├── parse-url.ts        # DID URL parser (did::, did://)
-│       └── resolve.ts          # DID resolution + endpoint discovery
+│   ├── git-remote/             # Git remote helper
+│   │   ├── main.ts             # Entry point (git-remote-did binary)
+│   │   ├── parse-url.ts        # DID URL parser (did::, did://)
+│   │   ├── resolve.ts          # DID resolution + endpoint discovery
+│   │   └── service.ts          # GitTransport DID service type utilities
+│   └── git-server/             # Git transport sidecar server
+│       ├── auth.ts             # DID-signed push authentication
+│       ├── git-backend.ts      # Bare repo management (init, upload-pack, receive-pack)
+│       ├── http-handler.ts     # Smart HTTP protocol handler (fetch-compatible)
+│       └── server.ts           # Node.js HTTP server bridge
 ├── schemas/                    # JSON Schema files for each record type
 │   ├── repo/
 │   ├── issues/
@@ -1287,5 +1294,7 @@ dwn-git/
     ├── schemas.spec.ts         # JSON schema validation tests
     ├── integration.spec.ts     # DWN integration tests
     ├── cli.spec.ts             # CLI command tests
-    └── git-remote.spec.ts      # Git remote helper tests
+    ├── git-remote.spec.ts      # Git remote helper + service type tests
+    ├── git-server.spec.ts      # Git sidecar server tests
+    └── git-auth.spec.ts        # Push authentication tests
 ```

@@ -14,6 +14,7 @@
  */
 
 export * from './repo.js';
+export * from './refs.js';
 export * from './issues.js';
 export * from './patches.js';
 export * from './ci.js';

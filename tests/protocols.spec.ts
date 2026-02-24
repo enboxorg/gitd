@@ -11,6 +11,8 @@ import {
   ForgeOrgProtocol,
   ForgePatchesDefinition,
   ForgePatchesProtocol,
+  ForgeRefsDefinition,
+  ForgeRefsProtocol,
   ForgeRegistryDefinition,
   ForgeRegistryProtocol,
   ForgeReleasesDefinition,
@@ -103,6 +105,83 @@ describe('@enbox/dwn-git', () => {
 
     it('should wrap definition via defineProtocol()', () => {
       expect(ForgeRepoProtocol.definition).toBe(ForgeRepoDefinition);
+    });
+  });
+
+  // =========================================================================
+  // ForgeRefsProtocol
+  // =========================================================================
+
+  describe('ForgeRefsProtocol', () => {
+    it('should have the correct protocol URI', () => {
+      expect(ForgeRefsDefinition.protocol).toBe('https://enbox.org/protocols/forge/refs');
+    });
+
+    it('should be a published protocol', () => {
+      expect(ForgeRefsDefinition.published).toBe(true);
+    });
+
+    it('should compose with Forge Repo via uses', () => {
+      expect(ForgeRefsDefinition.uses).toBeDefined();
+      expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+    });
+
+    it('should define the ref type', () => {
+      expect(ForgeRefsDefinition.types.ref).toBeDefined();
+      expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.org/schemas/forge/git-ref');
+      expect(ForgeRefsDefinition.types.ref.dataFormats).toContain('application/json');
+    });
+
+    it('should use $ref to compose with repo protocol', () => {
+      const repoNode = ForgeRefsDefinition.structure.repo;
+      expect(repoNode.$ref).toBe('repo:repo');
+    });
+
+    it('should nest ref under repo via $ref', () => {
+      const repoNode = ForgeRefsDefinition.structure.repo as any;
+      expect(repoNode.ref).toBeDefined();
+    });
+
+    it('should allow anyone to read refs', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      const anyoneAction = refNode.$actions.find((a: any) => a.who === 'anyone');
+      expect(anyoneAction).toBeDefined();
+      expect(anyoneAction.can).toContain('read');
+    });
+
+    it('should allow maintainers to create, update, and delete refs', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      const maintainerAction = refNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(maintainerAction).toBeDefined();
+      expect(maintainerAction.can).toContain('create');
+      expect(maintainerAction.can).toContain('update');
+      expect(maintainerAction.can).toContain('delete');
+    });
+
+    it('should require name and type tags', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      expect(refNode.$tags.$requiredTags).toContain('name');
+      expect(refNode.$tags.$requiredTags).toContain('type');
+    });
+
+    it('should restrict type tag to branch and tag values', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      expect(refNode.$tags.type.enum).toEqual(['branch', 'tag']);
+    });
+
+    it('should not allow undefined tags', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      expect(refNode.$tags.$allowUndefinedTags).toBe(false);
+    });
+
+    it('should include a target tag for commit SHA', () => {
+      const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
+      expect(refNode.$tags.target).toBeDefined();
+      expect(refNode.$tags.target.type).toBe('string');
+    });
+
+    it('should wrap definition via defineProtocol()', () => {
+      expect(ForgeRefsProtocol.definition).toBe(ForgeRefsDefinition);
     });
   });
 
@@ -771,6 +850,7 @@ describe('@enbox/dwn-git', () => {
   describe('cross-cutting invariants', () => {
     const allDefinitions = [
       ForgeRepoDefinition,
+      ForgeRefsDefinition,
       ForgeIssuesDefinition,
       ForgePatchesDefinition,
       ForgeCiDefinition,
@@ -782,10 +862,10 @@ describe('@enbox/dwn-git', () => {
       ForgeOrgDefinition,
     ];
 
-    it('should have 10 unique protocol URIs under the forge namespace', () => {
+    it('should have 11 unique protocol URIs under the forge namespace', () => {
       const uris = allDefinitions.map((d) => d.protocol);
       const uniqueUris = new Set(uris);
-      expect(uniqueUris.size).toBe(10);
+      expect(uniqueUris.size).toBe(11);
       for (const uri of uris) {
         expect(uri).toMatch(/^https:\/\/enbox\.org\/protocols\/forge\//);
       }
@@ -821,6 +901,7 @@ describe('@enbox/dwn-git', () => {
     it('should have all Protocol wrappers referencing their definitions', () => {
       const pairs: [any, any][] = [
         [ForgeRepoProtocol, ForgeRepoDefinition],
+        [ForgeRefsProtocol, ForgeRefsDefinition],
         [ForgeIssuesProtocol, ForgeIssuesDefinition],
         [ForgePatchesProtocol, ForgePatchesDefinition],
         [ForgeCiProtocol, ForgeCiDefinition],

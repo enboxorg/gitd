@@ -9,6 +9,7 @@ import {
   ForgeNotificationsDefinition,
   ForgeOrgDefinition,
   ForgePatchesDefinition,
+  ForgeRefsDefinition,
   ForgeRegistryDefinition,
   ForgeReleasesDefinition,
   ForgeRepoDefinition,
@@ -46,7 +47,7 @@ function getSchemaUris(definition: { types: Record<string, any> }): Map<string, 
 describe('JSON Schemas', () => {
 
   describe('schema file validity', () => {
-    const allSubdirs = ['repo', 'issues', 'patches', 'ci', 'releases', 'registry', 'social', 'notifications', 'wiki', 'org'];
+    const allSubdirs = ['repo', 'refs', 'issues', 'patches', 'ci', 'releases', 'registry', 'social', 'notifications', 'wiki', 'org'];
 
     for (const subdir of allSubdirs) {
       const files = listSchemaFiles(subdir);
@@ -68,6 +69,7 @@ describe('JSON Schemas', () => {
   describe('schema $id matches protocol type schema URIs', () => {
     const protocolSchemaMap: [string, Record<string, any>, string][] = [
       ['repo', ForgeRepoDefinition, 'repo'],
+      ['refs', ForgeRefsDefinition, 'refs'],
       ['issues', ForgeIssuesDefinition, 'issues'],
       ['patches', ForgePatchesDefinition, 'patches'],
       ['ci', ForgeCiDefinition, 'ci'],
@@ -256,6 +258,20 @@ describe('JSON Schemas', () => {
     it('wiki-history.json should require editedBy', () => {
       const schema = readSchema('wiki', 'wiki-history.json');
       expect(schema.required).toContain('editedBy');
+    });
+  });
+
+  describe('refs schemas', () => {
+    it('git-ref.json should require name, target, and type', () => {
+      const schema = readSchema('refs', 'git-ref.json');
+      expect(schema.required).toContain('name');
+      expect(schema.required).toContain('target');
+      expect(schema.required).toContain('type');
+    });
+
+    it('git-ref.json should restrict type to branch or tag', () => {
+      const schema = readSchema('refs', 'git-ref.json');
+      expect(schema.properties.type.enum).toEqual(['branch', 'tag']);
     });
   });
 
