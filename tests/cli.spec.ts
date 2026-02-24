@@ -548,4 +548,433 @@ describe('dwn-git CLI commands', () => {
       expect(errors[0]).toContain('Invalid target');
     });
   });
+
+  // =========================================================================
+  // release commands
+  // =========================================================================
+
+  describe('release', () => {
+    it('should fail create without a tag', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const { errors, exitCode } = await captureError(() => releaseCommand(ctx, ['create']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should create a release', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const logs = await captureLog(() =>
+        releaseCommand(ctx, ['create', 'v1.0.0', '--name', 'First Release', '--body', 'Initial stable release']),
+      );
+      expect(logs.some((l) => l.includes('Created release v1.0.0'))).toBe(true);
+      expect(logs.some((l) => l.includes('Record ID'))).toBe(true);
+    });
+
+    it('should create a pre-release', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const logs = await captureLog(() =>
+        releaseCommand(ctx, ['create', 'v2.0.0-beta.1', '--name', 'Beta', '--prerelease']),
+      );
+      expect(logs.some((l) => l.includes('Created release v2.0.0-beta.1'))).toBe(true);
+      expect(logs.some((l) => l.includes('Pre-release: yes'))).toBe(true);
+    });
+
+    it('should show release details by tag', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const logs = await captureLog(() => releaseCommand(ctx, ['show', 'v1.0.0']));
+      expect(logs.some((l) => l.includes('Release: First Release'))).toBe(true);
+      expect(logs.some((l) => l.includes('Tag:'))).toBe(true);
+      expect(logs.some((l) => l.includes('Initial stable release'))).toBe(true);
+    });
+
+    it('should fail show for non-existent release', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const { errors, exitCode } = await captureError(() => releaseCommand(ctx, ['show', 'v99.0.0']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should list releases', async () => {
+      const { releaseCommand } = await import('../src/cli/commands/release.js');
+      const logs = await captureLog(() => releaseCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Releases (2)'))).toBe(true);
+      expect(logs.some((l) => l.includes('v1.0.0'))).toBe(true);
+      expect(logs.some((l) => l.includes('v2.0.0-beta.1'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // ci commands
+  // =========================================================================
+
+  describe('ci', () => {
+    let suiteId: string;
+
+    it('should fail create without a commit', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const { errors, exitCode } = await captureError(() => ciCommand(ctx, ['create']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should create a check suite', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() =>
+        ciCommand(ctx, ['create', 'abc123def456', '--app', 'test-ci', '--branch', 'main']),
+      );
+      expect(logs.some((l) => l.includes('Created check suite'))).toBe(true);
+      expect(logs.some((l) => l.includes('abc123de'))).toBe(true);
+      const idLog = logs.find((l) => l.includes('Suite ID:'));
+      suiteId = idLog?.split('Suite ID:')[1]?.trim() ?? '';
+      expect(suiteId).toBeTruthy();
+    });
+
+    it('should show CI status', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['status']));
+      expect(logs.some((l) => l.includes('CI Status: QUEUED'))).toBe(true);
+      expect(logs.some((l) => l.includes('test-ci'))).toBe(true);
+    });
+
+    it('should list check suites', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Check suites (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('abc123de'))).toBe(true);
+    });
+
+    it('should show check suite details', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['show', suiteId]));
+      expect(logs.some((l) => l.includes('Check Suite: test-ci'))).toBe(true);
+      expect(logs.some((l) => l.includes('Status:'))).toBe(true);
+    });
+
+    it('should add a check run to a suite', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['run', suiteId, 'lint']));
+      expect(logs.some((l) => l.includes('Created check run "lint"'))).toBe(true);
+    });
+
+    it('should show check runs in suite detail', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['show', suiteId]));
+      expect(logs.some((l) => l.includes('Check runs (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('lint'))).toBe(true);
+    });
+
+    it('should show empty status when no suites for commit', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() => ciCommand(ctx, ['status', 'nonexistent000']));
+      expect(logs.some((l) => l.includes('No CI check suites found'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // wiki commands
+  // =========================================================================
+
+  describe('wiki', () => {
+    it('should fail create without slug and title', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const { errors, exitCode } = await captureError(() => wikiCommand(ctx, ['create']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should create a wiki page', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const logs = await captureLog(() =>
+        wikiCommand(ctx, ['create', 'getting-started', 'Getting Started', '--body', '# Welcome\nThis is the wiki.']),
+      );
+      expect(logs.some((l) => l.includes('Created wiki page: Getting Started'))).toBe(true);
+      expect(logs.some((l) => l.includes('/getting-started'))).toBe(true);
+    });
+
+    it('should reject duplicate slug', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const { errors, exitCode } = await captureError(() =>
+        wikiCommand(ctx, ['create', 'getting-started', 'Duplicate']),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('already exists');
+    });
+
+    it('should show a wiki page', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const logs = await captureLog(() => wikiCommand(ctx, ['show', 'getting-started']));
+      expect(logs.some((l) => l.includes('Wiki: Getting Started'))).toBe(true);
+      expect(logs.some((l) => l.includes('# Welcome'))).toBe(true);
+    });
+
+    it('should edit a wiki page', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const logs = await captureLog(() =>
+        wikiCommand(ctx, ['edit', 'getting-started', '--body', '# Updated\nNew content.', '--summary', 'Updated intro']),
+      );
+      expect(logs.some((l) => l.includes('Updated wiki page'))).toBe(true);
+    });
+
+    it('should show updated content after edit', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const logs = await captureLog(() => wikiCommand(ctx, ['show', 'getting-started']));
+      expect(logs.some((l) => l.includes('# Updated'))).toBe(true);
+    });
+
+    it('should fail show for non-existent page', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const { errors, exitCode } = await captureError(() => wikiCommand(ctx, ['show', 'nonexistent']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should list wiki pages', async () => {
+      const { wikiCommand } = await import('../src/cli/commands/wiki.js');
+      const logs = await captureLog(() => wikiCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Wiki pages (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('getting-started'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // org commands
+  // =========================================================================
+
+  describe('org', () => {
+    it('should fail create without a name', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const { errors, exitCode } = await captureError(() => orgCommand(ctx, ['create']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should create an organization', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() =>
+        orgCommand(ctx, ['create', 'test-org', '--description', 'A test organization']),
+      );
+      expect(logs.some((l) => l.includes('Created organization: test-org'))).toBe(true);
+    });
+
+    it('should reject creating a second org (singleton)', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const { errors, exitCode } = await captureError(() => orgCommand(ctx, ['create', 'second-org']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('already exists');
+    });
+
+    it('should show org info', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() => orgCommand(ctx, ['info']));
+      expect(logs.some((l) => l.includes('Organization: test-org'))).toBe(true);
+      expect(logs.some((l) => l.includes('DID:'))).toBe(true);
+    });
+
+    it('should add an owner', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() =>
+        orgCommand(ctx, ['add-owner', 'did:jwk:owner123', '--alias', 'Alice']),
+      );
+      expect(logs.some((l) => l.includes('Added owner'))).toBe(true);
+    });
+
+    it('should add a member', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() =>
+        orgCommand(ctx, ['add-member', 'did:jwk:member456', '--alias', 'Bob']),
+      );
+      expect(logs.some((l) => l.includes('Added member'))).toBe(true);
+    });
+
+    it('should list members', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() => orgCommand(ctx, ['list-members']));
+      expect(logs.some((l) => l.includes('Owners (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:owner123'))).toBe(true);
+      expect(logs.some((l) => l.includes('Members (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:member456'))).toBe(true);
+    });
+
+    it('should remove a member', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() => orgCommand(ctx, ['remove-member', 'did:jwk:member456']));
+      expect(logs.some((l) => l.includes('Removed member'))).toBe(true);
+    });
+
+    it('should fail to remove non-existent member', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const { errors, exitCode } = await captureError(() => orgCommand(ctx, ['remove-member', 'did:jwk:nonexistent']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should create a team', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() =>
+        orgCommand(ctx, ['team', 'create', 'backend', '--description', 'Backend team']),
+      );
+      expect(logs.some((l) => l.includes('Created team: backend'))).toBe(true);
+    });
+
+    it('should list teams', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() => orgCommand(ctx, ['team', 'list']));
+      expect(logs.some((l) => l.includes('Teams (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('backend'))).toBe(true);
+    });
+
+    it('should show teams in org info', async () => {
+      const { orgCommand } = await import('../src/cli/commands/org.js');
+      const logs = await captureLog(() => orgCommand(ctx, ['info']));
+      expect(logs.some((l) => l.includes('Teams (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('backend'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // social commands
+  // =========================================================================
+
+  describe('social', () => {
+    it('should fail star without a DID', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const { errors, exitCode } = await captureError(() => socialCommand(ctx, ['star']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should star a repo', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['star', 'did:jwk:repoowner123']));
+      expect(logs.some((l) => l.includes('Starred did:jwk:repoowner123'))).toBe(true);
+    });
+
+    it('should not double-star', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['star', 'did:jwk:repoowner123']));
+      expect(logs.some((l) => l.includes('Already starred'))).toBe(true);
+    });
+
+    it('should list stars', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['stars']));
+      expect(logs.some((l) => l.includes('Starred repos (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:repoowner123'))).toBe(true);
+    });
+
+    it('should unstar a repo', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['unstar', 'did:jwk:repoowner123']));
+      expect(logs.some((l) => l.includes('Unstarred did:jwk:repoowner123'))).toBe(true);
+    });
+
+    it('should fail unstar for non-starred repo', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const { errors, exitCode } = await captureError(() => socialCommand(ctx, ['unstar', 'did:jwk:nobody']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('No star found');
+    });
+
+    it('should follow a user', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['follow', 'did:jwk:alice']));
+      expect(logs.some((l) => l.includes('Following did:jwk:alice'))).toBe(true);
+    });
+
+    it('should not double-follow', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['follow', 'did:jwk:alice']));
+      expect(logs.some((l) => l.includes('Already following'))).toBe(true);
+    });
+
+    it('should list following', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['following']));
+      expect(logs.some((l) => l.includes('Following (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:alice'))).toBe(true);
+    });
+
+    it('should unfollow a user', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const logs = await captureLog(() => socialCommand(ctx, ['unfollow', 'did:jwk:alice']));
+      expect(logs.some((l) => l.includes('Unfollowed did:jwk:alice'))).toBe(true);
+    });
+
+    it('should fail unfollow for non-followed user', async () => {
+      const { socialCommand } = await import('../src/cli/commands/social.js');
+      const { errors, exitCode } = await captureError(() => socialCommand(ctx, ['unfollow', 'did:jwk:nobody']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Not following');
+    });
+  });
+
+  // =========================================================================
+  // notification commands
+  // =========================================================================
+
+  describe('notification', () => {
+    it('should show empty notifications', async () => {
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('No notifications'))).toBe(true);
+    });
+
+    it('should create and list a notification', async () => {
+      // Create a notification directly (simulating what a CI bot or repo agent would do).
+      await ctx.notifications.records.create('notification', {
+        data : { type: 'mention', title: 'You were mentioned', body: 'In issue #1' },
+        tags : { type: 'mention', read: false },
+      });
+
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Notifications (1'))).toBe(true);
+      expect(logs.some((l) => l.includes('mention'))).toBe(true);
+      expect(logs.some((l) => l.includes('You were mentioned'))).toBe(true);
+    });
+
+    it('should filter unread notifications', async () => {
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['list', '--unread']));
+      expect(logs.some((l) => l.includes('Notifications (1'))).toBe(true);
+    });
+
+    it('should mark a notification as read', async () => {
+      // Get the notification ID.
+      const { records } = await ctx.notifications.records.query('notification');
+      expect(records.length).toBeGreaterThan(0);
+      const notifId = records[0].id;
+
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['read', notifId]));
+      expect(logs.some((l) => l.includes('Marked notification as read'))).toBe(true);
+    });
+
+    it('should not double-mark as read', async () => {
+      const { records } = await ctx.notifications.records.query('notification');
+      const notifId = records[0].id;
+
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['read', notifId]));
+      expect(logs.some((l) => l.includes('already marked as read'))).toBe(true);
+    });
+
+    it('should show no unread after marking as read', async () => {
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['list', '--unread']));
+      expect(logs.some((l) => l.includes('No unread notifications'))).toBe(true);
+    });
+
+    it('should clear read notifications', async () => {
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['clear']));
+      expect(logs.some((l) => l.includes('Cleared 1 read notification'))).toBe(true);
+    });
+
+    it('should show no notifications after clear', async () => {
+      const { notificationCommand } = await import('../src/cli/commands/notification.js');
+      const logs = await captureLog(() => notificationCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('No notifications'))).toBe(true);
+    });
+  });
 });
