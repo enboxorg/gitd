@@ -42,10 +42,10 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
-    "@enbox/api": "0.2.4",
-    "@enbox/crypto": "0.0.5",
-    "@enbox/dids": "0.0.6",
-    "@enbox/dwn-sdk-js": "0.0.8"
+    "@enbox/api": "0.3.0",
+    "@enbox/crypto": "0.0.6",
+    "@enbox/dids": "0.0.7",
+    "@enbox/dwn-sdk-js": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "9.7.0",

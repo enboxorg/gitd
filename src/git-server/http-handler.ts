@@ -7,6 +7,10 @@
  *   - `GET /<did>/<repo>/info/refs?service=git-receive-pack` — ref discovery (push)
  *   - `POST /<did>/<repo>/git-receive-pack`                  — receive pack (push)
  *
+ * When `onRepoNotFound` is provided, the handler auto-restores repos from
+ * DWN bundle records on first access (cold-start). This enables commodity
+ * git hosts to serve repos they've never seen before.
+ *
  * The handler is a pure function `(Request) => Response | Promise<Response>`
  * suitable for use with `Bun.serve()`, `Deno.serve()`, or any fetch-compatible
  * HTTP runtime.
@@ -53,6 +57,18 @@ export type GitHttpHandlerOptions = {
   onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
 
   /**
+   * Optional callback invoked when a clone/fetch request arrives for a
+   * repository that doesn't exist on disk. Implementations can restore
+   * the repo from DWN bundle records.
+   *
+   * @param did - The repository owner's DID
+   * @param repo - The repository name
+   * @param repoPath - The filesystem path where the repo should be created
+   * @returns `true` if the repo was restored successfully
+   */
+  onRepoNotFound?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
+
+  /**
    * Optional path prefix to strip from incoming URLs.
    * For example, if the sidecar is mounted at `/git`, set this to `/git`.
    * @default ''
@@ -81,7 +97,27 @@ type GitRoute = {
 export function createGitHttpHandler(
   options: GitHttpHandlerOptions,
 ): (request: Request) => Response | Promise<Response> {
-  const { backend, authenticatePush, onPushComplete, pathPrefix = '' } = options;
+  const { backend, authenticatePush, onPushComplete, onRepoNotFound, pathPrefix = '' } = options;
+
+  /**
+   * Ensure a repo exists on disk, attempting DWN bundle restore if absent.
+   * Returns `true` when the repo is available (or was restored).
+   */
+  async function ensureRepo(did: string, repo: string): Promise<boolean> {
+    if (backend.exists(did, repo)) { return true; }
+
+    if (onRepoNotFound) {
+      const repoPath = backend.repoPath(did, repo);
+      try {
+        return await onRepoNotFound(did, repo, repoPath);
+      } catch (err) {
+        console.error(`onRepoNotFound error for ${did}/${repo}: ${(err as Error).message}`);
+        return false;
+      }
+    }
+
+    return false;
+  }
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -117,8 +153,8 @@ export function createGitHttpHandler(
         }
       }
 
-      // Check repo exists.
-      if (!backend.exists(did, repo)) {
+      // Ensure repo exists (auto-restore from DWN if possible).
+      if (!(await ensureRepo(did, repo))) {
         return new Response('Repository not found', { status: 404 });
       }
 
@@ -129,7 +165,7 @@ export function createGitHttpHandler(
     // POST /<did>/<repo>/git-upload-pack
     // -----------------------------------------------------------------------
     if (request.method === 'POST' && action === 'git-upload-pack') {
-      if (!backend.exists(did, repo)) {
+      if (!(await ensureRepo(did, repo))) {
         return new Response('Repository not found', { status: 404 });
       }
       return handleServiceRpc(backend, did, repo, 'upload-pack', request);
@@ -147,7 +183,7 @@ export function createGitHttpHandler(
         }
       }
 
-      if (!backend.exists(did, repo)) {
+      if (!(await ensureRepo(did, repo))) {
         return new Response('Repository not found', { status: 404 });
       }
 

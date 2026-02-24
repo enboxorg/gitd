@@ -55,6 +55,13 @@ export type GitServerOptions = {
    * @see GitHttpHandlerOptions.onPushComplete
    */
   onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
+
+  /**
+   * Optional callback invoked when a repo is not found on disk.
+   * Implementations can restore the repo from DWN bundle records.
+   * @see GitHttpHandlerOptions.onRepoNotFound
+   */
+  onRepoNotFound?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
 };
 
 /** A running git server instance. */
@@ -87,6 +94,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     pathPrefix,
     authenticatePush,
     onPushComplete,
+    onRepoNotFound,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -96,6 +104,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     pathPrefix,
     authenticatePush,
     onPushComplete,
+    onRepoNotFound,
   });
 
   const server = createServer(async (req, res) => {
