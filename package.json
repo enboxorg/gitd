@@ -37,6 +37,10 @@
     "./git-remote": {
       "types": "./dist/types/git-remote/index.d.ts",
       "import": "./dist/esm/git-remote/index.js"
+    },
+    "./indexer": {
+      "types": "./dist/types/indexer/index.d.ts",
+      "import": "./dist/esm/indexer/index.js"
     }
   },
   "keywords": [

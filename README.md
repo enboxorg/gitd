@@ -103,6 +103,11 @@ dwn-git migrate releases owner/repo
 dwn-git web                       # Start read-only web UI on port 8080
 dwn-git web --port 3000           # Custom port
 
+# Indexer (repo discovery + aggregation)
+dwn-git indexer                   # Start indexer on port 8090
+dwn-git indexer --seed <did>      # Discover DIDs from a seed user
+dwn-git indexer --interval 30     # Crawl every 30 seconds
+
 # Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
 dwn-git whoami                    # Show connected DID
@@ -135,6 +140,17 @@ dwn-git whoami                    # Show connected DID
 - `dwn-git migrate all owner/repo` — import repo metadata, issues, pull requests, and releases
 - Supports pagination, error handling, and author attribution
 - GitHub author info embedded in body as `[migrated from GitHub — @username]` prefix
+
+### Indexer Service
+
+- Crawls distributed DWN records and builds materialized views for discovery and aggregation
+- **DID discovery** — follows the social graph (stars + follows) to find new users and repos
+- **Repo search** — full-text search by name, description, topic, or language
+- **Star aggregation** — counts stars across DWNs (stars live on each starrer's DWN)
+- **Trending repos** — ranked by recent star activity within a time window
+- **User profiles** — repo count, total stars received, follower/following counts
+- **REST API** — `/api/repos`, `/api/repos/search?q=`, `/api/repos/trending`, `/api/users/:did`, `/api/stats`
+- Start with `dwn-git indexer [--port <port>] [--interval <sec>] [--seed <did>]`
 
 ## Architecture
 
@@ -198,7 +214,7 @@ bun test               # Run all tests
 
 ## Status
 
-**Phase 5 in progress** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, and read-only web UI. 570+ tests across 15 test files. See PLAN.md Section 12 for the full roadmap.
+**Phase 5 in progress** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, read-only web UI, and indexer service. 610+ tests across 16 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 
