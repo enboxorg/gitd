@@ -24,6 +24,11 @@
  *   dwn-git release list                       List releases
  *   dwn-git ci status [<commit>]               Show latest CI status
  *   dwn-git ci create <commit>                 Create a check suite
+ *   dwn-git registry publish <name> <ver> <tarball>  Publish a package version
+ *   dwn-git registry info <name>               Show package details
+ *   dwn-git registry versions <name>           List published versions
+ *   dwn-git registry list                      List all packages
+ *   dwn-git registry yank <name> <version>     Mark a version as deprecated
  *   dwn-git wiki create <slug> <title>         Create a wiki page
  *   dwn-git wiki show <slug>                   Show a wiki page
  *   dwn-git org create <name>                  Create an organization
@@ -52,6 +57,7 @@ import { logCommand } from './commands/log.js';
 import { notificationCommand } from './commands/notification.js';
 import { orgCommand } from './commands/org.js';
 import { patchCommand } from './commands/patch.js';
+import { registryCommand } from './commands/registry.js';
 import { releaseCommand } from './commands/release.js';
 import { repoCommand } from './commands/repo.js';
 import { serveCommand } from './commands/serve.js';
@@ -106,6 +112,12 @@ function printUsage(): void {
   console.log('  ci list                                     List recent check suites');
   console.log('  ci show <suite-id>                          Show check suite + runs');
   console.log('  ci create <commit> [--app <name>]           Create a check suite');
+  console.log('');
+  console.log('  registry publish <name> <ver> <tarball>     Publish a package version');
+  console.log('  registry info <name>                        Show package details');
+  console.log('  registry versions <name>                    List published versions');
+  console.log('  registry list [--ecosystem <eco>]           List all packages');
+  console.log('  registry yank <name> <version>              Mark a version as deprecated');
   console.log('');
   console.log('  wiki create <slug> <title> [--body ...]     Create a wiki page');
   console.log('  wiki show <slug>                            Show a wiki page');
@@ -207,6 +219,10 @@ async function main(): Promise<void> {
 
     case 'release':
       await releaseCommand(ctx, rest);
+      break;
+
+    case 'registry':
+      await registryCommand(ctx, rest);
       break;
 
     case 'ci':
