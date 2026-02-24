@@ -8,7 +8,8 @@
   "types": "./dist/types/index.d.ts",
   "bin": {
     "dwn-git": "./dist/esm/cli/main.js",
-    "git-remote-did": "./dist/esm/git-remote/main.js"
+    "git-remote-did": "./dist/esm/git-remote/main.js",
+    "git-remote-did-credential": "./dist/esm/git-remote/credential-main.js"
   },
   "scripts": {
     "clean": "rimraf dist",
@@ -42,6 +43,7 @@
   },
   "dependencies": {
     "@enbox/api": "0.2.4",
+    "@enbox/crypto": "0.0.5",
     "@enbox/dids": "0.0.6",
     "@enbox/dwn-sdk-js": "0.0.8"
   },

@@ -43,6 +43,16 @@ export type GitHttpHandlerOptions = {
   authenticatePush?: (request: Request, did: string, repo: string) => Promise<boolean>;
 
   /**
+   * Optional callback invoked after a successful `git receive-pack` (push).
+   * Use this for post-push operations like syncing refs to DWN records.
+   *
+   * @param did - The repository owner's DID
+   * @param repo - The repository name
+   * @param repoPath - Filesystem path to the bare repository
+   */
+  onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
+
+  /**
    * Optional path prefix to strip from incoming URLs.
    * For example, if the sidecar is mounted at `/git`, set this to `/git`.
    * @default ''
@@ -71,7 +81,7 @@ type GitRoute = {
 export function createGitHttpHandler(
   options: GitHttpHandlerOptions,
 ): (request: Request) => Response | Promise<Response> {
-  const { backend, authenticatePush, pathPrefix = '' } = options;
+  const { backend, authenticatePush, onPushComplete, pathPrefix = '' } = options;
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -140,7 +150,18 @@ export function createGitHttpHandler(
       if (!backend.exists(did, repo)) {
         return new Response('Repository not found', { status: 404 });
       }
-      return handleServiceRpc(backend, did, repo, 'receive-pack', request);
+
+      const response = await handleServiceRpc(backend, did, repo, 'receive-pack', request);
+
+      // Fire the post-push callback asynchronously (don't block the response).
+      if (onPushComplete && response.status === 200) {
+        const repoPath = backend.repoPath(did, repo);
+        onPushComplete(did, repo, repoPath).catch((err) => {
+          console.error(`onPushComplete error for ${did}/${repo}: ${(err as Error).message}`);
+        });
+      }
+
+      return response;
     }
 
     return new Response('Not Found', { status: 404 });

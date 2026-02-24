@@ -73,7 +73,7 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
   if (gitService) {
     const baseUrl = extractEndpointUrl(gitService);
     return {
-      url    : buildUrl(baseUrl, repo),
+      url    : buildUrl(baseUrl, did, repo),
       did,
       source : 'GitTransport',
     };
@@ -85,7 +85,7 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
     const baseUrl = extractEndpointUrl(dwnService);
     const gitUrl = baseUrl.replace(/\/$/, '') + '/git';
     return {
-      url    : buildUrl(gitUrl, repo),
+      url    : buildUrl(gitUrl, did, repo),
       did,
       source : 'DecentralizedWebNode',
     };
@@ -118,8 +118,14 @@ function extractEndpointUrl(service: DidService): string {
   throw new Error(`Cannot extract URL from service endpoint: ${JSON.stringify(ep)}`);
 }
 
-/** Append a repo path to a base URL. */
-function buildUrl(base: string, repo?: string): string {
-  if (!repo) { return base; }
-  return `${base.replace(/\/$/, '')}/${repo}`;
+/**
+ * Build the full git transport URL: `<base>/<did>[/<repo>]`.
+ *
+ * The DID is always included in the path since the git HTTP handler uses
+ * it for routing and authorization.
+ */
+function buildUrl(base: string, did: string, repo?: string): string {
+  const normalized = base.replace(/\/$/, '');
+  if (!repo) { return `${normalized}/${did}`; }
+  return `${normalized}/${did}/${repo}`;
 }

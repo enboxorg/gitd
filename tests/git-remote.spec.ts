@@ -315,25 +315,26 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
     const result = await resolveGitEndpoint(gitTransportDid);
     expect(result.did).toBe(gitTransportDid);
     expect(result.source).toBe('GitTransport');
-    expect(result.url).toBe(gitEndpointUrl);
+    // URL includes the DID in the path for server-side routing.
+    expect(result.url).toBe(`${gitEndpointUrl}/${gitTransportDid}`);
   });
 
-  it('should append repo name to GitTransport endpoint', async () => {
+  it('should append repo name after DID in GitTransport endpoint', async () => {
     const result = await resolveGitEndpoint(gitTransportDid, 'my-repo');
-    expect(result.url).toBe(`${gitEndpointUrl}/my-repo`);
+    expect(result.url).toBe(`${gitEndpointUrl}/${gitTransportDid}/my-repo`);
     expect(result.source).toBe('GitTransport');
   });
 
-  it('should fall back to DWN service with /git suffix', async () => {
+  it('should fall back to DWN service with /git suffix and DID in path', async () => {
     const result = await resolveGitEndpoint(dwnOnlyDid);
     expect(result.did).toBe(dwnOnlyDid);
     expect(result.source).toBe('DecentralizedWebNode');
-    expect(result.url).toBe(`${dwnEndpointUrl}/git`);
+    expect(result.url).toBe(`${dwnEndpointUrl}/git/${dwnOnlyDid}`);
   });
 
-  it('should append repo name to DWN fallback endpoint', async () => {
+  it('should append repo name after DID in DWN fallback endpoint', async () => {
     const result = await resolveGitEndpoint(dwnOnlyDid, 'my-repo');
-    expect(result.url).toBe(`${dwnEndpointUrl}/git/my-repo`);
+    expect(result.url).toBe(`${dwnEndpointUrl}/git/${dwnOnlyDid}/my-repo`);
   });
 
   it('should throw when DID has no GitTransport or DWN services', async () => {
@@ -345,12 +346,12 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
   it('should prefer GitTransport over DecentralizedWebNode when both exist', async () => {
     const result = await resolveGitEndpoint(bothServicesDid);
     expect(result.source).toBe('GitTransport');
-    expect(result.url).toBe(gitPriorityUrl);
+    expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}`);
   });
 
   it('should prefer GitTransport over DWN even with repo appended', async () => {
     const result = await resolveGitEndpoint(bothServicesDid, 'test-repo');
     expect(result.source).toBe('GitTransport');
-    expect(result.url).toBe(`${gitPriorityUrl}/test-repo`);
+    expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}/test-repo`);
   });
 });

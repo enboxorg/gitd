@@ -49,6 +49,12 @@ export type GitServerOptions = {
    * @see GitHttpHandlerOptions.authenticatePush
    */
   authenticatePush?: (request: Request, did: string, repo: string) => Promise<boolean>;
+
+  /**
+   * Optional callback invoked after a successful push.
+   * @see GitHttpHandlerOptions.onPushComplete
+   */
+  onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
 };
 
 /** A running git server instance. */
@@ -80,6 +86,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     hostname = '0.0.0.0',
     pathPrefix,
     authenticatePush,
+    onPushComplete,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -88,6 +95,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     backend,
     pathPrefix,
     authenticatePush,
+    onPushComplete,
   });
 
   const server = createServer(async (req, res) => {

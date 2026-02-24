@@ -306,6 +306,75 @@ describe('createGitHttpHandler', () => {
       expect(authCalled).toBe(false);
     });
   });
+
+  describe('onPushComplete callback', () => {
+    it('should invoke onPushComplete after successful receive-pack', async () => {
+      let pushCompleteCalled = false;
+      let callbackDid: string | undefined;
+      let callbackRepo: string | undefined;
+
+      const pushHandler = createGitHttpHandler({
+        backend,
+        onPushComplete: async (did, repo, _repoPath) => {
+          pushCompleteCalled = true;
+          callbackDid = did;
+          callbackRepo = repo;
+        },
+      });
+
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-receive-pack`, {
+        method  : 'POST',
+        body    : '',
+        headers : { 'Content-Type': 'application/x-git-receive-pack-request' },
+      });
+      const res = await pushHandler(req);
+      expect(res.status).toBe(200);
+
+      // The callback fires asynchronously; give it a tick to complete.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pushCompleteCalled).toBe(true);
+      expect(callbackDid).toBe(TEST_DID);
+      expect(callbackRepo).toBe(TEST_REPO);
+    });
+
+    it('should not invoke onPushComplete for upload-pack', async () => {
+      let pushCompleteCalled = false;
+      const pushHandler = createGitHttpHandler({
+        backend,
+        onPushComplete: async () => { pushCompleteCalled = true; },
+      });
+
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-upload-pack`, {
+        method  : 'POST',
+        body    : '',
+        headers : { 'Content-Type': 'application/x-git-upload-pack-request' },
+      });
+      const res = await pushHandler(req);
+      expect(res.status).toBe(200);
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pushCompleteCalled).toBe(false);
+    });
+
+    it('should not invoke onPushComplete when auth fails', async () => {
+      let pushCompleteCalled = false;
+      const pushHandler = createGitHttpHandler({
+        backend,
+        authenticatePush : async () => false,
+        onPushComplete   : async () => { pushCompleteCalled = true; },
+      });
+
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-receive-pack`, {
+        method : 'POST',
+        body   : '',
+      });
+      const res = await pushHandler(req);
+      expect(res.status).toBe(401);
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pushCompleteCalled).toBe(false);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
