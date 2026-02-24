@@ -74,7 +74,10 @@ function printUsage(): void {
   console.log('');
   console.log('  patch create <title> [--base ...] [--head ...]  Open a patch (PR)');
   console.log('  patch show <number>                         Show patch details and reviews');
+  console.log('  patch comment <number> <body>               Add a comment/review');
   console.log('  patch merge <number>                        Merge a patch');
+  console.log('  patch close <number>                        Close a patch');
+  console.log('  patch reopen <number>                       Reopen a closed patch');
   console.log('  patch list [--status <status>]              List patches');
   console.log('');
   console.log('  log                                         Show recent activity');

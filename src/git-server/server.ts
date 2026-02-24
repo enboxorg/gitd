@@ -149,7 +149,8 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
         }
       }
       res.end();
-    } catch {
+    } catch (err) {
+      console.error(`Git HTTP handler error: ${(err as Error).message}`);
       res.writeHead(500);
       res.end('Internal Server Error');
     }

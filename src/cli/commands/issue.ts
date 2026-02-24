@@ -14,6 +14,7 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
@@ -281,12 +282,6 @@ async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}
 
 /**
  * Get the next sequential issue number by querying existing issues.

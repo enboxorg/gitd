@@ -13,11 +13,11 @@
  * @module
  */
 
-import { existsSync, mkdirSync, symlinkSync, unlinkSync } from 'node:fs';
-
 import { homedir } from 'node:os';
-
+import { existsSync, mkdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+
+import { flagValue } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -94,12 +94,4 @@ export async function setupCommand(args: string[]): Promise<void> {
   console.log('  dwn-git clone <did>/<repo>');
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
-function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
-}
