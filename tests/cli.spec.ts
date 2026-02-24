@@ -610,6 +610,7 @@ describe('dwn-git CLI commands', () => {
 
   describe('ci', () => {
     let suiteId: string;
+    let runId: string;
 
     it('should fail create without a commit', async () => {
       const { ciCommand } = await import('../src/cli/commands/ci.js');
@@ -655,6 +656,51 @@ describe('dwn-git CLI commands', () => {
       const { ciCommand } = await import('../src/cli/commands/ci.js');
       const logs = await captureLog(() => ciCommand(ctx, ['run', suiteId, 'lint']));
       expect(logs.some((l) => l.includes('Created check run "lint"'))).toBe(true);
+      const idLog = logs.find((l) => l.includes('Run ID:'));
+      runId = idLog?.split('Run ID:')[1]?.trim() ?? '';
+      expect(runId).toBeTruthy();
+    });
+
+    it('should fail update without arguments', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const { errors, exitCode } = await captureError(() => ciCommand(ctx, ['update']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail update with invalid status', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const { errors, exitCode } = await captureError(() =>
+        ciCommand(ctx, ['update', runId, '--status', 'banana']),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Invalid status');
+    });
+
+    it('should update a check run to in_progress', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() =>
+        ciCommand(ctx, ['update', runId, '--status', 'in_progress']),
+      );
+      expect(logs.some((l) => l.includes('in_progress'))).toBe(true);
+    });
+
+    it('should update a check run to completed with conclusion', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const logs = await captureLog(() =>
+        ciCommand(ctx, ['update', runId, '--status', 'completed', '--conclusion', 'success']),
+      );
+      expect(logs.some((l) => l.includes('completed'))).toBe(true);
+      expect(logs.some((l) => l.includes('success'))).toBe(true);
+    });
+
+    it('should fail update for non-existent run', async () => {
+      const { ciCommand } = await import('../src/cli/commands/ci.js');
+      const { errors, exitCode } = await captureError(() =>
+        ciCommand(ctx, ['update', 'nonexistent-run-id', '--status', 'completed']),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
     });
 
     it('should show check runs in suite detail', async () => {
