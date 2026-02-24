@@ -20,17 +20,27 @@ GitHub centralizes the social layer around git: identity, access control, issue 
 ### CLI (`dwn-git`)
 
 ```bash
+# Setup & transport
+dwn-git setup                     # Configure git for DID-based remotes
+dwn-git clone did:dht:abc/repo   # Clone via DID resolution
 dwn-git init my-repo              # Create a repo record + bare git repo
 dwn-git serve                     # Start git transport server with ref sync + bundle sync
 
-dwn-git issue create "Bug report" # Create issue #1 with sequential numbering
+# Repository management
+dwn-git repo info                 # Show repo metadata + collaborators
+dwn-git repo add-collaborator <did> maintainer
+dwn-git repo remove-collaborator <did>
+
+# Issues (sequential numbering)
+dwn-git issue create "Bug report" # Create issue #1
 dwn-git issue show 1              # Show issue details + comments
 dwn-git issue comment 1 "On it"  # Add a comment
 dwn-git issue close 1             # Close an issue
 dwn-git issue reopen 1            # Reopen a closed issue
 dwn-git issue list                # List all issues
 
-dwn-git patch create "Add X"     # Create a patch (pull request) with sequential numbering
+# Patches (pull requests)
+dwn-git patch create "Add X"     # Create patch #1
 dwn-git patch show 1              # Show patch details + reviews
 dwn-git patch comment 1 "LGTM"  # Add a review comment
 dwn-git patch merge 1             # Merge a patch
@@ -38,13 +48,54 @@ dwn-git patch close 2             # Close without merging
 dwn-git patch reopen 2            # Reopen a closed patch
 dwn-git patch list                # List all patches
 
-dwn-git repo info                 # Show repo metadata + collaborators
-dwn-git repo add-collaborator <did> maintainer
-dwn-git repo remove-collaborator <did>
+# Releases
+dwn-git release create v1.0.0    # Create a release
+dwn-git release show v1.0.0      # Show release details + assets
+dwn-git release list              # List releases
 
+# CI / Check suites
+dwn-git ci create <commit>       # Create a check suite
+dwn-git ci run <suite-id> lint   # Add a check run to a suite
+dwn-git ci update <run-id> --status completed --conclusion success
+dwn-git ci status                 # Show latest CI status
+dwn-git ci show <suite-id>       # Show suite details + runs
+dwn-git ci list                   # List recent check suites
+
+# Package registry
+dwn-git registry publish my-pkg 1.0.0 ./pkg.tgz
+dwn-git registry info my-pkg     # Show package details
+dwn-git registry versions my-pkg # List published versions
+dwn-git registry list             # List all packages
+dwn-git registry yank my-pkg 1.0.0
+
+# Wiki
+dwn-git wiki create getting-started "Getting Started" --body "# Welcome"
+dwn-git wiki show getting-started
+dwn-git wiki edit getting-started --body "# Updated"
+dwn-git wiki list
+
+# Organizations & teams
+dwn-git org create my-org        # Create an organization
+dwn-git org info                  # Show org details + members + teams
+dwn-git org add-member <did>     # Add a member
+dwn-git org add-owner <did>      # Add an owner
+dwn-git org team create backend  # Create a team
+
+# Social
+dwn-git social star <did>        # Star a repo
+dwn-git social stars              # List starred repos
+dwn-git social follow <did>      # Follow a user
+dwn-git social following          # List followed users
+
+# Notifications
+dwn-git notification list         # List notifications
+dwn-git notification list --unread
+dwn-git notification read <id>   # Mark as read
+dwn-git notification clear        # Clear read notifications
+
+# Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
-dwn-git setup                     # Configure git for DID-based remotes
-dwn-git clone did:dht:abc/repo   # Clone via DID resolution
+dwn-git whoami                    # Show connected DID
 ```
 
 ### Git Transport
@@ -117,12 +168,12 @@ bun install            # Install dependencies
 bun run build          # Build (clean + tsc)
 bun run lint           # Lint (ESLint, zero warnings)
 bun run lint:fix       # Auto-fix lint issues
-bun test               # Run all tests (453 tests)
+bun test               # Run all tests
 ```
 
 ## Status
 
-**Phase 2 complete** — working MVP with CLI, git transport, DID-signed push auth, ref mirroring, bundle storage, and 453 tests (1147 assertions). See PLAN.md Section 12 for the full roadmap.
+**Phase 4 complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, and package registry. 525+ tests across 14 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 

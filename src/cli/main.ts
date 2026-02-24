@@ -24,6 +24,8 @@
  *   dwn-git release list                       List releases
  *   dwn-git ci status [<commit>]               Show latest CI status
  *   dwn-git ci create <commit>                 Create a check suite
+ *   dwn-git ci run <suite-id> <name>           Add a check run
+ *   dwn-git ci update <run-id> --status <s>    Update a check run status
  *   dwn-git registry publish <name> <ver> <tarball>  Publish a package version
  *   dwn-git registry info <name>               Show package details
  *   dwn-git registry versions <name>           List published versions
@@ -112,6 +114,8 @@ function printUsage(): void {
   console.log('  ci list                                     List recent check suites');
   console.log('  ci show <suite-id>                          Show check suite + runs');
   console.log('  ci create <commit> [--app <name>]           Create a check suite');
+  console.log('  ci run <suite-id> <name>                   Add a check run to a suite');
+  console.log('  ci update <run-id> --status <status>       Update a check run status');
   console.log('');
   console.log('  registry publish <name> <ver> <tarball>     Publish a package version');
   console.log('  registry info <name>                        Show package details');

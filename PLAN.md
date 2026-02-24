@@ -1296,18 +1296,22 @@ The most novel component.
 - [x] **E2E bundle round-trip**: push -> bundle sync to DWN -> delete bare repo -> restore from DWN bundles -> clone and verify content
 - 453 total tests, 1147 assertions across 14 test files
 
-### Phase 3: Extended Protocols
+### Phase 3: Extended Protocols (complete)
 
-- [ ] **forge-ci**: check suites, check runs, artifacts
-- [ ] **forge-releases**: release management, immutable assets
-- [ ] **forge-wiki**: collaborative documentation
-- [ ] **forge-org**: organization/team management
-- [ ] **forge-social**: stars, follows, activity feeds
-- [ ] **forge-notifications**: inbox management
+CLI commands and tests for all 6 extended protocols — 53 CLI tests, 506 total tests, 1238 assertions.
 
-### Phase 4: Package Registry
+- [x] **forge-ci**: check suites, check runs, status updates — 6 CLI subcommands (status, list, show, create, run, update), 13 CLI tests
+- [x] **forge-releases**: release management, pre-releases — 3 CLI subcommands (create, show, list), 6 CLI tests
+- [x] **forge-wiki**: collaborative documentation with edit history — 4 CLI subcommands (create, show, edit, list), 8 CLI tests
+- [x] **forge-org**: organization/team management — 9 CLI subcommands (create, info, add-member, remove-member, list-members, add-owner, team create/list/add-member), 11 CLI tests
+- [x] **forge-social**: stars, follows — 6 CLI subcommands (star, unstar, stars, follow, unfollow, following), 11 CLI tests
+- [x] **forge-notifications**: inbox management — 3 CLI subcommands (list, read, clear), 8 CLI tests
 
-- [ ] **forge-registry**: package publishing, version management, tarballs
+### Phase 4: Package Registry (CLI complete)
+
+Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 assertions.
+
+- [x] **forge-registry**: package publishing, version management, tarballs — 5 CLI subcommands (publish, info, versions, list, yank), 20 CLI tests
 - [ ] **Attestation system**: third-party build verification
 - [ ] **npm resolver**: `npm install did:dht:abc123/pkg@1.0.0`
 - [ ] **Dependency verification**: trust chain validation
