@@ -1190,7 +1190,7 @@ A migration tool:
 - [x] Structural tests (220 tests, 615 assertions)
 - [x] Package setup (bun, TypeScript, ESLint, build)
 
-### Phase 1: Core Protocols (current)
+### Phase 1: Core Protocols (complete)
 
 The smallest useful forge — repos, issues, patches.
 
@@ -1199,7 +1199,7 @@ The smallest useful forge — repos, issues, patches.
 - [x] **forge-patches**: PR CRUD, revisions, reviews, merge results — protocol definition complete, integration-tested (cross-protocol roles via `$ref`)
 - [x] Integration tests against a real DWN instance — 15 tests covering repo, issues, patches, CI, and role revocation (242 total tests, 738 assertions)
 - [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
-- [ ] CLI prototype: `dwn-git init`, `dwn-git issue create`, `dwn-git patch create`
+- [x] CLI prototype: `dwn-git init`, `dwn-git issue create/list`, `dwn-git patch create/list`, `dwn-git whoami` — 12 CLI tests (254 total, 762 assertions)
 
 ### Phase 2: Git Transport
 
