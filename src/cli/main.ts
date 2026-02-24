@@ -31,6 +31,11 @@
  *   dwn-git registry versions <name>           List published versions
  *   dwn-git registry list                      List all packages
  *   dwn-git registry yank <name> <version>     Mark a version as deprecated
+ *   dwn-git registry attest <name> <ver> --claim <c>  Create attestation
+ *   dwn-git registry attestations <name> <ver> List attestations
+ *   dwn-git registry verify <name> <ver>       Verify a package version
+ *   dwn-git registry resolve <did>/<name>@<ver> Resolve a remote package
+ *   dwn-git registry verify-deps <did>/<name>@<ver> Verify trust chain
  *   dwn-git wiki create <slug> <title>         Create a wiki page
  *   dwn-git wiki show <slug>                   Show a wiki page
  *   dwn-git org create <name>                  Create an organization
@@ -133,6 +138,11 @@ function printUsage(): void {
   console.log('  registry versions <name>                    List published versions');
   console.log('  registry list [--ecosystem <eco>]           List all packages');
   console.log('  registry yank <name> <version>              Mark a version as deprecated');
+  console.log('  registry attest <name> <ver> --claim <c>    Create an attestation');
+  console.log('  registry attestations <name> <version>      List attestations');
+  console.log('  registry verify <name> <version>            Verify a package version');
+  console.log('  registry resolve <did>/<name>@<ver>         Resolve a remote package');
+  console.log('  registry verify-deps <did>/<name>@<ver>     Verify dependency trust chain');
   console.log('');
   console.log('  wiki create <slug> <title> [--body ...]     Create a wiki page');
   console.log('  wiki show <slug>                            Show a wiki page');

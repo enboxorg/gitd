@@ -1311,10 +1311,10 @@ CLI commands and tests for all 6 extended protocols — 53 CLI tests, 506 total 
 
 Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 assertions.
 
-- [x] **forge-registry**: package publishing, version management, tarballs — 5 CLI subcommands (publish, info, versions, list, yank), 20 CLI tests
-- [ ] **Attestation system**: third-party build verification
-- [ ] **npm resolver**: `npm install did:dht:abc123/pkg@1.0.0`
-- [ ] **Dependency verification**: trust chain validation
+- [x] **forge-registry**: package publishing, version management, tarballs — 10 CLI subcommands, 20 CLI tests
+- [x] **Attestation system**: third-party build verification — attest, attestations, verify commands
+- [x] **npm resolver**: DID-scoped package resolution — resolve command, tarball fetch
+- [x] **Dependency verification**: trust chain validation — verify-deps command, recursive tree
 
 ### Phase 5: Ecosystem
 
@@ -1391,6 +1391,11 @@ dwn-git/
 │       ├── pulls.ts            # GET /repos/:did/:repo/pulls{/:number{/reviews}}
 │       ├── releases.ts         # GET /repos/:did/:repo/releases{/tags/:tag}
 │       └── users.ts            # GET /users/:did
+│   └── resolver/               # Package resolver + trust chain
+│       ├── index.ts            # Barrel re-export
+│       ├── resolve.ts          # DID-scoped package/version/tarball resolution
+│       ├── verify.ts           # Package integrity + attestation verification
+│       └── trust-chain.ts      # Recursive dependency trust chain validator
 ├── schemas/                    # JSON Schema files (34 files)
 │   ├── repo/
 │   ├── refs/
@@ -1418,5 +1423,6 @@ dwn-git/
     ├── ref-sync.spec.ts        # Ref sync tests
     ├── verify.spec.ts          # Signature verification tests
     ├── credential-helper.spec.ts # Credential helper tests
-    └── github-shim.spec.ts     # GitHub API shim tests (56 tests)
+    ├── github-shim.spec.ts     # GitHub API shim tests (56 tests)
+    └── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
 ```
