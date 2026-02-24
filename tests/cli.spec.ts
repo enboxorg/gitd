@@ -1206,4 +1206,212 @@ describe('dwn-git CLI commands', () => {
       expect(logs.some((l) => l.includes('my-pkg'))).toBe(false);
     });
   });
+
+  // =========================================================================
+  // migrate commands
+  // =========================================================================
+
+  describe('migrate', () => {
+    const origFetch = globalThis.fetch;
+
+    /** Create a mock fetch that returns canned GitHub API responses. */
+    function mockGitHubApi(routes: Record<string, unknown>): void {
+      // Sort patterns longest-first so specific paths match before shorter prefixes.
+      const sorted = Object.entries(routes).sort((a, b) => b[0].length - a[0].length);
+
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input.toString();
+
+        for (const [pattern, data] of sorted) {
+          if (url.includes(pattern)) {
+            return new Response(JSON.stringify(data), {
+              status  : 200,
+              headers : { 'Content-Type': 'application/json' },
+            });
+          }
+        }
+
+        // Default: 404 for unmatched routes.
+        return new Response('{"message":"Not Found"}', { status: 404 });
+      }) as typeof fetch;
+    }
+
+    afterAll(() => {
+      globalThis.fetch = origFetch;
+    });
+
+    it('should fail with no subcommand', async () => {
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const { errors, exitCode } = await captureError(() => migrateCommand(ctx, []));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail without owner/repo argument', async () => {
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const { errors, exitCode } = await captureError(() => migrateCommand(ctx, ['repo']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail with invalid owner/repo format', async () => {
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const { errors, exitCode } = await captureError(() => migrateCommand(ctx, ['repo', 'noslash']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should skip repo import when repo already exists', async () => {
+      mockGitHubApi({});
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'testowner/testrepo']));
+      expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+      expect(logs.some((l) => l.includes('skipping'))).toBe(true);
+    });
+
+    it('should import issues with comments', async () => {
+      mockGitHubApi({
+        '/repos/testowner/testrepo/issues?': [
+          { number: 100, title: 'GH Issue One', body: 'From GitHub', state: 'open', user: { login: 'alice' }, created_at: '2025-01-01T00:00:00Z' },
+          { number: 101, title: 'GH Issue Two', body: 'Closed one', state: 'closed', user: { login: 'bob' }, created_at: '2025-01-02T00:00:00Z', pull_request: undefined },
+        ],
+        '/repos/testowner/testrepo/issues/100/comments': [
+          { body: 'First comment', user: { login: 'charlie' }, created_at: '2025-01-01T12:00:00Z' },
+        ],
+        '/repos/testowner/testrepo/issues/101/comments': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['issues', 'testowner/testrepo']));
+      expect(logs.some((l) => l.includes('#100'))).toBe(true);
+      expect(logs.some((l) => l.includes('GH Issue One'))).toBe(true);
+      expect(logs.some((l) => l.includes('1 comment'))).toBe(true);
+      expect(logs.some((l) => l.includes('#101'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 2 issues'))).toBe(true);
+    });
+
+    it('should filter out pull requests from issues list', async () => {
+      mockGitHubApi({
+        '/repos/testowner/testrepo2/issues?': [
+          { number: 1, title: 'Real issue', body: '', state: 'open', user: { login: 'alice' }, created_at: '2025-01-01T00:00:00Z' },
+          { number: 2, title: 'Actually a PR', body: '', state: 'open', user: { login: 'alice' }, created_at: '2025-01-01T00:00:00Z', pull_request: { url: 'https://...' } },
+        ],
+        '/repos/testowner/testrepo2/issues/1/comments': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['issues', 'testowner/testrepo2']));
+      expect(logs.some((l) => l.includes('Imported 1 issue'))).toBe(true);
+      // Should NOT contain the PR.
+      expect(logs.some((l) => l.includes('Actually a PR'))).toBe(false);
+    });
+
+    it('should handle no issues gracefully', async () => {
+      mockGitHubApi({
+        '/repos/emptyowner/emptyrepo/issues?': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['issues', 'emptyowner/emptyrepo']));
+      expect(logs.some((l) => l.includes('No issues found'))).toBe(true);
+    });
+
+    it('should import pull requests with reviews', async () => {
+      mockGitHubApi({
+        '/repos/testowner/testrepo/pulls?': [
+          { number: 200, title: 'GH PR One', body: 'Add feature', state: 'closed', merged: true, user: { login: 'alice' }, base: { ref: 'main' }, head: { ref: 'feature-a' }, created_at: '2025-01-01T00:00:00Z' },
+          { number: 201, title: 'GH PR Two', body: 'WIP', state: 'open', merged: false, user: { login: 'bob' }, base: { ref: 'main' }, head: { ref: 'feature-b' }, created_at: '2025-01-02T00:00:00Z' },
+        ],
+        '/repos/testowner/testrepo/pulls/200/reviews': [
+          { body: 'Looks good!', state: 'APPROVED', user: { login: 'charlie' }, submitted_at: '2025-01-01T12:00:00Z' },
+        ],
+        '/repos/testowner/testrepo/pulls/201/reviews': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['pulls', 'testowner/testrepo']));
+      expect(logs.some((l) => l.includes('#200'))).toBe(true);
+      expect(logs.some((l) => l.includes('GH PR One'))).toBe(true);
+      expect(logs.some((l) => l.includes('merged'))).toBe(true);
+      expect(logs.some((l) => l.includes('1 review'))).toBe(true);
+      expect(logs.some((l) => l.includes('#201'))).toBe(true);
+      expect(logs.some((l) => l.includes('open'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 2 patches'))).toBe(true);
+    });
+
+    it('should handle no pull requests gracefully', async () => {
+      mockGitHubApi({
+        '/repos/emptyowner/emptyrepo/pulls?': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['pulls', 'emptyowner/emptyrepo']));
+      expect(logs.some((l) => l.includes('No pull requests found'))).toBe(true);
+    });
+
+    it('should import releases', async () => {
+      mockGitHubApi({
+        '/repos/testowner/testrepo/releases': [
+          { tag_name: 'v1.0.0', name: 'Stable Release', body: 'First!', prerelease: false, draft: false, target_commitish: 'main', created_at: '2025-01-01T00:00:00Z' },
+          { tag_name: 'v2.0.0-rc.1', name: 'RC1', body: 'Testing', prerelease: true, draft: false, target_commitish: 'main', created_at: '2025-02-01T00:00:00Z' },
+        ],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['releases', 'testowner/testrepo']));
+      expect(logs.some((l) => l.includes('v1.0.0'))).toBe(true);
+      expect(logs.some((l) => l.includes('Stable Release'))).toBe(true);
+      expect(logs.some((l) => l.includes('v2.0.0-rc.1'))).toBe(true);
+      expect(logs.some((l) => l.includes('pre-release'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 2 releases'))).toBe(true);
+    });
+
+    it('should handle no releases gracefully', async () => {
+      mockGitHubApi({
+        '/repos/emptyowner/emptyrepo/releases': [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['releases', 'emptyowner/emptyrepo']));
+      expect(logs.some((l) => l.includes('No releases found'))).toBe(true);
+    });
+
+    it('should run full migration with migrate all', async () => {
+      mockGitHubApi({
+        '/repos/fullowner/fullrepo'         : { name: 'fullrepo', description: 'Test repo', default_branch: 'main', private: false, html_url: 'https://github.com/fullowner/fullrepo', topics: [] },
+        '/repos/fullowner/fullrepo/issues?' : [
+          { number: 1, title: 'Migration issue', body: 'test', state: 'open', user: { login: 'alice' }, created_at: '2025-01-01T00:00:00Z' },
+        ],
+        '/repos/fullowner/fullrepo/issues/1/comments' : [],
+        '/repos/fullowner/fullrepo/pulls?'            : [
+          { number: 2, title: 'Migration PR', body: 'test', state: 'open', merged: false, user: { login: 'bob' }, base: { ref: 'main' }, head: { ref: 'fix' }, created_at: '2025-01-01T00:00:00Z' },
+        ],
+        '/repos/fullowner/fullrepo/pulls/2/reviews' : [],
+        '/repos/fullowner/fullrepo/releases'        : [
+          { tag_name: 'v0.1.0', name: 'Alpha', body: '', prerelease: false, draft: false, target_commitish: 'main', created_at: '2025-01-01T00:00:00Z' },
+        ],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['all', 'fullowner/fullrepo']));
+      expect(logs.some((l) => l.includes('Migrating fullowner/fullrepo'))).toBe(true);
+      // Repo already exists from `init` test, so skip.
+      expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+      expect(logs.some((l) => l.includes('Migration complete'))).toBe(true);
+      expect(logs.some((l) => l.includes('Issues:'))).toBe(true);
+      expect(logs.some((l) => l.includes('Patches:'))).toBe(true);
+      expect(logs.some((l) => l.includes('Releases:'))).toBe(true);
+    });
+
+    it('should fail gracefully on GitHub API error', async () => {
+      // Mock a 403 Forbidden (rate limit).
+      globalThis.fetch = (async (): Promise<Response> => {
+        return new Response('{"message":"API rate limit exceeded"}', { status: 403 });
+      }) as typeof fetch;
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const { errors } = await captureError(() => migrateCommand(ctx, ['issues', 'ratelimited/repo']));
+      expect(errors.some((e) => e.includes('GitHub API 403'))).toBe(true);
+    });
+  });
 });
