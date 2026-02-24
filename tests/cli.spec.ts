@@ -7,7 +7,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
-import { existsSync, rmSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 
 import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
@@ -975,6 +976,188 @@ describe('dwn-git CLI commands', () => {
       const { notificationCommand } = await import('../src/cli/commands/notification.js');
       const logs = await captureLog(() => notificationCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('No notifications'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // registry commands
+  // =========================================================================
+
+  describe('registry', () => {
+    const tarballPath = '__TESTDATA__/cli-test-package.tgz';
+
+    beforeAll(() => {
+      // Create a minimal gzip file to use as a tarball for publish tests.
+      const payload = gzipSync(Buffer.from('fake-package-content'));
+      writeFileSync(tarballPath, payload);
+    });
+
+    afterAll(() => {
+      rmSync(tarballPath, { force: true });
+    });
+
+    it('should fail publish without arguments', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['publish']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail with no subcommand', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, []));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should publish a package', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() =>
+        registryCommand(ctx, ['publish', 'my-pkg', '1.0.0', tarballPath, '--description', 'A test package']),
+      );
+      expect(logs.some((l) => l.includes('Created package: my-pkg'))).toBe(true);
+      expect(logs.some((l) => l.includes('Published my-pkg@1.0.0'))).toBe(true);
+      expect(logs.some((l) => l.includes('Version ID:'))).toBe(true);
+    });
+
+    it('should publish a second version to the same package', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() =>
+        registryCommand(ctx, ['publish', 'my-pkg', '1.1.0', tarballPath]),
+      );
+      // Should NOT print "Created package" since it already exists.
+      expect(logs.some((l) => l.includes('Created package'))).toBe(false);
+      expect(logs.some((l) => l.includes('Published my-pkg@1.1.0'))).toBe(true);
+    });
+
+    it('should reject duplicate version', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() =>
+        registryCommand(ctx, ['publish', 'my-pkg', '1.0.0', tarballPath]),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('already exists');
+    });
+
+    it('should reject invalid ecosystem', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() =>
+        registryCommand(ctx, ['publish', 'bad-eco', '1.0.0', tarballPath, '--ecosystem', 'ruby']),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Invalid ecosystem');
+    });
+
+    it('should show package info', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['info', 'my-pkg']));
+      expect(logs.some((l) => l.includes('Package: my-pkg'))).toBe(true);
+      expect(logs.some((l) => l.includes('Ecosystem:   npm'))).toBe(true);
+      expect(logs.some((l) => l.includes('Description: A test package'))).toBe(true);
+      expect(logs.some((l) => l.includes('Versions:    2'))).toBe(true);
+    });
+
+    it('should fail info for non-existent package', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['info', 'no-such-pkg']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should fail info without a name', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['info']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should list versions', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['versions', 'my-pkg']));
+      expect(logs.some((l) => l.includes('my-pkg'))).toBe(true);
+      expect(logs.some((l) => l.includes('2 versions'))).toBe(true);
+      expect(logs.some((l) => l.includes('1.0.0'))).toBe(true);
+      expect(logs.some((l) => l.includes('1.1.0'))).toBe(true);
+    });
+
+    it('should fail versions without a name', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['versions']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail versions for non-existent package', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['versions', 'ghost-pkg']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should list all packages', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Packages (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('my-pkg'))).toBe(true);
+      expect(logs.some((l) => l.includes('[npm]'))).toBe(true);
+    });
+
+    it('should show empty list for non-matching ecosystem filter', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['list', '--ecosystem', 'cargo']));
+      expect(logs.some((l) => l.includes('No packages found'))).toBe(true);
+    });
+
+    it('should print immutability note on yank', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['yank', 'my-pkg', '1.0.0']));
+      expect(logs.some((l) => l.includes('immutable'))).toBe(true);
+    });
+
+    it('should fail yank without arguments', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['yank']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('Usage');
+    });
+
+    it('should fail yank for non-existent package', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['yank', 'no-pkg', '1.0.0']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should fail yank for non-existent version', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const { errors, exitCode } = await captureError(() => registryCommand(ctx, ['yank', 'my-pkg', '9.9.9']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
+
+    it('should publish a package with a different ecosystem', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() =>
+        registryCommand(ctx, ['publish', 'rust-crate', '0.1.0', tarballPath, '--ecosystem', 'cargo']),
+      );
+      expect(logs.some((l) => l.includes('Created package: rust-crate (cargo)'))).toBe(true);
+      expect(logs.some((l) => l.includes('Published rust-crate@0.1.0'))).toBe(true);
+    });
+
+    it('should list both packages', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('Packages (2)'))).toBe(true);
+      expect(logs.some((l) => l.includes('my-pkg'))).toBe(true);
+      expect(logs.some((l) => l.includes('rust-crate'))).toBe(true);
+    });
+
+    it('should filter packages by ecosystem', async () => {
+      const { registryCommand } = await import('../src/cli/commands/registry.js');
+      const logs = await captureLog(() => registryCommand(ctx, ['list', '--ecosystem', 'cargo']));
+      expect(logs.some((l) => l.includes('Packages (1)'))).toBe(true);
+      expect(logs.some((l) => l.includes('rust-crate'))).toBe(true);
+      expect(logs.some((l) => l.includes('my-pkg'))).toBe(false);
     });
   });
 });
