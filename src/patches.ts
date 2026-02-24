@@ -116,6 +116,7 @@ export const ForgePatchesDefinition = {
           $requiredTags       : ['status', 'baseBranch'],
           $allowUndefinedTags : false,
           status              : { type: 'string', enum: ['draft', 'open', 'closed', 'merged'] },
+          number              : { type: 'string' },
           baseBranch          : { type: 'string' },
           headBranch          : { type: 'string' },
           sourceDid           : { type: 'string' },

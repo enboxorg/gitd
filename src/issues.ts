@@ -116,6 +116,7 @@ export const ForgeIssuesDefinition = {
           $requiredTags       : ['status'],
           $allowUndefinedTags : false,
           status              : { type: 'string', enum: ['open', 'closed'] },
+          number              : { type: 'string' },
           priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
           milestone           : { type: 'string' },
         },
