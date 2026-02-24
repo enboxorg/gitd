@@ -93,6 +93,16 @@ dwn-git notification list --unread
 dwn-git notification read <id>   # Mark as read
 dwn-git notification clear        # Clear read notifications
 
+# GitHub migration
+dwn-git migrate all owner/repo   # Import repo, issues, PRs, releases from GitHub
+dwn-git migrate issues owner/repo
+dwn-git migrate pulls owner/repo
+dwn-git migrate releases owner/repo
+
+# Web UI
+dwn-git web                       # Start read-only web UI on port 8080
+dwn-git web --port 3000           # Custom port
+
 # Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
 dwn-git whoami                    # Show connected DID
@@ -110,6 +120,21 @@ dwn-git whoami                    # Show connected DID
 
 - `git-remote-did` — resolves `did::` URLs to git endpoints via DID document service discovery
 - `git-remote-did-credential` — generates DID-signed push tokens for authentication
+
+### Web UI
+
+- Read-only server-rendered HTML interface — no client-side JavaScript, no build step
+- **Browse ANY DWN-enabled git repo** by entering a DID — works as a universal viewer
+- Landing page at `/` with DID input form; all routes are DID-scoped: `/:did/`, `/:did/issues`, etc.
+- Routes: `/:did` (overview), `/:did/issues`, `/:did/issues/:n`, `/:did/patches`, `/:did/patches/:n`, `/:did/releases`, `/:did/wiki`, `/:did/wiki/:slug`
+- Remote DWN queries use the SDK's `from` parameter — resolved via the target DID's service endpoints
+- Start with `dwn-git web [--port <port>]` (default: 8080, configurable via `DWN_GIT_WEB_PORT`)
+
+### GitHub Migration
+
+- `dwn-git migrate all owner/repo` — import repo metadata, issues, pull requests, and releases
+- Supports pagination, error handling, and author attribution
+- GitHub author info embedded in body as `[migrated from GitHub — @username]` prefix
 
 ## Architecture
 
@@ -173,7 +198,7 @@ bun test               # Run all tests
 
 ## Status
 
-**Phase 4 complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, and package registry. 525+ tests across 14 test files. See PLAN.md Section 12 for the full roadmap.
+**Phase 5 in progress** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry, GitHub migration tool, and read-only web UI. 570+ tests across 15 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 
