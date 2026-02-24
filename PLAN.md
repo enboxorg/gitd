@@ -1318,7 +1318,7 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 
 ### Phase 5: Ecosystem
 
-- [ ] **Indexer service**: repo discovery, star aggregation, external contribution surfacing
+- [x] **Indexer service**: repo discovery, star aggregation, external contribution surfacing
 - [x] **Web UI**: read-only repo/issue/PR viewer
 - [ ] **VS Code extension**: native IDE integration
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
