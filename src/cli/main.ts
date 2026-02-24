@@ -3,14 +3,20 @@
  * dwn-git CLI — decentralized forge powered by DWN protocols.
  *
  * Usage:
- *   dwn-git init <name> [--description <text>] [--branch <name>]
+ *   dwn-git init <name> [--description <text>] [--branch <name>] [--repos <path>]
+ *   dwn-git repo info
+ *   dwn-git repo add-collaborator <did> <role>
+ *   dwn-git repo remove-collaborator <did>
  *   dwn-git issue create <title> [--body <text>]
  *   dwn-git issue list [--status <open|closed>]
  *   dwn-git patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
  *   dwn-git patch list [--status <draft|open|closed|merged>]
+ *   dwn-git serve [--port <port>] [--repos <path>]
  *
  * Environment:
  *   DWN_GIT_PASSWORD  — vault password (prompted interactively if not set)
+ *   DWN_GIT_PORT      — server port for `serve` (default: 9418)
+ *   DWN_GIT_REPOS     — base path for bare repos (default: ./repos)
  *
  * @module
  */
@@ -19,6 +25,8 @@ import { connectAgent } from './agent.js';
 import { initCommand } from './commands/init.js';
 import { issueCommand } from './commands/issue.js';
 import { patchCommand } from './commands/patch.js';
+import { repoCommand } from './commands/repo.js';
+import { serveCommand } from './commands/serve.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -35,15 +43,21 @@ const rest = args.slice(1);
 function printUsage(): void {
   console.log('dwn-git — decentralized forge powered by DWN protocols\n');
   console.log('Usage:');
-  console.log('  dwn-git init <name>               Create a repo record');
-  console.log('  dwn-git issue create <title>       File an issue');
-  console.log('  dwn-git issue list                 List issues');
-  console.log('  dwn-git patch create <title>       Open a patch (PR)');
-  console.log('  dwn-git patch list                 List patches');
-  console.log('  dwn-git whoami                     Show connected DID');
-  console.log('  dwn-git help                       Show this message\n');
+  console.log('  dwn-git init <name>                         Create a repo record + bare git repo');
+  console.log('  dwn-git repo info                           Show repo metadata');
+  console.log('  dwn-git repo add-collaborator <did> <role>  Grant a role (maintainer|triager|contributor)');
+  console.log('  dwn-git repo remove-collaborator <did>      Revoke a collaborator role');
+  console.log('  dwn-git issue create <title>                File an issue');
+  console.log('  dwn-git issue list                          List issues');
+  console.log('  dwn-git patch create <title>                Open a patch (PR)');
+  console.log('  dwn-git patch list                          List patches');
+  console.log('  dwn-git serve [--port <port>]               Start the git transport server');
+  console.log('  dwn-git whoami                              Show connected DID');
+  console.log('  dwn-git help                                Show this message\n');
   console.log('Environment:');
   console.log('  DWN_GIT_PASSWORD  vault password (prompted if not set)');
+  console.log('  DWN_GIT_PORT      server port for `serve` (default: 9418)');
+  console.log('  DWN_GIT_REPOS     base path for bare repos (default: ./repos)');
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +107,14 @@ async function main(): Promise<void> {
 
     case 'patch':
       await patchCommand(ctx, rest);
+      break;
+
+    case 'repo':
+      await repoCommand(ctx, rest);
+      break;
+
+    case 'serve':
+      await serveCommand(ctx, rest);
       break;
 
     case 'whoami':

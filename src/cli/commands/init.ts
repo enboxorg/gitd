@@ -1,12 +1,15 @@
 /**
- * `dwn-git init` — create a forge repository record on the local DWN.
+ * `dwn-git init` — create a forge repository record on the local DWN
+ * and initialize a bare git repository on the filesystem.
  *
- * Usage: dwn-git init <name> [--description <text>] [--branch <name>]
+ * Usage: dwn-git init <name> [--description <text>] [--branch <name>] [--repos <path>]
  *
  * @module
  */
 
 import type { AgentContext } from '../agent.js';
+
+import { GitBackend } from '../../git-server/git-backend.js';
 
 // ---------------------------------------------------------------------------
 // Command
@@ -16,9 +19,10 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const name = args[0];
   const description = flagValue(args, '--description') ?? flagValue(args, '-d');
   const branch = flagValue(args, '--branch') ?? flagValue(args, '-b') ?? 'main';
+  const reposPath = flagValue(args, '--repos') ?? process.env.DWN_GIT_REPOS ?? './repos';
 
   if (!name) {
-    console.error('Usage: dwn-git init <name> [--description <text>] [--branch <name>]');
+    console.error('Usage: dwn-git init <name> [--description <text>] [--branch <name>] [--repos <path>]');
     process.exit(1);
   }
 
@@ -31,6 +35,11 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 
+  // Initialize the bare git repository on disk.
+  const backend = new GitBackend({ basePath: reposPath });
+  const gitPath = await backend.initRepo(ctx.did, name);
+
+  // Create the DWN repo record.
   const { status, record } = await ctx.repo.records.create('repo', {
     data: {
       name,
@@ -53,6 +62,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   console.log(`  DID:       ${ctx.did}`);
   console.log(`  Record ID: ${record.id}`);
   console.log(`  Context:   ${record.contextId}`);
+  console.log(`  Git path:  ${gitPath}`);
 }
 
 // ---------------------------------------------------------------------------
