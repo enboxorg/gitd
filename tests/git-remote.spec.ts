@@ -1,8 +1,15 @@
 /**
  * Tests for git-remote-did: URL parsing, service type utilities, and
  * endpoint resolution.
+ *
+ * Resolution tests require `DID_DHT_GATEWAY_URI` to be set (e.g. to
+ * `https://enbox-did-dht.fly.dev`). Without it, resolution tests are skipped.
  */
-import { describe, expect, it } from 'bun:test';
+import { DidDht } from '@enbox/dids';
+import { parseDidUrl } from '../src/git-remote/parse-url.js';
+import { resolveGitEndpoint } from '../src/git-remote/resolve.js';
+
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import {
   createGitTransportService,
@@ -10,9 +17,6 @@ import {
   GIT_TRANSPORT_SERVICE_TYPE,
   isGitTransportService,
 } from '../src/git-remote/service.js';
-
-import { parseDidUrl } from '../src/git-remote/parse-url.js';
-import { resolveGitEndpoint } from '../src/git-remote/resolve.js';
 
 // ---------------------------------------------------------------------------
 // parseDidUrl
@@ -213,7 +217,7 @@ describe('GitTransport service type', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveGitEndpoint
+// resolveGitEndpoint — error cases (no network required)
 // ---------------------------------------------------------------------------
 
 describe('resolveGitEndpoint', () => {
@@ -227,5 +231,126 @@ describe('resolveGitEndpoint', () => {
     await expect(
       resolveGitEndpoint('did:nonexistent:abc123'),
     ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveGitEndpoint — happy paths (requires DID_DHT_GATEWAY_URI)
+//
+// These tests create real did:dht identities with various services and publish
+// them to the DHT gateway. Set DID_DHT_GATEWAY_URI to enable them.
+// ---------------------------------------------------------------------------
+
+const gatewayUri = process.env.DID_DHT_GATEWAY_URI;
+const describeDht = gatewayUri ? describe : describe.skip;
+
+describeDht('resolveGitEndpoint (did:dht integration)', () => {
+  /** DID with a GitTransport service. */
+  let gitTransportDid: string;
+  const gitEndpointUrl = 'https://git.example.com/repos';
+
+  /** DID with only a DecentralizedWebNode service (fallback path). */
+  let dwnOnlyDid: string;
+  const dwnEndpointUrl = 'https://dwn.example.com';
+
+  /** DID with no services at all. */
+  let noServicesDid: string;
+
+  /** DID with both GitTransport and DWN services (GitTransport should win). */
+  let bothServicesDid: string;
+  const gitPriorityUrl = 'https://git-priority.example.com';
+  const dwnFallbackUrl = 'https://dwn-fallback.example.com';
+
+  beforeAll(async () => {
+    // Create and publish 4 DIDs with different service configurations.
+    const [gitDid, dwnDid, emptyDid, bothDid] = await Promise.all([
+      // 1. DID with GitTransport service only.
+      DidDht.create({
+        options: {
+          publish  : true,
+          services : [
+            { id: 'git', type: 'GitTransport', serviceEndpoint: gitEndpointUrl },
+          ],
+        },
+      }),
+
+      // 2. DID with DecentralizedWebNode service only.
+      DidDht.create({
+        options: {
+          publish  : true,
+          services : [
+            { id: 'dwn', type: 'DecentralizedWebNode', serviceEndpoint: dwnEndpointUrl },
+          ],
+        },
+      }),
+
+      // 3. DID with no services.
+      DidDht.create({
+        options: { publish: true },
+      }),
+
+      // 4. DID with both GitTransport and DWN services.
+      DidDht.create({
+        options: {
+          publish  : true,
+          services : [
+            { id: 'dwn', type: 'DecentralizedWebNode', serviceEndpoint: dwnFallbackUrl },
+            { id: 'git', type: 'GitTransport', serviceEndpoint: gitPriorityUrl },
+          ],
+        },
+      }),
+    ]);
+
+    gitTransportDid = gitDid.uri;
+    dwnOnlyDid = dwnDid.uri;
+    noServicesDid = emptyDid.uri;
+    bothServicesDid = bothDid.uri;
+  }, 30000);
+
+  afterAll(() => {
+    // DIDs are ephemeral — no cleanup needed.
+  });
+
+  it('should resolve a DID with GitTransport service', async () => {
+    const result = await resolveGitEndpoint(gitTransportDid);
+    expect(result.did).toBe(gitTransportDid);
+    expect(result.source).toBe('GitTransport');
+    expect(result.url).toBe(gitEndpointUrl);
+  });
+
+  it('should append repo name to GitTransport endpoint', async () => {
+    const result = await resolveGitEndpoint(gitTransportDid, 'my-repo');
+    expect(result.url).toBe(`${gitEndpointUrl}/my-repo`);
+    expect(result.source).toBe('GitTransport');
+  });
+
+  it('should fall back to DWN service with /git suffix', async () => {
+    const result = await resolveGitEndpoint(dwnOnlyDid);
+    expect(result.did).toBe(dwnOnlyDid);
+    expect(result.source).toBe('DecentralizedWebNode');
+    expect(result.url).toBe(`${dwnEndpointUrl}/git`);
+  });
+
+  it('should append repo name to DWN fallback endpoint', async () => {
+    const result = await resolveGitEndpoint(dwnOnlyDid, 'my-repo');
+    expect(result.url).toBe(`${dwnEndpointUrl}/git/my-repo`);
+  });
+
+  it('should throw when DID has no GitTransport or DWN services', async () => {
+    await expect(
+      resolveGitEndpoint(noServicesDid),
+    ).rejects.toThrow('No GitTransport or DecentralizedWebNode service found');
+  });
+
+  it('should prefer GitTransport over DecentralizedWebNode when both exist', async () => {
+    const result = await resolveGitEndpoint(bothServicesDid);
+    expect(result.source).toBe('GitTransport');
+    expect(result.url).toBe(gitPriorityUrl);
+  });
+
+  it('should prefer GitTransport over DWN even with repo appended', async () => {
+    const result = await resolveGitEndpoint(bothServicesDid, 'test-repo');
+    expect(result.source).toBe('GitTransport');
+    expect(result.url).toBe(`${gitPriorityUrl}/test-repo`);
   });
 });
