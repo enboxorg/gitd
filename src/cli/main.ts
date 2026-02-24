@@ -42,6 +42,7 @@
  *   dwn-git migrate issues <owner/repo>         Import issues + comments
  *   dwn-git migrate pulls <owner/repo>          Import PRs as patches
  *   dwn-git migrate releases <owner/repo>       Import releases
+ *   dwn-git web [--port <port>]                Start the read-only web UI
  *   dwn-git log                                Show recent activity
  *   dwn-git serve [--port <port>]              Start the git transport server
  *   dwn-git whoami                             Show connected DID
@@ -70,6 +71,7 @@ import { repoCommand } from './commands/repo.js';
 import { serveCommand } from './commands/serve.js';
 import { setupCommand } from './commands/setup.js';
 import { socialCommand } from './commands/social.js';
+import { webCommand } from './commands/web.js';
 import { wikiCommand } from './commands/wiki.js';
 
 // ---------------------------------------------------------------------------
@@ -154,12 +156,15 @@ function printUsage(): void {
   console.log('  migrate pulls <owner/repo>                 Import PRs as patches + reviews');
   console.log('  migrate releases <owner/repo>              Import releases');
   console.log('');
+  console.log('  web [--port <port>]                         Start read-only web UI (default: 8080)');
+  console.log('');
   console.log('  log                                         Show recent activity');
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
   console.log('Environment:');
   console.log('  DWN_GIT_PASSWORD  vault password (prompted if not set)');
   console.log('  DWN_GIT_PORT      server port for `serve` (default: 9418)');
+  console.log('  DWN_GIT_WEB_PORT  web UI port for `web` (default: 8080)');
   console.log('  DWN_GIT_REPOS     base path for bare repos (default: ./repos)');
   console.log('  GITHUB_TOKEN      GitHub API token for migration (optional, higher rate limits)');
 }
@@ -264,6 +269,10 @@ async function main(): Promise<void> {
 
     case 'migrate':
       await migrateCommand(ctx, rest);
+      break;
+
+    case 'web':
+      await webCommand(ctx, rest);
       break;
 
     case 'log':
