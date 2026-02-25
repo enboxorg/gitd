@@ -40,6 +40,14 @@ jobs:
             os: windows
             arch: x64
             ext: zip
+          - target: bun-linux-x64-musl
+            os: linux
+            arch: x64-musl
+            ext: tar.gz
+          - target: bun-linux-arm64-musl
+            os: linux
+            arch: arm64-musl
+            ext: tar.gz
 
     steps:
       - name: Checkout repository
