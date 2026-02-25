@@ -1,0 +1,76 @@
+name: Release Artifacts
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            os: linux
+            arch: x64
+            ext: tar.gz
+          - target: bun-linux-arm64
+            os: linux
+            arch: arm64
+            ext: tar.gz
+          - target: bun-darwin-x64
+            os: darwin
+            arch: x64
+            ext: tar.gz
+          - target: bun-darwin-arm64
+            os: darwin
+            arch: arm64
+            ext: tar.gz
+          - target: bun-windows-x64
+            os: windows
+            arch: x64
+            ext: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build release binaries
+        run: |
+          mkdir -p dist/release
+          out_suffix=""
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            out_suffix=".exe"
+          fi
+
+          bun build src/cli/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/dwn-git${out_suffix}"
+          bun build src/git-remote/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did${out_suffix}"
+          bun build src/git-remote/credential-main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did-credential${out_suffix}"
+
+      - name: Package artifact
+        run: |
+          artifact="dwn-git-${{ matrix.os }}-${{ matrix.arch }}.${{ matrix.ext }}"
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            (cd dist/release && zip -q "../../${artifact}" dwn-git.exe git-remote-did.exe git-remote-did-credential.exe)
+          else
+            (cd dist/release && tar -czf "../../${artifact}" dwn-git git-remote-did git-remote-did-credential)
+          fi
+          echo "artifact=${artifact}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.artifact }}

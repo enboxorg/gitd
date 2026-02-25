@@ -287,7 +287,16 @@ See [PLAN.md](./PLAN.md) for the full architecture document covering:
 ## Installation
 
 ```bash
-bun install @enbox/dwn-git
+curl -fsSL https://raw.githubusercontent.com/enboxorg/dwn-git/main/install.sh | bash
+```
+
+The installer works on Linux, macOS, and Windows (Git Bash/WSL). It installs
+the latest prebuilt release binaries (`dwn-git`, `git-remote-did`, and
+`git-remote-did-credential`).
+
+```bash
+# Manual install (if you prefer to run steps yourself)
+bun add -g @enbox/dwn-git
 ```
 
 ### Sub-path Exports
