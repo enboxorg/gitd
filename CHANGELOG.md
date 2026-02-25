@@ -1,5 +1,11 @@
 # @enbox/gitd
 
+## 0.1.0
+
+### Minor Changes
+
+- [#55](https://github.com/enboxorg/gitd/pull/55) [`31f9772`](https://github.com/enboxorg/gitd/commit/31f9772b14046b5e158aa1a37bbe2354323c93d4) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Auto-detect GitHub auth from `gh` CLI and infer owner/repo from local git remotes for the migrate command
+
 ## 0.0.3
 
 ### Patch Changes
