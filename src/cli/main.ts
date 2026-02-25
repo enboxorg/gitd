@@ -43,10 +43,10 @@
  *   gitd social star <did>                  Star a repo
  *   gitd social follow <did>                Follow a user
  *   gitd notification list [--unread]       List notifications
- *   gitd migrate all <owner/repo>            Import everything from GitHub
- *   gitd migrate issues <owner/repo>         Import issues + comments
- *   gitd migrate pulls <owner/repo>          Import PRs as patches
- *   gitd migrate releases <owner/repo>       Import releases
+ *   gitd migrate all [owner/repo]             Import everything from GitHub
+ *   gitd migrate issues [owner/repo]          Import issues + comments
+ *   gitd migrate pulls [owner/repo]           Import PRs as patches
+ *   gitd migrate releases [owner/repo]        Import releases
  *   gitd web [--port <port>]                Start the read-only web UI
  *   gitd indexer [--port] [--interval] [--seed]  Start the indexer service
  *   gitd daemon [--config <path>] [--only ...] Start unified shim daemon
@@ -170,11 +170,11 @@ function printUsage(): void {
   console.log('  notification read <id>                      Mark as read');
   console.log('  notification clear                          Clear read notifications');
   console.log('');
-  console.log('  migrate all <owner/repo>                   Import everything from GitHub');
-  console.log('  migrate repo <owner/repo>                  Import repo metadata');
-  console.log('  migrate issues <owner/repo>                Import issues + comments');
-  console.log('  migrate pulls <owner/repo>                 Import PRs as patches + reviews');
-  console.log('  migrate releases <owner/repo>              Import releases');
+  console.log('  migrate all [owner/repo]                    Import everything from GitHub');
+  console.log('  migrate repo [owner/repo]                   Import repo metadata');
+  console.log('  migrate issues [owner/repo]                 Import issues + comments');
+  console.log('  migrate pulls [owner/repo]                  Import PRs as patches + reviews');
+  console.log('  migrate releases [owner/repo]               Import releases');
   console.log('');
   console.log('  web [--port <port>]                         Start read-only web UI (default: 8080)');
   console.log('');
@@ -204,7 +204,7 @@ function printUsage(): void {
   console.log('  GITD_NPM_SHIM_PORT    npm shim port (default: 4873)');
   console.log('  GITD_GO_SHIM_PORT     Go proxy shim port (default: 4874)');
   console.log('  GITD_OCI_SHIM_PORT    OCI registry shim port (default: 5555)');
-  console.log('  GITHUB_TOKEN      GitHub API token for migration (optional, higher rate limits)');
+  console.log('  GITHUB_TOKEN      GitHub API token for migration (auto-detected from gh CLI)');
 }
 
 // ---------------------------------------------------------------------------
