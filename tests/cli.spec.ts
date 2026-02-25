@@ -7,7 +7,10 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
+import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 
 import { Web5 } from '@enbox/api';
@@ -1308,11 +1311,13 @@ describe('gitd CLI commands', () => {
       // When no owner/repo arg is given, resolveGhRepo falls back to
       // the current directory's git remotes.  We're inside the gitd repo
       // so this should succeed (and the repo record already exists).
+      // No --repos flag → git content migration is skipped.
       mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
       const logs = await captureLog(() => migrateCommand(ctx, ['repo']));
       expect(logs.some((l) => l.includes('Detected GitHub repo'))).toBe(true);
       expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+      expect(logs.some((l) => l.includes('Skipping git content'))).toBe(true);
     });
 
     it('should auto-detect when arg has no slash', async () => {
@@ -1477,6 +1482,27 @@ describe('gitd CLI commands', () => {
     });
 
     it('should run full migration with migrate all', async () => {
+      // Pre-create a bare repo with a commit so git content migration
+      // skips the clone step and succeeds with bundle/ref sync.
+      const didHash = createHash('sha256').update(did).digest('hex').slice(0, 16);
+      const bareRepoPath = join(REPOS_PATH, didHash, 'fullrepo.git');
+      if (!existsSync(join(bareRepoPath, 'HEAD'))) {
+        // Init bare with default branch = main.
+        spawnSync('git', ['init', '--bare', '--initial-branch=main', bareRepoPath]);
+        // Create a commit by using a temporary working clone.
+        const tmpClone = join(REPOS_PATH, '_tmp_fullrepo');
+        rmSync(tmpClone, { recursive: true, force: true });
+        spawnSync('git', ['clone', bareRepoPath, tmpClone]);
+        spawnSync('git', ['checkout', '-b', 'main'], { cwd: tmpClone });
+        spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpClone });
+        spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpClone });
+        writeFileSync(join(tmpClone, 'README.md'), '# fullrepo\n');
+        spawnSync('git', ['add', '.'], { cwd: tmpClone });
+        spawnSync('git', ['commit', '-m', 'init'], { cwd: tmpClone });
+        spawnSync('git', ['push', '-u', 'origin', 'main'], { cwd: tmpClone });
+        rmSync(tmpClone, { recursive: true, force: true });
+      }
+
       mockGitHubApi({
         '/repos/fullowner/fullrepo'         : { name: 'fullrepo', description: 'Test repo', default_branch: 'main', private: false, html_url: 'https://github.com/fullowner/fullrepo', topics: [] },
         '/repos/fullowner/fullrepo/issues?' : [
@@ -1493,14 +1519,83 @@ describe('gitd CLI commands', () => {
       });
 
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const logs = await captureLog(() => migrateCommand(ctx, ['all', 'fullowner/fullrepo']));
+      const logs = await captureLog(() => migrateCommand(ctx, ['all', 'fullowner/fullrepo', '--repos', REPOS_PATH]));
       expect(logs.some((l) => l.includes('Migrating fullowner/fullrepo'))).toBe(true);
-      // Repo already exists from `init` test, so skip.
+      // Repo already exists from `init` test, so skip metadata.
       expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+      // Git content migration: repo exists on disk, so clone is skipped.
+      expect(logs.some((l) => l.includes('Bare repo already exists'))).toBe(true);
+      // Bundle should be created and uploaded.
+      expect(logs.some((l) => l.includes('Bundle uploaded to DWN'))).toBe(true);
+      // Refs should be synced.
+      expect(logs.some((l) => l.includes('Synced') && l.includes('ref(s) to DWN'))).toBe(true);
       expect(logs.some((l) => l.includes('Migration complete'))).toBe(true);
       expect(logs.some((l) => l.includes('Issues:'))).toBe(true);
       expect(logs.some((l) => l.includes('Patches:'))).toBe(true);
       expect(logs.some((l) => l.includes('Releases:'))).toBe(true);
+    });
+
+    it('should migrate git content with migrate repo', async () => {
+      // Pre-create a bare repo with a commit for a "new" repo.
+      const didHash = createHash('sha256').update(did).digest('hex').slice(0, 16);
+      const bareRepoPath = join(REPOS_PATH, didHash, 'gitcontent-repo.git');
+      if (!existsSync(join(bareRepoPath, 'HEAD'))) {
+        spawnSync('git', ['init', '--bare', '--initial-branch=main', bareRepoPath]);
+        const tmpClone = join(REPOS_PATH, '_tmp_gitcontent');
+        rmSync(tmpClone, { recursive: true, force: true });
+        spawnSync('git', ['clone', bareRepoPath, tmpClone]);
+        spawnSync('git', ['checkout', '-b', 'main'], { cwd: tmpClone });
+        spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpClone });
+        spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpClone });
+        writeFileSync(join(tmpClone, 'README.md'), '# gitcontent-repo\n');
+        spawnSync('git', ['add', '.'], { cwd: tmpClone });
+        spawnSync('git', ['commit', '-m', 'initial commit'], { cwd: tmpClone });
+        spawnSync('git', ['push', '-u', 'origin', 'main'], { cwd: tmpClone });
+        // Also create a tag.
+        spawnSync('git', ['tag', 'v1.0.0'], { cwd: tmpClone });
+        spawnSync('git', ['push', 'origin', 'v1.0.0'], { cwd: tmpClone });
+        rmSync(tmpClone, { recursive: true, force: true });
+      }
+
+      // Mock GitHub API to return repo metadata (since DWN repo record
+      // doesn't exist for this repo name, it'll try to create one —
+      // but the DWN repo protocol is singleton, so it'll see the existing
+      // one and skip).
+      mockGitHubApi({
+        '/repos/gitowner/gitcontent-repo': {
+          name           : 'gitcontent-repo', description    : 'Test', default_branch : 'main',
+          private        : false, html_url       : 'https://github.com/gitowner/gitcontent-repo', topics         : [],
+        },
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() =>
+        migrateCommand(ctx, ['repo', 'gitowner/gitcontent-repo', '--repos', REPOS_PATH]),
+      );
+
+      // Repo record already exists (singleton) — metadata skipped.
+      expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+      // Bare repo already on disk — clone skipped.
+      expect(logs.some((l) => l.includes('Bare repo already exists'))).toBe(true);
+      // Bundle created and uploaded.
+      expect(logs.some((l) => l.includes('Creating git bundle'))).toBe(true);
+      expect(logs.some((l) => l.includes('Bundle uploaded to DWN'))).toBe(true);
+      // Refs synced (at least 1 branch + 1 tag).
+      expect(logs.some((l) => l.includes('Syncing refs to DWN'))).toBe(true);
+      expect(logs.some((l) => l.includes('ref(s) to DWN'))).toBe(true);
+      expect(logs.some((l) => l.includes('Git content migration complete'))).toBe(true);
+    });
+
+    it('should skip clone when bare repo exists on disk', async () => {
+      // The bare repo from the previous test already exists.
+      mockGitHubApi({});
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() =>
+        migrateCommand(ctx, ['repo', 'owner/gitcontent-repo', '--repos', REPOS_PATH]),
+      );
+      // Should say "already exists" for both DWN record and bare repo.
+      expect(logs.some((l) => l.includes('Bare repo already exists'))).toBe(true);
     });
 
     it('should fail gracefully on GitHub API error', async () => {
