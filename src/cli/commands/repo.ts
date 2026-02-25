@@ -13,8 +13,8 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Valid roles
@@ -32,11 +32,12 @@ export async function repoCommand(ctx: AgentContext, args: string[]): Promise<vo
   const rest = args.slice(1);
 
   switch (sub) {
-    case 'info': return repoInfo(ctx);
+    case 'info': return repoInfo(ctx, rest);
+    case 'list': return repoList(ctx);
     case 'add-collaborator': return addCollaborator(ctx, rest);
     case 'remove-collaborator': return removeCollaborator(ctx, rest);
     default:
-      console.error('Usage: gitd repo <info|add-collaborator|remove-collaborator>');
+      console.error('Usage: gitd repo <info|list|add-collaborator|remove-collaborator>');
       process.exit(1);
   }
 }
@@ -45,11 +46,25 @@ export async function repoCommand(ctx: AgentContext, args: string[]): Promise<vo
 // repo info
 // ---------------------------------------------------------------------------
 
-async function repoInfo(ctx: AgentContext): Promise<void> {
-  const { records } = await ctx.repo.records.query('repo');
+async function repoInfo(ctx: AgentContext, args: string[]): Promise<void> {
+  const repoName = resolveRepoName(args);
+
+  // If a repo name is resolved, look up that specific repo.
+  // Otherwise fall back to single-repo auto-detection.
+  const { records } = repoName
+    ? await ctx.repo.records.query('repo', { filter: { tags: { name: repoName } } })
+    : await ctx.repo.records.query('repo');
 
   if (records.length === 0) {
-    console.error('No repository found. Run `gitd init <name>` first.');
+    console.error(repoName
+      ? `Repository "${repoName}" not found. Run \`gitd init ${repoName}\` first.`
+      : 'No repository found. Run `gitd init <name>` first.');
+    process.exit(1);
+  }
+
+  if (!repoName && records.length > 1) {
+    console.error('Multiple repositories exist. Specify one with --repo <name>.');
+    console.error('Use `gitd repo list` to see all repositories.');
     process.exit(1);
   }
 
@@ -86,6 +101,28 @@ async function repoInfo(ctx: AgentContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// repo list
+// ---------------------------------------------------------------------------
+
+async function repoList(ctx: AgentContext): Promise<void> {
+  const { records } = await ctx.repo.records.query('repo');
+
+  if (records.length === 0) {
+    console.log('No repositories found. Run `gitd init <name>` to create one.');
+    return;
+  }
+
+  console.log(`Repositories (${records.length}):\n`);
+  for (const record of records) {
+    const data = await record.data.json();
+    const tags = record.tags as Record<string, string> | undefined;
+    const vis = tags?.visibility ?? 'public';
+    console.log(`  ${data.name}`);
+    console.log(`    ${vis}  branch: ${data.defaultBranch}  id: ${record.id}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // repo add-collaborator
 // ---------------------------------------------------------------------------
 
@@ -105,7 +142,7 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const { status, record } = await ctx.repo.records.create(`repo/${role}` as any, {
     data            : { did, alias: alias ?? '' },

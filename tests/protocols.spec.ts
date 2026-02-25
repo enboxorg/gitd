@@ -59,8 +59,8 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.structure.repo.contributor.$role).toBe(true);
     });
 
-    it('should enforce $recordLimit on repo singleton', () => {
-      expect(ForgeRepoDefinition.structure.repo.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
+    it('should NOT have $recordLimit on repo (multi-repo)', () => {
+      expect((ForgeRepoDefinition.structure.repo as any).$recordLimit).toBeUndefined();
     });
 
     it('should enforce $recordLimit on readme and license singletons', () => {

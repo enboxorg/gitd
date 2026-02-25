@@ -6,6 +6,9 @@
  * push, git refs are mirrored to DWN records via ForgeRefsProtocol and
  * a git bundle is synced to a DWN record via ForgeRepoProtocol.
  *
+ * Multi-repo: ref/bundle sync is resolved per-push using the repo name
+ * from the push URL. Each repo has its own contextId in the DWN.
+ *
  * Usage: gitd serve [--port <port>] [--repos <path>] [--prefix <path>]
  *                       [--public-url <url>]
  *
@@ -41,9 +44,6 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const pathPrefix = flagValue(args, '--prefix') ?? process.env.GITD_PREFIX;
   const publicUrl = flagValue(args, '--public-url') ?? process.env.GITD_PUBLIC_URL;
 
-  // Look up the repo context (contextId + visibility) for ref/bundle syncing.
-  const { contextId: repoContextId, visibility } = await getRepoContext(ctx);
-
   // DID-based signature verification for push tokens.
   const verifySignature = createDidSignatureVerifier();
 
@@ -58,30 +58,50 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     authorizePush,
   });
 
-  // Post-push callbacks — run ref sync and bundle sync after each push.
-  const syncRefs = createRefSyncer({
-    refs          : ctx.refs,
-    repoContextId : repoContextId,
-  });
+  // Post-push callback — resolves repo context dynamically per-push,
+  // then runs ref sync and bundle sync.
+  const onPushComplete = async (_did: string, repoName: string, repoPath: string): Promise<void> => {
+    let repoCtx;
+    try {
+      repoCtx = await getRepoContext(ctx, repoName);
+    } catch {
+      console.error(`push-sync: repo "${repoName}" not found in DWN — skipping ref/bundle sync.`);
+      return;
+    }
 
-  const syncBundle = createBundleSyncer({
-    repo          : ctx.repo,
-    repoContextId : repoContextId,
-    visibility,
-  });
+    const syncRefs = createRefSyncer({
+      refs          : ctx.refs,
+      repoContextId : repoCtx.contextId,
+    });
 
-  // Compose both post-push callbacks into a single handler.
-  const onPushComplete = async (did: string, repo: string, repoPath: string): Promise<void> => {
+    const syncBundle = createBundleSyncer({
+      repo          : ctx.repo,
+      repoContextId : repoCtx.contextId,
+      visibility    : repoCtx.visibility,
+    });
+
     await Promise.all([
-      syncRefs(did, repo, repoPath),
-      syncBundle(did, repo, repoPath),
+      syncRefs(_did, repoName, repoPath),
+      syncBundle(_did, repoName, repoPath),
     ]);
   };
 
   // Auto-restore repos from DWN bundles when not found on disk.
-  const onRepoNotFound = async (_did: string, _repo: string, repoPath: string): Promise<boolean> => {
-    console.log(`Restoring repo from DWN bundles → ${repoPath}`);
-    const result = await restoreFromBundles({ repo: ctx.repo, repoPath });
+  const onRepoNotFound = async (_did: string, repoName: string, repoPath: string): Promise<boolean> => {
+    let repoCtx;
+    try {
+      repoCtx = await getRepoContext(ctx, repoName);
+    } catch {
+      console.error(`restore: repo "${repoName}" not found in DWN — cannot restore.`);
+      return false;
+    }
+
+    console.log(`Restoring repo "${repoName}" from DWN bundles → ${repoPath}`);
+    const result = await restoreFromBundles({
+      repo          : ctx.repo,
+      repoPath,
+      repoContextId : repoCtx.contextId,
+    });
     if (result.success) {
       console.log(`Restored ${result.bundlesApplied} bundle(s), tip: ${result.tipCommit}`);
     } else {
@@ -105,10 +125,9 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
       await registerGitService(ctx.web5, publicUrl);
       console.log(`Registered GitTransport service: ${publicUrl}`);
 
-      // Update the repo record with the git endpoint.
+      // Update ALL repo records with the git endpoint.
       const { records } = await ctx.repo.records.query('repo');
-      if (records.length > 0) {
-        const record = records[0];
+      for (const record of records) {
         const data = await record.data.json();
         const gitEndpoints = data.gitEndpoints ?? [];
         if (!gitEndpoints.includes(publicUrl)) {
@@ -149,5 +168,3 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     });
   });
 }
-
-

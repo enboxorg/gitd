@@ -128,9 +128,8 @@ export const ForgeRepoDefinition = {
   },
   structure: {
     repo: {
-      $recordLimit : { max: 1, strategy: 'reject' },
-      $actions     : [{ who: 'anyone', can: ['read'] }],
-      $tags        : {
+      $actions : [{ who: 'anyone', can: ['read'] }],
+      $tags    : {
         $requiredTags       : ['name', 'visibility'],
         $allowUndefinedTags : false,
         name                : { type: 'string', maxLength: 100 },

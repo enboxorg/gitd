@@ -13,8 +13,8 @@ import type { AgentContext } from '../agent.js';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -52,7 +52,7 @@ async function releaseCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const tags: Record<string, unknown> = { tagName };
   if (commitSha) { tags.commitSha = commitSha; }
@@ -87,7 +87,7 @@ async function releaseShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const release = await findReleaseByTag(ctx, repoContextId, tagName);
   if (!release) {
     console.error(`Release ${tagName} not found.`);
@@ -138,7 +138,7 @@ async function releaseShow(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function releaseList(ctx: AgentContext, args: string[]): Promise<void> {
   const limit = parseInt(flagValue(args, '--limit') ?? '20', 10);
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const { records } = await ctx.releases.records.query('repo/release' as any, {
     filter     : { contextId: repoContextId },

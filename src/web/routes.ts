@@ -34,9 +34,14 @@ function fromOpt(ctx: AgentContext, targetDid: string): string | undefined {
   return targetDid === ctx.did ? undefined : targetDid;
 }
 
-async function getRepoRecord(ctx: AgentContext, targetDid: string): Promise<RepoInfo | null> {
+async function getRepoRecord(
+  ctx: AgentContext, targetDid: string, repoName: string,
+): Promise<RepoInfo | null> {
   const from = fromOpt(ctx, targetDid);
-  const { records } = await ctx.repo.records.query('repo', { from });
+  const { records } = await ctx.repo.records.query('repo', {
+    from,
+    filter: { tags: { name: repoName } },
+  });
   if (records.length === 0) { return null; }
   const rec = records[0];
   const data = await rec.data.json();
@@ -50,7 +55,43 @@ async function getRepoRecord(ctx: AgentContext, targetDid: string): Promise<Repo
   };
 }
 
-function repoName(repo: { name: string } | null): string {
+/** List all repos for a DID. */
+export async function repoListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+  const from = fromOpt(ctx, targetDid);
+  const { records } = await ctx.repo.records.query('repo', { from });
+
+  if (records.length === 0) {
+    return layout('Repositories', 'gitd',
+      '<div class="card"><p class="empty">No repositories found for this DID.</p></div>', basePath);
+  }
+
+  let rows = '';
+  for (const rec of records) {
+    const data = await rec.data.json();
+    const tags = rec.tags as Record<string, string> | undefined;
+    const vis = tags?.visibility ?? 'public';
+    const name = data.name ?? 'unnamed';
+    rows += `<tr>
+      <td><a href="${basePath}/${esc(name)}">${esc(name)}</a></td>
+      <td>${esc(data.description ?? '')}</td>
+      <td class="meta">${esc(vis)}</td>
+      <td class="meta">${esc(data.defaultBranch ?? 'main')}</td>
+    </tr>`;
+  }
+
+  const html = `
+    <div class="card">
+      <h2>Repositories (${records.length})</h2>
+      <table>
+        <tr><th>Name</th><th>Description</th><th>Visibility</th><th>Branch</th></tr>
+        ${rows}
+      </table>
+    </div>`;
+
+  return layout('Repositories', 'gitd', html, basePath);
+}
+
+function repoTitle(repo: { name: string } | null): string {
   return repo?.name ?? 'gitd';
 }
 
@@ -58,9 +99,9 @@ function repoName(repo: { name: string } | null): string {
 // GET /:did — repo overview
 // ---------------------------------------------------------------------------
 
-export async function overviewPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+export async function overviewPage(ctx: AgentContext, targetDid: string, repoName: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
 
   if (!repo) {
     return layout('Overview', 'gitd', '<div class="card"><p class="empty">No repository found for this DID.</p></div>', basePath);
@@ -117,16 +158,16 @@ export async function overviewPage(ctx: AgentContext, targetDid: string, basePat
       </div>
     </div>`;
 
-  return layout('Overview', repoName(repo), html, basePath);
+  return layout('Overview', repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
 // GET /:did/issues — issues list
 // ---------------------------------------------------------------------------
 
-export async function issuesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+export async function issuesListPage(ctx: AgentContext, targetDid: string, repoName: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return layout('Issues', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
@@ -136,7 +177,7 @@ export async function issuesListPage(ctx: AgentContext, targetDid: string, baseP
   });
 
   if (records.length === 0) {
-    return layout('Issues', repoName(repo), '<div class="card"><p class="empty">No issues yet.</p></div>', basePath);
+    return layout('Issues', repoTitle(repo), '<div class="card"><p class="empty">No issues yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -162,7 +203,7 @@ export async function issuesListPage(ctx: AgentContext, targetDid: string, baseP
       </table>
     </div>`;
 
-  return layout('Issues', repoName(repo), html, basePath);
+  return layout('Issues', repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -170,10 +211,10 @@ export async function issuesListPage(ctx: AgentContext, targetDid: string, baseP
 // ---------------------------------------------------------------------------
 
 export async function issueDetailPage(
-  ctx: AgentContext, targetDid: string, basePath: string, number: string,
+  ctx: AgentContext, targetDid: string, repoName: string, basePath: string, number: string,
 ): Promise<string | null> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return null; }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
@@ -218,16 +259,16 @@ export async function issueDetailPage(
     ` : ''}
     <p><a href="${basePath}/issues">&larr; Back to issues</a></p>`;
 
-  return layout(`Issue #${number}`, repoName(repo), html, basePath);
+  return layout(`Issue #${number}`, repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
 // GET /:did/patches — patches list
 // ---------------------------------------------------------------------------
 
-export async function patchesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+export async function patchesListPage(ctx: AgentContext, targetDid: string, repoName: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return layout('Patches', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
@@ -237,7 +278,7 @@ export async function patchesListPage(ctx: AgentContext, targetDid: string, base
   });
 
   if (records.length === 0) {
-    return layout('Patches', repoName(repo), '<div class="card"><p class="empty">No patches yet.</p></div>', basePath);
+    return layout('Patches', repoTitle(repo), '<div class="card"><p class="empty">No patches yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -266,7 +307,7 @@ export async function patchesListPage(ctx: AgentContext, targetDid: string, base
       </table>
     </div>`;
 
-  return layout('Patches', repoName(repo), html, basePath);
+  return layout('Patches', repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -274,10 +315,10 @@ export async function patchesListPage(ctx: AgentContext, targetDid: string, base
 // ---------------------------------------------------------------------------
 
 export async function patchDetailPage(
-  ctx: AgentContext, targetDid: string, basePath: string, number: string,
+  ctx: AgentContext, targetDid: string, repoName: string, basePath: string, number: string,
 ): Promise<string | null> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return null; }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
@@ -329,16 +370,16 @@ export async function patchDetailPage(
     ` : ''}
     <p><a href="${basePath}/patches">&larr; Back to patches</a></p>`;
 
-  return layout(`Patch #${number}`, repoName(repo), html, basePath);
+  return layout(`Patch #${number}`, repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
 // GET /:did/releases — releases list
 // ---------------------------------------------------------------------------
 
-export async function releasesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+export async function releasesListPage(ctx: AgentContext, targetDid: string, repoName: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return layout('Releases', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.releases.records.query('repo/release' as any, {
@@ -348,7 +389,7 @@ export async function releasesListPage(ctx: AgentContext, targetDid: string, bas
   });
 
   if (records.length === 0) {
-    return layout('Releases', repoName(repo), '<div class="card"><p class="empty">No releases yet.</p></div>', basePath);
+    return layout('Releases', repoTitle(repo), '<div class="card"><p class="empty">No releases yet.</p></div>', basePath);
   }
 
   let cards = '';
@@ -371,16 +412,16 @@ export async function releasesListPage(ctx: AgentContext, targetDid: string, bas
   }
 
   const html = `<h2>Releases (${records.length})</h2>${cards}`;
-  return layout('Releases', repoName(repo), html, basePath);
+  return layout('Releases', repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
 // GET /:did/wiki — wiki list
 // ---------------------------------------------------------------------------
 
-export async function wikiListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
+export async function wikiListPage(ctx: AgentContext, targetDid: string, repoName: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
 
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
     from,
@@ -388,7 +429,7 @@ export async function wikiListPage(ctx: AgentContext, targetDid: string, basePat
   });
 
   if (records.length === 0) {
-    return layout('Wiki', repoName(repo), '<div class="card"><p class="empty">No wiki pages yet.</p></div>', basePath);
+    return layout('Wiki', repoTitle(repo), '<div class="card"><p class="empty">No wiki pages yet.</p></div>', basePath);
   }
 
   let rows = '';
@@ -411,7 +452,7 @@ export async function wikiListPage(ctx: AgentContext, targetDid: string, basePat
       </table>
     </div>`;
 
-  return layout('Wiki', repoName(repo), html, basePath);
+  return layout('Wiki', repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -419,10 +460,10 @@ export async function wikiListPage(ctx: AgentContext, targetDid: string, basePat
 // ---------------------------------------------------------------------------
 
 export async function wikiDetailPage(
-  ctx: AgentContext, targetDid: string, basePath: string, slug: string,
+  ctx: AgentContext, targetDid: string, repoName: string, basePath: string, slug: string,
 ): Promise<string | null> {
   const from = fromOpt(ctx, targetDid);
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
 
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
     from,
@@ -445,5 +486,5 @@ export async function wikiDetailPage(
     </div>
     <p><a href="${basePath}/wiki">&larr; Back to wiki</a></p>`;
 
-  return layout(title, repoName(repo), html, basePath);
+  return layout(title, repoTitle(repo), html, basePath);
 }

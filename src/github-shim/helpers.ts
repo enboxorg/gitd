@@ -82,12 +82,17 @@ export function fromOpt(ctx: AgentContext, targetDid: string): string | undefine
 }
 
 /**
- * Look up the singleton repo record for a target DID.  Returns `null`
- * if no repo record exists.
+ * Look up a repo record for a target DID by name.  Returns `null`
+ * if no matching repo record exists.
  */
-export async function getRepoRecord(ctx: AgentContext, targetDid: string): Promise<RepoInfo | null> {
+export async function getRepoRecord(
+  ctx: AgentContext, targetDid: string, repoName: string,
+): Promise<RepoInfo | null> {
   const from = fromOpt(ctx, targetDid);
-  const { records } = await ctx.repo.records.query('repo', { from });
+  const { records } = await ctx.repo.records.query('repo', {
+    from,
+    filter: { tags: { name: repoName } },
+  });
   if (records.length === 0) { return null; }
 
   const rec = records[0];

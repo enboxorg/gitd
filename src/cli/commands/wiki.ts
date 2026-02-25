@@ -12,8 +12,8 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -49,7 +49,7 @@ async function wikiCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   // Check for duplicate slug.
   const existing = await findPageBySlug(ctx, repoContextId, slug);
@@ -85,7 +85,7 @@ async function wikiShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const page = await findPageBySlug(ctx, repoContextId, slug);
   if (!page) {
     console.error(`Wiki page "${slug}" not found.`);
@@ -125,7 +125,7 @@ async function wikiEdit(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const page = await findPageBySlug(ctx, repoContextId, slug);
   if (!page) {
     console.error(`Wiki page "${slug}" not found. Use \`gitd wiki create\` first.`);
@@ -158,8 +158,8 @@ async function wikiEdit(ctx: AgentContext, args: string[]): Promise<void> {
 // wiki list
 // ---------------------------------------------------------------------------
 
-async function wikiList(ctx: AgentContext, _args: string[]): Promise<void> {
-  const repoContextId = await getRepoContextId(ctx);
+async function wikiList(ctx: AgentContext, args: string[]): Promise<void> {
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
     filter: { contextId: repoContextId },

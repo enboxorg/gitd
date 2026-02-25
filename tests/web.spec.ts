@@ -6,8 +6,9 @@
  * then each test calls `handleRequest()` directly with a constructed URL.
  * No HTTP server is started.
  *
- * URL scheme: `/:did/...` — the target DID is embedded in the path,
- * allowing the web UI to view ANY DWN-enabled git repo.
+ * URL scheme: `/:did/:repo/...` — the target DID and repo name are
+ * embedded in the path, allowing the web UI to view ANY DWN-enabled
+ * git repo.  `/:did` shows the repo list for that DID.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
@@ -50,6 +51,11 @@ function url(path: string): URL {
 
 function didUrl(subPath: string): URL {
   return url(`/${testDid}${subPath}`);
+}
+
+/** Build a URL scoped to the test repo: `/:did/test-repo/<subPath>`. */
+function repoUrl(subPath: string): URL {
+  return url(`/${testDid}/test-repo${subPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -197,31 +203,14 @@ describe('gitd web UI', () => {
   });
 
   // =========================================================================
-  // Overview page
+  // Repo list page
   // =========================================================================
 
-  describe('GET /:did', () => {
-    it('should return 200 with repo overview', async () => {
+  describe('GET /:did (repo list)', () => {
+    it('should return 200 with repo list', async () => {
       const res = await handleRequest(ctx, didUrl('/'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('test-repo');
-      expect(res.body).toContain('A test repository');
-      expect(res.body).toContain('main');
-      expect(res.body).toContain('public');
-    });
-
-    it('should show issue, patch, and release counts', async () => {
-      const res = await handleRequest(ctx, didUrl('/'));
-      expect(res.status).toBe(200);
-      expect(res.body).toContain('Issues');
-      expect(res.body).toContain('1 open');
-      expect(res.body).toContain('Patches');
-      expect(res.body).toContain('Releases');
-    });
-
-    it('should display the target DID', async () => {
-      const res = await handleRequest(ctx, didUrl('/'));
-      expect(res.body).toContain(ctx.did);
     });
 
     it('should return 502 for an unresolvable DID', async () => {
@@ -233,27 +222,56 @@ describe('gitd web UI', () => {
   });
 
   // =========================================================================
+  // Overview page
+  // =========================================================================
+
+  describe('GET /:did/:repo', () => {
+    it('should return 200 with repo overview', async () => {
+      const res = await handleRequest(ctx, repoUrl('/'));
+      expect(res.status).toBe(200);
+      expect(res.body).toContain('test-repo');
+      expect(res.body).toContain('A test repository');
+      expect(res.body).toContain('main');
+      expect(res.body).toContain('public');
+    });
+
+    it('should show issue, patch, and release counts', async () => {
+      const res = await handleRequest(ctx, repoUrl('/'));
+      expect(res.status).toBe(200);
+      expect(res.body).toContain('Issues');
+      expect(res.body).toContain('1 open');
+      expect(res.body).toContain('Patches');
+      expect(res.body).toContain('Releases');
+    });
+
+    it('should display the target DID', async () => {
+      const res = await handleRequest(ctx, repoUrl('/'));
+      expect(res.body).toContain(ctx.did);
+    });
+  });
+
+  // =========================================================================
   // Issues list
   // =========================================================================
 
-  describe('GET /:did/issues', () => {
+  describe('GET /:did/:repo/issues', () => {
     it('should return 200 with issues list', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues'));
+      const res = await handleRequest(ctx, repoUrl('/issues'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Fix the widget');
       expect(res.body).toContain('Old bug');
     });
 
-    it('should show issue numbers as DID-scoped links', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues'));
-      expect(res.body).toContain(`href="/${testDid}/issues/1"`);
+    it('should show issue numbers as repo-scoped links', async () => {
+      const res = await handleRequest(ctx, repoUrl('/issues'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/issues/1"`);
       expect(res.body).toContain('#1');
-      expect(res.body).toContain(`href="/${testDid}/issues/2"`);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/issues/2"`);
       expect(res.body).toContain('#2');
     });
 
     it('should show status badges', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues'));
+      const res = await handleRequest(ctx, repoUrl('/issues'));
       expect(res.body).toContain('OPEN');
       expect(res.body).toContain('CLOSED');
     });
@@ -263,32 +281,32 @@ describe('gitd web UI', () => {
   // Issue detail
   // =========================================================================
 
-  describe('GET /:did/issues/:number', () => {
+  describe('GET /:did/:repo/issues/:number', () => {
     it('should return 200 with issue detail', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/1'));
+      const res = await handleRequest(ctx, repoUrl('/issues/1'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Fix the widget');
       expect(res.body).toContain('The widget is broken.');
     });
 
     it('should show comments', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/1'));
+      const res = await handleRequest(ctx, repoUrl('/issues/1'));
       expect(res.body).toContain('I can reproduce this.');
       expect(res.body).toContain('Comments (1)');
     });
 
     it('should show status badge', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/1'));
+      const res = await handleRequest(ctx, repoUrl('/issues/1'));
       expect(res.body).toContain('OPEN');
     });
 
-    it('should include DID-scoped back link', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/1'));
-      expect(res.body).toContain(`href="/${testDid}/issues"`);
+    it('should include repo-scoped back link', async () => {
+      const res = await handleRequest(ctx, repoUrl('/issues/1'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/issues"`);
     });
 
     it('should return 404 for non-existent issue', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/999'));
+      const res = await handleRequest(ctx, repoUrl('/issues/999'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Issue not found');
     });
@@ -298,22 +316,22 @@ describe('gitd web UI', () => {
   // Patches list
   // =========================================================================
 
-  describe('GET /:did/patches', () => {
+  describe('GET /:did/:repo/patches', () => {
     it('should return 200 with patches list', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches'));
+      const res = await handleRequest(ctx, repoUrl('/patches'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Add feature X');
     });
 
     it('should show branch info', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches'));
+      const res = await handleRequest(ctx, repoUrl('/patches'));
       expect(res.body).toContain('main');
       expect(res.body).toContain('feat-x');
     });
 
-    it('should show DID-scoped patch links', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches'));
-      expect(res.body).toContain(`href="/${testDid}/patches/1"`);
+    it('should show repo-scoped patch links', async () => {
+      const res = await handleRequest(ctx, repoUrl('/patches'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/patches/1"`);
       expect(res.body).toContain('#1');
     });
   });
@@ -322,35 +340,35 @@ describe('gitd web UI', () => {
   // Patch detail
   // =========================================================================
 
-  describe('GET /:did/patches/:number', () => {
+  describe('GET /:did/:repo/patches/:number', () => {
     it('should return 200 with patch detail', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches/1'));
+      const res = await handleRequest(ctx, repoUrl('/patches/1'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Add feature X');
       expect(res.body).toContain('Implements feature X.');
     });
 
     it('should show reviews', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches/1'));
+      const res = await handleRequest(ctx, repoUrl('/patches/1'));
       expect(res.body).toContain('Looks good to me.');
       expect(res.body).toContain('Reviews (1)');
       expect(res.body).toContain('APPROVE');
     });
 
     it('should show branch info and status', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches/1'));
+      const res = await handleRequest(ctx, repoUrl('/patches/1'));
       expect(res.body).toContain('main');
       expect(res.body).toContain('feat-x');
       expect(res.body).toContain('OPEN');
     });
 
-    it('should include DID-scoped back link', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches/1'));
-      expect(res.body).toContain(`href="/${testDid}/patches"`);
+    it('should include repo-scoped back link', async () => {
+      const res = await handleRequest(ctx, repoUrl('/patches/1'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/patches"`);
     });
 
     it('should return 404 for non-existent patch', async () => {
-      const res = await handleRequest(ctx, didUrl('/patches/999'));
+      const res = await handleRequest(ctx, repoUrl('/patches/999'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Patch not found');
     });
@@ -360,16 +378,16 @@ describe('gitd web UI', () => {
   // Releases list
   // =========================================================================
 
-  describe('GET /:did/releases', () => {
+  describe('GET /:did/:repo/releases', () => {
     it('should return 200 with releases list', async () => {
-      const res = await handleRequest(ctx, didUrl('/releases'));
+      const res = await handleRequest(ctx, repoUrl('/releases'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('v1.0.0');
       expect(res.body).toContain('Initial release.');
     });
 
     it('should show release count', async () => {
-      const res = await handleRequest(ctx, didUrl('/releases'));
+      const res = await handleRequest(ctx, repoUrl('/releases'));
       expect(res.body).toContain('Releases (1)');
     });
   });
@@ -378,20 +396,20 @@ describe('gitd web UI', () => {
   // Wiki list
   // =========================================================================
 
-  describe('GET /:did/wiki', () => {
+  describe('GET /:did/:repo/wiki', () => {
     it('should return 200 with wiki page list', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki'));
+      const res = await handleRequest(ctx, repoUrl('/wiki'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Getting Started');
     });
 
-    it('should link to wiki page with DID-scoped slug', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki'));
-      expect(res.body).toContain(`href="/${testDid}/wiki/getting-started"`);
+    it('should link to wiki page with repo-scoped slug', async () => {
+      const res = await handleRequest(ctx, repoUrl('/wiki'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/wiki/getting-started"`);
     });
 
     it('should show page count', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki'));
+      const res = await handleRequest(ctx, repoUrl('/wiki'));
       expect(res.body).toContain('Wiki (1)');
     });
   });
@@ -400,21 +418,21 @@ describe('gitd web UI', () => {
   // Wiki detail
   // =========================================================================
 
-  describe('GET /:did/wiki/:slug', () => {
+  describe('GET /:did/:repo/wiki/:slug', () => {
     it('should return 200 with wiki page content', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki/getting-started'));
+      const res = await handleRequest(ctx, repoUrl('/wiki/getting-started'));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Getting Started');
       expect(res.body).toContain('Welcome to the wiki.');
     });
 
-    it('should include DID-scoped back link', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki/getting-started'));
-      expect(res.body).toContain(`href="/${testDid}/wiki"`);
+    it('should include repo-scoped back link', async () => {
+      const res = await handleRequest(ctx, repoUrl('/wiki/getting-started'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/wiki"`);
     });
 
     it('should return 404 for non-existent wiki page', async () => {
-      const res = await handleRequest(ctx, didUrl('/wiki/nonexistent'));
+      const res = await handleRequest(ctx, repoUrl('/wiki/nonexistent'));
       expect(res.status).toBe(404);
       expect(res.body).toContain('Wiki page not found');
     });
@@ -431,13 +449,13 @@ describe('gitd web UI', () => {
       expect(res.body).toContain('Page not found');
     });
 
-    it('should return 404 for unknown sub-paths under a DID', async () => {
-      const res = await handleRequest(ctx, didUrl('/nonexistent'));
+    it('should return 404 for unknown sub-paths under a repo', async () => {
+      const res = await handleRequest(ctx, repoUrl('/nonexistent'));
       expect(res.status).toBe(404);
     });
 
     it('should return 404 for non-numeric issue IDs', async () => {
-      const res = await handleRequest(ctx, didUrl('/issues/abc'));
+      const res = await handleRequest(ctx, repoUrl('/issues/abc'));
       expect(res.status).toBe(404);
     });
   });
@@ -448,23 +466,23 @@ describe('gitd web UI', () => {
 
   describe('HTML structure', () => {
     it('should include proper HTML document structure', async () => {
-      const res = await handleRequest(ctx, didUrl('/'));
+      const res = await handleRequest(ctx, repoUrl('/'));
       expect(res.body).toContain('<!DOCTYPE html>');
       expect(res.body).toContain('<html lang="en">');
       expect(res.body).toContain('</html>');
     });
 
-    it('should include DID-scoped navigation links', async () => {
-      const res = await handleRequest(ctx, didUrl('/'));
-      expect(res.body).toContain(`href="/${testDid}/"`);
-      expect(res.body).toContain(`href="/${testDid}/issues"`);
-      expect(res.body).toContain(`href="/${testDid}/patches"`);
-      expect(res.body).toContain(`href="/${testDid}/releases"`);
-      expect(res.body).toContain(`href="/${testDid}/wiki"`);
+    it('should include repo-scoped navigation links', async () => {
+      const res = await handleRequest(ctx, repoUrl('/'));
+      expect(res.body).toContain(`href="/${testDid}/test-repo/"`);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/issues"`);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/patches"`);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/releases"`);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/wiki"`);
     });
 
     it('should set page title with repo name', async () => {
-      const res = await handleRequest(ctx, didUrl('/'));
+      const res = await handleRequest(ctx, repoUrl('/'));
       expect(res.body).toContain('<title>Overview');
       expect(res.body).toContain('test-repo');
       expect(res.body).toContain('gitd</title>');

@@ -27,12 +27,12 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 
-  // Check if a repo already exists (singleton).
-  const { records: existing } = await ctx.repo.records.query('repo');
+  // Check if a repo with this name already exists.
+  const { records: existing } = await ctx.repo.records.query('repo', {
+    filter: { tags: { name } },
+  });
   if (existing.length > 0) {
-    const data = await existing[0].data.json();
-    console.error(`Repository "${data.name}" already exists (recordId: ${existing[0].id}).`);
-    console.error('The forge-repo protocol allows only one repo record per DWN.');
+    console.error(`Repository "${name}" already exists (recordId: ${existing[0].id}).`);
     process.exit(1);
   }
 

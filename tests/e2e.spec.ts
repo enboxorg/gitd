@@ -610,7 +610,9 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
 
   it('should verify repo state via repo record query (repo info)', async () => {
     // Verify the DWN repo record matches expectations (equivalent to `gitd repo info`).
-    const { records } = await repoHandle.records.query('repo');
+    const { records } = await repoHandle.records.query('repo', {
+      filter: { tags: { name: 'auth-test-repo' } },
+    });
     expect(records.length).toBe(1);
 
     const record = records[0];
