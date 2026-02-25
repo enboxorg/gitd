@@ -37,7 +37,7 @@ import { getRepoContext } from '../repo-context.js';
 import { getRepoContextId } from '../repo-context.js';
 import { GitBackend } from '../../git-server/git-backend.js';
 import { readGitRefs } from '../../git-server/ref-sync.js';
-import { flagValue, hasFlag } from '../flags.js';
+import { hasFlag, resolveReposPath } from '../flags.js';
 import { readFile, unlink } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 
@@ -342,19 +342,9 @@ function prependAuthor(body: string, ghLogin: string): string {
 // migrate all
 // ---------------------------------------------------------------------------
 
-/**
- * Resolve the repos base path from CLI flags, environment, or default.
- *
- * Priority: `--repos <path>` > `GITD_REPOS` env > `./repos` (same default
- * as `gitd serve`).
- */
-function resolveReposPath(args: string[]): string {
-  return flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
-}
-
 async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
-  const reposPath = resolveReposPath(args);
+  const reposPath = resolveReposPath(args, ctx.profileName);
   const skipGit = hasFlag(args, '--no-git');
   const slug = `${owner}/${repo}`;
 
@@ -408,7 +398,7 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function migrateRepo(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
-  const reposPath = resolveReposPath(args);
+  const reposPath = resolveReposPath(args, ctx.profileName);
   const skipGit = hasFlag(args, '--no-git');
   try {
     await migrateRepoInner(ctx, owner, repo);
