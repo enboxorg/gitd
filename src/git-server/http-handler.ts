@@ -149,7 +149,10 @@ export function createGitHttpHandler(
       if (service === 'git-receive-pack' && authenticatePush) {
         const authorized = await authenticatePush(request, did, repo);
         if (!authorized) {
-          return new Response('Unauthorized', { status: 401 });
+          return new Response('Unauthorized', {
+            status  : 401,
+            headers : { 'WWW-Authenticate': 'Basic realm="dwn-git"' },
+          });
         }
       }
 
@@ -179,7 +182,10 @@ export function createGitHttpHandler(
       if (authenticatePush) {
         const authorized = await authenticatePush(request, did, repo);
         if (!authorized) {
-          return new Response('Unauthorized', { status: 401 });
+          return new Response('Unauthorized', {
+            status  : 401,
+            headers : { 'WWW-Authenticate': 'Basic realm="dwn-git"' },
+          });
         }
       }
 
