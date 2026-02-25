@@ -18,6 +18,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,3 +54,79 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  build-artifacts:
+    name: Build ${{ matrix.target }}
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            os: linux
+            arch: x64
+            ext: tar.gz
+          - target: bun-linux-arm64
+            os: linux
+            arch: arm64
+            ext: tar.gz
+          - target: bun-darwin-x64
+            os: darwin
+            arch: x64
+            ext: tar.gz
+          - target: bun-darwin-arm64
+            os: darwin
+            arch: arm64
+            ext: tar.gz
+          - target: bun-windows-x64
+            os: windows
+            arch: x64
+            ext: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build release binaries
+        run: |
+          mkdir -p dist/release
+          out_suffix=""
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            out_suffix=".exe"
+          fi
+
+          bun build src/cli/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/gitd${out_suffix}"
+          bun build src/git-remote/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did${out_suffix}"
+          bun build src/git-remote/credential-main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did-credential${out_suffix}"
+
+      - name: Package artifact
+        run: |
+          artifact="gitd-${{ matrix.os }}-${{ matrix.arch }}.${{ matrix.ext }}"
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            (cd dist/release && zip -q "../../${artifact}" gitd.exe git-remote-did.exe git-remote-did-credential.exe)
+          else
+            (cd dist/release && tar -czf "../../${artifact}" gitd git-remote-did git-remote-did-credential)
+          fi
+          echo "artifact=${artifact}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          files: ${{ env.artifact }}
