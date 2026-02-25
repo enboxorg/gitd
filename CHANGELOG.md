@@ -1,5 +1,39 @@
 # @enbox/gitd
 
+## 0.3.0
+
+### Minor Changes
+
+- [#64](https://github.com/enboxorg/gitd/pull/64) [`695b2ae`](https://github.com/enboxorg/gitd/commit/695b2ae9eeb9082d49a648f8b28a5dd904d9ff34) Thanks [@LiranCohen](https://github.com/LiranCohen)! - feat: identity profiles and `gitd auth` onboarding
+
+  Adds an AWS-style profile system for managing multiple DID identities:
+
+  - Profiles stored at `~/.enbox/profiles/<name>/` (cross-platform, shared
+    across enbox-enabled apps)
+  - `gitd auth login` — interactive wizard to create or import an identity
+  - `gitd auth list` — list all profiles
+  - `gitd auth use <name>` — set active profile per-repo or globally
+  - `gitd auth logout <name>` — remove a profile
+  - Profile resolution: `--profile` flag > `ENBOX_PROFILE` env > `.git/config`
+    > default profile > single-profile fallback
+  - `connectAgent()` refactored to accept `dataPath` for profile-based storage
+  - Uses `@clack/prompts` for clean interactive terminal UX
+
+### Patch Changes
+
+- [#66](https://github.com/enboxorg/gitd/pull/66) [`1a6f8ff`](https://github.com/enboxorg/gitd/commit/1a6f8ff329646134b2f4e49a005c863e0a36a5b2) Thanks [@LiranCohen](https://github.com/LiranCohen)! - fix: credential helper uses identity profiles and signs with correct DID
+
+  The git credential helper (`git-remote-did-credential`) now resolves
+  the active identity profile before connecting to the agent, matching
+  the same resolution chain used by all `gitd` CLI commands (env var,
+  git config, global default, single fallback).
+
+  Also fixes a signing bug: the helper previously signed push tokens
+  with the internal agent DID but claimed the identity DID in the token
+  payload, which would cause signature verification to fail when the
+  server resolves the claimed DID's public key. Now signs with the
+  identity's own BearerDid signer.
+
 ## 0.2.0
 
 ### Minor Changes
