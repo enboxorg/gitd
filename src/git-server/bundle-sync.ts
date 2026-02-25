@@ -94,15 +94,15 @@ export function createBundleSyncer(options: BundleSyncOptions): OnPushComplete {
   const encrypt = visibility === 'private';
 
   return async (_did: string, _repoName: string, repoPath: string): Promise<void> => {
-    // Query existing bundle records, newest first.
+    // Query existing bundle records scoped to this repo, newest first.
     const { records: existingBundles } = await repo.records.query('repo/bundle', {
-      filter   : { tags: { isFull: true } },
+      filter   : { contextId: repoContextId, tags: { isFull: true } },
       dateSort : DateSort.CreatedDescending,
     });
 
-    // Also query incremental bundles.
+    // Also query incremental bundles scoped to this repo.
     const { records: incrementalBundles } = await repo.records.query('repo/bundle', {
-      filter   : { tags: { isFull: false } },
+      filter   : { contextId: repoContextId, tags: { isFull: false } },
       dateSort : DateSort.CreatedDescending,
     });
 

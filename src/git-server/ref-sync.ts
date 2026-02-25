@@ -68,9 +68,10 @@ export function createRefSyncer(options: RefSyncOptions): OnPushComplete {
     // Read current git refs from the bare repository.
     const gitRefs = await readGitRefs(repoPath);
 
-    // Query existing DWN ref records for this repo.
-    // The parentContextId links ref records to the repo context via $ref.
-    const { records: existingRecords } = await refs.records.query('repo/ref' as any);
+    // Query existing DWN ref records scoped to this repo.
+    const { records: existingRecords } = await refs.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
 
     // Build a map of existing DWN refs: name → { record, target }.
     const existingMap = new Map<string, { record: any; target: string }>();

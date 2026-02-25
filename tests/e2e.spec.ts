@@ -20,6 +20,7 @@ import { Web5UserAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../src/cli/agent.js';
 import type { GitServer } from '../src/git-server/server.js';
+import type { RepoContext } from '../src/cli/repo-context.js';
 
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { createDidSignatureVerifier } from '../src/git-server/verify.js';
@@ -29,6 +30,7 @@ import { createRefSyncer } from '../src/git-server/ref-sync.js';
 import { ForgeRefsProtocol } from '../src/refs.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
 import { generatePushCredentials } from '../src/git-remote/credential-helper.js';
+import { getRepoContext } from '../src/cli/repo-context.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
 import { readGitRefs } from '../src/git-server/ref-sync.js';
 import { restoreFromBundles } from '../src/git-server/bundle-restore.js';
@@ -349,7 +351,7 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
       basePath       : BUNDLE_RESTORE_REPOS,
       port           : 0,
       onRepoNotFound : async (_repoDid: string, _repoName: string, repoPath: string): Promise<boolean> => {
-        const result = await restoreFromBundles({ repo: repoHandle, repoPath });
+        const result = await restoreFromBundles({ repo: repoHandle, repoPath, repoContextId });
         return result.success;
       },
     });
@@ -905,7 +907,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       basePath       : restoreRepos,
       port           : 0,
       onRepoNotFound : async (_repoDid: string, _repoName: string, repoPath: string): Promise<boolean> => {
-        const result = await restoreFromBundles({ repo: repoHandle, repoPath });
+        const result = await restoreFromBundles({ repo: repoHandle, repoPath, repoContextId });
         return result.success;
       },
     });
@@ -924,6 +926,300 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       await restoreServer.stop();
       rmSync(restoreRepos, { recursive: true, force: true });
       rmSync(restoreClone, { recursive: true, force: true });
+    }
+  }, 30000);
+});
+
+// ===========================================================================
+// E2E: Multi-repo — two repos under one DID, dynamic context resolution
+// ===========================================================================
+
+describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore', () => {
+  let did: string;
+  let repoHandle: AgentContext['repo'];
+  let refsHandle: AgentContext['refs'];
+  let server: GitServer;
+
+  // Repo contexts resolved after DWN records are created.
+  let alphaCtx: RepoContext;
+  let betaCtx: RepoContext;
+
+  const MR_DATA_PATH = '__TESTDATA__/multi-repo-e2e-agent';
+  const MR_REPOS_PATH = '__TESTDATA__/multi-repo-e2e-repos';
+  const MR_CLONE_ALPHA = '__TESTDATA__/multi-repo-e2e-clone-alpha';
+  const MR_CLONE_BETA = '__TESTDATA__/multi-repo-e2e-clone-beta';
+
+  // Minimal AgentContext shim — only `repo` is used by `getRepoContext`.
+  function agentCtx(): Pick<AgentContext, 'repo'> {
+    return { repo: repoHandle };
+  }
+
+  beforeAll(async () => {
+    rmSync(MR_DATA_PATH, { recursive: true, force: true });
+    rmSync(MR_REPOS_PATH, { recursive: true, force: true });
+    rmSync(MR_CLONE_ALPHA, { recursive: true, force: true });
+    rmSync(MR_CLONE_BETA, { recursive: true, force: true });
+
+    // --- Step 1: Create Web5 agent ---
+    const agent = await Web5UserAgent.create({ dataPath: MR_DATA_PATH });
+    await agent.initialize({ password: 'multi-repo-e2e' });
+    await agent.start({ password: 'multi-repo-e2e' });
+
+    const identities = await agent.identity.list();
+    let identity = identities[0];
+    if (!identity) {
+      identity = await agent.identity.create({
+        didMethod : 'jwk',
+        metadata  : { name: 'Multi-Repo E2E Test' },
+      });
+    }
+
+    const { web5, did: agentDid } = await Web5.connect({
+      agent,
+      connectedDid : identity.did.uri,
+      sync         : 'off',
+    });
+    did = agentDid;
+
+    repoHandle = web5.using(ForgeRepoProtocol);
+    refsHandle = web5.using(ForgeRefsProtocol);
+    await repoHandle.configure();
+    await refsHandle.configure();
+
+    // --- Step 2: Create TWO repo records ---
+    const { record: alphaRecord } = await repoHandle.records.create('repo', {
+      data : { name: 'repo-alpha', description: 'First repo', defaultBranch: 'main', dwnEndpoints: [] },
+      tags : { name: 'repo-alpha', visibility: 'public' },
+    });
+    const { record: betaRecord } = await repoHandle.records.create('repo', {
+      data : { name: 'repo-beta', description: 'Second repo', defaultBranch: 'main', dwnEndpoints: [] },
+      tags : { name: 'repo-beta', visibility: 'public' },
+    });
+
+    // Resolve contexts using getRepoContext (proves multi-repo lookup works).
+    alphaCtx = await getRepoContext(agentCtx() as AgentContext, 'repo-alpha');
+    betaCtx = await getRepoContext(agentCtx() as AgentContext, 'repo-beta');
+
+    expect(alphaCtx.contextId).toBe(alphaRecord.contextId!);
+    expect(betaCtx.contextId).toBe(betaRecord.contextId!);
+    expect(alphaCtx.contextId).not.toBe(betaCtx.contextId);
+
+    // --- Step 3: Init both bare git repos ---
+    const backend = new GitBackend({ basePath: MR_REPOS_PATH });
+    await backend.initRepo(did, 'repo-alpha');
+    await backend.initRepo(did, 'repo-beta');
+
+    // --- Step 4: Start server with DYNAMIC per-push context resolution ---
+    // This mirrors the pattern from src/cli/commands/serve.ts lines 63-87.
+    const onPushComplete = async (_did: string, repoName: string, repoPath: string): Promise<void> => {
+      let repoCtx: RepoContext;
+      try {
+        repoCtx = await getRepoContext(agentCtx() as AgentContext, repoName);
+      } catch {
+        console.error(`push-sync: repo "${repoName}" not found — skipping.`);
+        return;
+      }
+
+      const syncRefs = createRefSyncer({
+        refs          : refsHandle,
+        repoContextId : repoCtx.contextId,
+      });
+
+      const syncBundle = createBundleSyncer({
+        repo          : repoHandle,
+        repoContextId : repoCtx.contextId,
+        visibility    : repoCtx.visibility,
+      });
+
+      await Promise.all([
+        syncRefs(_did, repoName, repoPath),
+        syncBundle(_did, repoName, repoPath),
+      ]);
+    };
+
+    server = await createGitServer({
+      basePath : MR_REPOS_PATH,
+      port     : 0,
+      onPushComplete,
+    });
+  }, 30000);
+
+  afterAll(async () => {
+    try { if (server) { await server.stop(); } } catch { /* noop */ }
+    rmSync(MR_DATA_PATH, { recursive: true, force: true });
+    rmSync(MR_REPOS_PATH, { recursive: true, force: true });
+    rmSync(MR_CLONE_ALPHA, { recursive: true, force: true });
+    rmSync(MR_CLONE_BETA, { recursive: true, force: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // Push to both repos
+  // -----------------------------------------------------------------------
+
+  it('should clone and push to repo-alpha', async () => {
+    const url = `http://localhost:${server.port}/${did}/repo-alpha`;
+    rmSync(MR_CLONE_ALPHA, { recursive: true, force: true });
+    await exec(`git clone "${url}" "${MR_CLONE_ALPHA}"`);
+    await exec('git config user.email "mr@test.com"', { cwd: MR_CLONE_ALPHA });
+    await exec('git config user.name "MR Test"', { cwd: MR_CLONE_ALPHA });
+    await exec('git checkout -b main', { cwd: MR_CLONE_ALPHA });
+    await exec('echo "alpha content" > README.md', { cwd: MR_CLONE_ALPHA });
+    await exec('git add README.md', { cwd: MR_CLONE_ALPHA });
+    await exec('git commit -m "alpha initial"', { cwd: MR_CLONE_ALPHA });
+    await exec('git push -u origin main', { cwd: MR_CLONE_ALPHA });
+  });
+
+  it('should clone and push to repo-beta', async () => {
+    const url = `http://localhost:${server.port}/${did}/repo-beta`;
+    rmSync(MR_CLONE_BETA, { recursive: true, force: true });
+    await exec(`git clone "${url}" "${MR_CLONE_BETA}"`);
+    await exec('git config user.email "mr@test.com"', { cwd: MR_CLONE_BETA });
+    await exec('git config user.name "MR Test"', { cwd: MR_CLONE_BETA });
+    await exec('git checkout -b main', { cwd: MR_CLONE_BETA });
+    await exec('echo "beta content" > README.md', { cwd: MR_CLONE_BETA });
+    await exec('git add README.md', { cwd: MR_CLONE_BETA });
+    await exec('git commit -m "beta initial"', { cwd: MR_CLONE_BETA });
+    await exec('git push -u origin main', { cwd: MR_CLONE_BETA });
+  });
+
+  // -----------------------------------------------------------------------
+  // Verify ref isolation
+  // -----------------------------------------------------------------------
+
+  it('should have scoped ref records per repo in DWN', async () => {
+    // Wait for async onPushComplete to finish.
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Read the actual git SHAs from the bare repos.
+    const alphaPath = server.backend.repoPath(did, 'repo-alpha');
+    const betaPath = server.backend.repoPath(did, 'repo-beta');
+    const { stdout: alphaSha } = await exec('git rev-parse main', { cwd: alphaPath });
+    const { stdout: betaSha } = await exec('git rev-parse main', { cwd: betaPath });
+
+    // If onPushComplete didn't fire yet, manually invoke syncers.
+    const { records: allRefs } = await refsHandle.records.query('repo/ref' as any);
+    if (allRefs.length < 2) {
+      const alphaSync = createRefSyncer({ refs: refsHandle, repoContextId: alphaCtx.contextId });
+      const betaSync = createRefSyncer({ refs: refsHandle, repoContextId: betaCtx.contextId });
+      await alphaSync(did, 'repo-alpha', alphaPath);
+      await betaSync(did, 'repo-beta', betaPath);
+    }
+
+    // Query all refs and partition by target SHA to verify isolation.
+    const { records: refRecords } = await refsHandle.records.query('repo/ref' as any);
+    expect(refRecords.length).toBeGreaterThanOrEqual(2);
+
+    const refEntries = await Promise.all(
+      refRecords.map(async (r: any) => r.data.json()),
+    );
+    const alphaRef = refEntries.find((d: any) => d.target === alphaSha.trim());
+    const betaRef = refEntries.find((d: any) => d.target === betaSha.trim());
+
+    expect(alphaRef).toBeDefined();
+    expect(betaRef).toBeDefined();
+    expect(alphaRef!.name).toBe('refs/heads/main');
+    expect(betaRef!.name).toBe('refs/heads/main');
+    // SHAs differ because the repos have different content.
+    expect(alphaSha.trim()).not.toBe(betaSha.trim());
+  });
+
+  // -----------------------------------------------------------------------
+  // Verify bundle isolation
+  // -----------------------------------------------------------------------
+
+  it('should have scoped bundle records per repo in DWN', async () => {
+    // If the async bundle sync didn't fire for both repos, manually invoke.
+    const { records: existingBundles } = await repoHandle.records.query('repo/bundle', {});
+    if (existingBundles.length < 2) {
+      const alphaPath = server.backend.repoPath(did, 'repo-alpha');
+      const betaPath = server.backend.repoPath(did, 'repo-beta');
+      const alphaSync = createBundleSyncer({ repo: repoHandle, repoContextId: alphaCtx.contextId, visibility: 'public' });
+      const betaSync = createBundleSyncer({ repo: repoHandle, repoContextId: betaCtx.contextId, visibility: 'public' });
+      await alphaSync(did, 'repo-alpha', alphaPath);
+      await betaSync(did, 'repo-beta', betaPath);
+    }
+
+    const { records: allBundles } = await repoHandle.records.query('repo/bundle', {});
+    expect(allBundles.length).toBeGreaterThanOrEqual(2);
+
+    // Partition bundles by contextId.
+    const alphaBundles = allBundles.filter((r: any) => r.contextId?.startsWith(alphaCtx.contextId));
+    const betaBundles = allBundles.filter((r: any) => r.contextId?.startsWith(betaCtx.contextId));
+
+    expect(alphaBundles.length).toBeGreaterThanOrEqual(1);
+    expect(betaBundles.length).toBeGreaterThanOrEqual(1);
+
+    // Bundles should reference different commits.
+    const alphaTip = (alphaBundles[0].tags as Record<string, unknown>).tipCommit;
+    const betaTip = (betaBundles[0].tags as Record<string, unknown>).tipCommit;
+    expect(alphaTip).not.toBe(betaTip);
+  });
+
+  // -----------------------------------------------------------------------
+  // Cold start: restore each repo independently via scoped bundles
+  // -----------------------------------------------------------------------
+
+  it('should restore both repos from scoped bundles on cold start', async () => {
+    await server.stop();
+
+    const restoreRepos = '__TESTDATA__/multi-repo-e2e-restore-repos';
+    const restoreAlpha = '__TESTDATA__/multi-repo-e2e-restore-alpha';
+    const restoreBeta = '__TESTDATA__/multi-repo-e2e-restore-beta';
+    rmSync(restoreRepos, { recursive: true, force: true });
+    rmSync(restoreAlpha, { recursive: true, force: true });
+    rmSync(restoreBeta, { recursive: true, force: true });
+
+    // Build a lookup map for repo name → contextId.
+    const ctxMap: Record<string, string> = {
+      'repo-alpha' : alphaCtx.contextId,
+      'repo-beta'  : betaCtx.contextId,
+    };
+
+    // Start a new server with clean disk — uses dynamic onRepoNotFound
+    // that resolves the correct repoContextId to scope the restore.
+    const restoreServer = await createGitServer({
+      basePath       : restoreRepos,
+      port           : 0,
+      onRepoNotFound : async (_repoDid: string, repoName: string, repoPath: string): Promise<boolean> => {
+        const repoContextId = ctxMap[repoName];
+        if (!repoContextId) { return false; }
+
+        const result = await restoreFromBundles({
+          repo: repoHandle,
+          repoPath,
+          repoContextId,
+        });
+        return result.success;
+      },
+    });
+
+    try {
+      // Clone alpha from restore server.
+      const alphaUrl = `http://localhost:${restoreServer.port}/${did}/repo-alpha`;
+      await exec(`git clone --branch main "${alphaUrl}" "${restoreAlpha}"`);
+      expect(existsSync(`${restoreAlpha}/.git`)).toBe(true);
+      const { stdout: alphaContent } = await exec('cat README.md', { cwd: restoreAlpha });
+      expect(alphaContent).toContain('alpha content');
+      const { stdout: alphaLog } = await exec('git log --oneline', { cwd: restoreAlpha });
+      expect(alphaLog).toContain('alpha initial');
+
+      // Clone beta from restore server.
+      const betaUrl = `http://localhost:${restoreServer.port}/${did}/repo-beta`;
+      await exec(`git clone --branch main "${betaUrl}" "${restoreBeta}"`);
+      expect(existsSync(`${restoreBeta}/.git`)).toBe(true);
+      const { stdout: betaContent } = await exec('cat README.md', { cwd: restoreBeta });
+      expect(betaContent).toContain('beta content');
+      const { stdout: betaLog } = await exec('git log --oneline', { cwd: restoreBeta });
+      expect(betaLog).toContain('beta initial');
+
+      // Cross-check: alpha clone must NOT have beta content.
+      expect(alphaContent).not.toContain('beta content');
+      expect(betaContent).not.toContain('alpha content');
+    } finally {
+      await restoreServer.stop();
+      rmSync(restoreRepos, { recursive: true, force: true });
+      rmSync(restoreAlpha, { recursive: true, force: true });
+      rmSync(restoreBeta, { recursive: true, force: true });
     }
   }, 30000);
 });
