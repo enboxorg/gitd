@@ -63,7 +63,7 @@ export function resolveGitHubToken(): string | undefined {
   try {
     const result = spawnSync('gh', ['auth', 'token'], {
       stdio   : ['pipe', 'pipe', 'pipe'],
-      timeout : 5_000,
+      timeout : 2_000,
     });
     const token = result.stdout?.toString().trim();
     if (result.status === 0 && token) {
