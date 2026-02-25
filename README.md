@@ -121,6 +121,12 @@ dwn-git indexer --interval 30     # Crawl every 30 seconds
 dwn-git github-api                # Start shim on port 8181
 dwn-git github-api --port 9000    # Custom port
 
+# Package manager shims (local proxy servers)
+dwn-git shim npm                  # npm registry shim on port 4873
+dwn-git shim go                   # Go module proxy on port 4874
+dwn-git shim oci                  # OCI/Docker registry on port 5555
+dwn-git shim npm --port 5000      # Custom port
+
 # Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
 dwn-git whoami                    # Show connected DID
@@ -195,6 +201,30 @@ dwn-git whoami                    # Show connected DID
 - `dwn-git registry verify-deps <did>/<name>@<version>` to build and verify the full dependency tree
 - No central authority — the entire chain is verifiable via DIDs and DWN record signatures
 
+### Package Manager Shims
+
+Local HTTP proxy servers that speak native package manager protocols, resolving DID-scoped packages from DWN records. Each shim acts as a translation layer between standard tooling and the decentralized registry.
+
+**npm registry shim** (`dwn-git shim npm`):
+- Serves the npm registry HTTP API on localhost (default port 4873)
+- Works with `npm install`, `bun install`, `yarn add`, `pnpm add`
+- DID-scoped packages via npm scopes: `npm install --registry=http://localhost:4873 @did:dht:abc123/my-pkg`
+- Endpoints: packument (all versions), version metadata, tarball download
+- Includes DWN provenance metadata in `_dwn` fields
+
+**Go module proxy shim** (`dwn-git shim go`):
+- Serves the GOPROXY protocol on localhost (default port 4874)
+- Module paths: `GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0`
+- Endpoints: `/@v/list`, `/@v/{ver}.info`, `/@v/{ver}.mod`, `/@v/{ver}.zip`, `/@latest`
+- Generates `go.mod` files with DID-scoped dependency mappings
+
+**OCI/Docker registry shim** (`dwn-git shim oci`):
+- Serves the OCI Distribution Spec v2 on localhost (default port 5555)
+- Works with `docker pull`, `podman pull`, and any OCI-compatible tool
+- Image naming: `docker pull localhost:5555/did:dht:abc123/my-image:v1.0.0`
+- Endpoints: `/v2/` version check, manifests (by tag or digest), blobs, tags list
+- Content-addressable: manifests include SHA-256 digest headers
+
 ## Architecture
 
 See [PLAN.md](./PLAN.md) for the full architecture document covering:
@@ -252,6 +282,11 @@ import { handleShimRequest, startShimServer } from '@enbox/dwn-git/github-shim';
 
 // Package resolver and trust chain
 import { resolveFullPackage, verifyPackageVersion, buildTrustChain } from '@enbox/dwn-git/resolver';
+
+// Package manager shims
+import { handleNpmRequest, startNpmShim } from '@enbox/dwn-git/shims/npm';
+import { handleGoProxyRequest, startGoShim } from '@enbox/dwn-git/shims/go';
+import { handleOciRequest, startOciShim } from '@enbox/dwn-git/shims/oci';
 ```
 
 ## Development
@@ -266,7 +301,7 @@ bun test               # Run all tests
 
 ## Status
 
-**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, and GitHub API compatibility shim. 707+ tests across 18 test files. See PLAN.md Section 12 for the full roadmap.
+**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim, and package manager shims (npm, Go, OCI/Docker). 763+ tests across 19 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 

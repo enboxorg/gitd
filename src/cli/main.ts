@@ -50,6 +50,9 @@
  *   dwn-git web [--port <port>]                Start the read-only web UI
  *   dwn-git indexer [--port] [--interval] [--seed]  Start the indexer service
  *   dwn-git github-api [--port <port>]         Start GitHub API compatibility shim
+ *   dwn-git shim npm [--port 4873]             Start npm registry proxy
+ *   dwn-git shim go  [--port 4874]             Start Go module proxy (GOPROXY)
+ *   dwn-git shim oci [--port 5555]             Start OCI/Docker registry proxy
  *   dwn-git log                                Show recent activity
  *   dwn-git serve [--port <port>]              Start the git transport server
  *   dwn-git whoami                             Show connected DID
@@ -79,6 +82,7 @@ import { releaseCommand } from './commands/release.js';
 import { repoCommand } from './commands/repo.js';
 import { serveCommand } from './commands/serve.js';
 import { setupCommand } from './commands/setup.js';
+import { shimCommand } from './commands/shim.js';
 import { socialCommand } from './commands/social.js';
 import { webCommand } from './commands/web.js';
 import { wikiCommand } from './commands/wiki.js';
@@ -177,6 +181,10 @@ function printUsage(): void {
   console.log('');
   console.log('  github-api [--port <port>]                  Start GitHub API shim (default: 8181)');
   console.log('');
+  console.log('  shim npm [--port 4873]                      Start npm registry proxy');
+  console.log('  shim go  [--port 4874]                      Start Go module proxy (GOPROXY)');
+  console.log('  shim oci [--port 5555]                      Start OCI/Docker registry proxy');
+  console.log('');
   console.log('  log                                         Show recent activity');
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
@@ -188,6 +196,9 @@ function printUsage(): void {
   console.log('  DWN_GIT_INDEXER_PORT      indexer API port (default: 8090)');
   console.log('  DWN_GIT_INDEXER_INTERVAL  crawl interval in seconds (default: 60)');
   console.log('  DWN_GIT_GITHUB_API_PORT   GitHub API shim port (default: 8181)');
+  console.log('  DWN_GIT_NPM_SHIM_PORT    npm shim port (default: 4873)');
+  console.log('  DWN_GIT_GO_SHIM_PORT     Go proxy shim port (default: 4874)');
+  console.log('  DWN_GIT_OCI_SHIM_PORT    OCI registry shim port (default: 5555)');
   console.log('  GITHUB_TOKEN      GitHub API token for migration (optional, higher rate limits)');
 }
 
@@ -303,6 +314,10 @@ async function main(): Promise<void> {
 
     case 'github-api':
       await githubApiCommand(ctx, rest);
+      break;
+
+    case 'shim':
+      await shimCommand(ctx, rest);
       break;
 
     case 'log':

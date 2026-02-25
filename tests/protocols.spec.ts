@@ -554,9 +554,9 @@ describe('@enbox/dwn-git', () => {
       expect(tags?.$requiredTags).toContain('ecosystem');
     });
 
-    it('should restrict ecosystem to npm, cargo, pip, go', () => {
+    it('should restrict ecosystem to npm, cargo, pip, go, oci', () => {
       const ecosystem = ForgeRegistryDefinition.structure.package.$tags?.ecosystem as { enum: string[] };
-      expect(ecosystem.enum).toEqual(['npm', 'cargo', 'pip', 'go']);
+      expect(ecosystem.enum).toEqual(['npm', 'cargo', 'pip', 'go', 'oci']);
     });
 
     it('should nest version under package and tarball/attestation under version (3-level)', () => {
