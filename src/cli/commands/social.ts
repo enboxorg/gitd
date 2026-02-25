@@ -17,8 +17,6 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { getRepoContextId } from '../repo-context.js';
-
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
 // ---------------------------------------------------------------------------
@@ -51,14 +49,21 @@ async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Use the local repo's recordId if starring the local repo,
-  // otherwise use a placeholder (in practice, would query the remote DWN).
-  let repoRecordId: string;
-  try {
-    repoRecordId = await getRepoContextId(ctx);
-  } catch {
-    repoRecordId = 'unknown';
+  // Query the target DID's DWN for their repo record.
+  // Use `from` to route the query to the remote DWN when the target
+  // differs from the local agent.
+  const from = repoDid === ctx.did ? undefined : repoDid;
+  const { records: repoRecords } = await ctx.repo.records.query('repo', { from });
+
+  if (repoRecords.length === 0) {
+    console.error(`No repository found for ${repoDid}.`);
+    process.exit(1);
   }
+
+  const repoRecord = repoRecords[0];
+  const repoRecordId = repoRecord.id;
+  const repoData = await repoRecord.data.json();
+  const repoName = repoData.name ?? undefined;
 
   // Check if already starred.
   const { records: existing } = await ctx.social.records.query('star', {
@@ -71,7 +76,7 @@ async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const { status } = await ctx.social.records.create('star', {
-    data : { repoDid, repoRecordId },
+    data : { repoDid, repoRecordId, repoName },
     tags : { repoDid, repoRecordId },
   });
 
@@ -80,7 +85,7 @@ async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Starred ${repoDid}.`);
+  console.log(`Starred ${repoDid}${repoName ? ` (${repoName})` : ''}.`);
 }
 
 // ---------------------------------------------------------------------------
