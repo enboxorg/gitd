@@ -117,15 +117,18 @@ dwn-git indexer                   # Start indexer on port 8090
 dwn-git indexer --seed <did>      # Discover DIDs from a seed user
 dwn-git indexer --interval 30     # Crawl every 30 seconds
 
-# GitHub API compatibility shim
-dwn-git github-api                # Start shim on port 8181
-dwn-git github-api --port 9000    # Custom port
+# Unified daemon — all shims in one process
+dwn-git daemon                    # Start all shims with default ports
+dwn-git daemon --only github,npm  # Only start specific shims
+dwn-git daemon --disable oci      # Disable specific shims
+dwn-git daemon --config cfg.json  # Use a config file
+dwn-git daemon --list             # List available shim adapters
 
-# Package manager shims (local proxy servers)
+# Individual shims (standalone mode)
+dwn-git github-api                # GitHub API shim on port 8181
 dwn-git shim npm                  # npm registry shim on port 4873
 dwn-git shim go                   # Go module proxy on port 4874
 dwn-git shim oci                  # OCI/Docker registry on port 5555
-dwn-git shim npm --port 5000      # Custom port
 
 # Activity & identity
 dwn-git log                       # Activity feed (recent issues + patches)
@@ -227,6 +230,29 @@ Local HTTP proxy servers that speak native package manager protocols, resolving 
 - Endpoints: `/v2/` version check, manifests (by tag or digest), blobs, tags list
 - Content-addressable: manifests include SHA-256 digest headers
 
+### Unified Daemon
+
+Run all ecosystem shims in a single process with `dwn-git daemon`. Each shim runs on its own port and speaks the native protocol of its ecosystem — no custom plugins or wrappers needed.
+
+- **Plugin architecture**: `ShimAdapter` interface makes adding new ecosystems trivial (implement one file, register it)
+- **Config-driven**: optional `dwn-git.daemon.json` to set ports and enable/disable shims
+- **CLI flags**: `--only github,npm` to run a subset, `--disable oci` to exclude, `--list` to see all adapters
+- **Health checks**: every adapter's server responds to `GET /health` with `{ status: 'ok', shim: '<id>' }`
+- **Graceful shutdown**: SIGINT/SIGTERM stops all servers cleanly
+- **4 built-in adapters**: GitHub API, npm registry, Go module proxy, OCI/Docker registry
+- **Extensible**: future adapters (Maven, Cargo/crates.io, PyPI, etc.) implement `ShimAdapter` and plug in
+
+```json
+{
+  "shims": {
+    "github": { "enabled": true, "port": 8181 },
+    "npm":    { "enabled": true, "port": 4873 },
+    "go":     { "enabled": true, "port": 4874 },
+    "oci":    { "enabled": true, "port": 5555 }
+  }
+}
+```
+
 ## Architecture
 
 See [PLAN.md](./PLAN.md) for the full architecture document covering:
@@ -303,7 +329,7 @@ bun test               # Run all tests
 
 ## Status
 
-**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim (read + write), and package manager shims (npm, Go, OCI/Docker). 799+ tests across 19 test files. See PLAN.md Section 12 for the full roadmap.
+**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim (read + write), package manager shims (npm, Go, OCI/Docker), and unified daemon with `ShimAdapter` plugin architecture. 833+ tests across 20 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 
