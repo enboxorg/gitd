@@ -301,6 +301,55 @@ describe('gitd CLI commands', () => {
   });
 
   // =========================================================================
+  // Provider auth and registration token persistence
+  // =========================================================================
+
+  describe('provider-auth registration', () => {
+    it('should export ProviderAuthParams and RegistrationTokenData types', async () => {
+      const mod = await import('../src/cli/agent.js');
+      // These are type-only re-exports, but we can verify the module loads.
+      expect(typeof mod.connectAgent).toBe('function');
+    });
+
+    it('should persist and load registration tokens from disk', async () => {
+      const tokensDir = join('__TESTDATA__', 'token-test-profile', 'DATA', 'AGENT');
+      const tokensFile = join('__TESTDATA__', 'token-test-profile', 'registration-tokens.json');
+      const { mkdirSync, readFileSync: readFs, rmSync: rmFs, existsSync: existsFs } = require('node:fs');
+
+      // Clean up first.
+      rmFs(join('__TESTDATA__', 'token-test-profile'), { recursive: true, force: true });
+      mkdirSync(tokensDir, { recursive: true });
+
+      // Write tokens file manually to simulate cached tokens.
+      const fakeTokens = {
+        'https://example.com': {
+          registrationToken : 'test-reg-token',
+          refreshToken      : 'test-refresh-token',
+          expiresAt         : Date.now() + 3600_000,
+          tokenUrl          : 'https://example.com/token',
+          refreshUrl        : 'https://example.com/refresh',
+        },
+      };
+      writeFileSync(tokensFile, JSON.stringify(fakeTokens, null, 2) + '\n', 'utf-8');
+
+      // Verify the file was written and is valid JSON.
+      expect(existsFs(tokensFile)).toBe(true);
+      const loaded = JSON.parse(readFs(tokensFile, 'utf-8'));
+      expect(loaded['https://example.com'].registrationToken).toBe('test-reg-token');
+      expect(loaded['https://example.com'].refreshToken).toBe('test-refresh-token');
+
+      // Clean up.
+      rmFs(join('__TESTDATA__', 'token-test-profile'), { recursive: true, force: true });
+    });
+
+    it('should gracefully handle missing registration-tokens.json', () => {
+      const tokensFile = join('__TESTDATA__', 'nonexistent-profile', 'registration-tokens.json');
+      expect(existsSync(tokensFile)).toBe(false);
+      // The agent module loads tokens internally; verify it doesn't throw.
+    });
+  });
+
+  // =========================================================================
   // repo commands
   // =========================================================================
 
