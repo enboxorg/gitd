@@ -178,11 +178,11 @@ describe('gitd integration', () => {
       expect(reply.entries![0].recordId).toBe(write.message.recordId);
     });
 
-    it('should enforce $recordLimit on repo singleton', async () => {
+    it('should allow multiple repos (no $recordLimit)', async () => {
       await installProtocol(dwn, owner, ForgeRepoDefinition);
 
       // First repo succeeds
-      await writeRecord(dwn, owner.did, {
+      const write1 = await writeRecord(dwn, owner.did, {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
@@ -190,10 +190,11 @@ describe('gitd integration', () => {
         data         : encoder.encode(JSON.stringify({ name: 'repo-1', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'repo-1', visibility: 'public' },
       });
+      expect(write1.message.descriptor.dateCreated).toBeDefined();
 
-      // Second repo should be rejected
+      // Second repo with a different name should also succeed
       const data = encoder.encode(JSON.stringify({ name: 'repo-2', defaultBranch: 'main', dwnEndpoints: [] }));
-      const write = await RecordsWrite.create({
+      const write2 = await RecordsWrite.create({
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
         schema       : 'https://enbox.org/schemas/forge/repo',
@@ -202,9 +203,8 @@ describe('gitd integration', () => {
         tags         : { name: 'repo-2', visibility: 'public' },
         signer       : Jws.createSigner(owner),
       });
-      const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      // $recordLimit exceeded — DWN rejects with non-202 status
-      expect(reply.status.code).not.toBe(202);
+      const reply = await dwn.processMessage(owner.did, write2.message, { dataStream: DataStream.fromBytes(data) });
+      expect(reply.status.code).toBe(202);
     });
 
     it('should assign maintainer role and allow role-based readme write', async () => {

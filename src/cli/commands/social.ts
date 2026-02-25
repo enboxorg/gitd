@@ -43,20 +43,34 @@ export async function socialCommand(ctx: AgentContext, args: string[]): Promise<
 // ---------------------------------------------------------------------------
 
 async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
-  const repoDid = args[0];
-  if (!repoDid) {
-    console.error('Usage: gitd social star <repo-owner-did>');
+  const target = args[0];
+  if (!target) {
+    console.error('Usage: gitd social star <did>[/<repo>]');
     process.exit(1);
   }
 
+  // Parse "did/repo" or just "did".
+  const slashIdx = target.indexOf('/');
+  const repoDid = slashIdx > 0 ? target.slice(0, slashIdx) : target;
+  const targetRepoName = slashIdx > 0 ? target.slice(slashIdx + 1) : undefined;
+
   // Query the target DID's DWN for their repo record.
-  // Use `from` to route the query to the remote DWN when the target
-  // differs from the local agent.
   const from = repoDid === ctx.did ? undefined : repoDid;
-  const { records: repoRecords } = await ctx.repo.records.query('repo', { from });
+  const queryOpts: any = { from };
+  if (targetRepoName) {
+    queryOpts.filter = { tags: { name: targetRepoName } };
+  }
+  const { records: repoRecords } = await ctx.repo.records.query('repo', queryOpts);
 
   if (repoRecords.length === 0) {
-    console.error(`No repository found for ${repoDid}.`);
+    console.error(targetRepoName
+      ? `Repository "${targetRepoName}" not found for ${repoDid}.`
+      : `No repository found for ${repoDid}.`);
+    process.exit(1);
+  }
+
+  if (repoRecords.length > 1 && !targetRepoName) {
+    console.error(`${repoDid} has multiple repos. Specify which one: gitd social star ${repoDid}/<repo-name>`);
     process.exit(1);
   }
 

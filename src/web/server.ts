@@ -4,15 +4,16 @@
  * Serves HTML pages rendered from DWN records.  Supports viewing ANY
  * DWN-enabled git repo — the target DID is extracted from the URL path:
  *
- *   GET /                           Landing page (browse any DID)
- *   GET /:did                       Repo overview for that DID
- *   GET /:did/issues                Issues list
- *   GET /:did/issues/:number        Issue detail
- *   GET /:did/patches               Patches list
- *   GET /:did/patches/:number       Patch detail
- *   GET /:did/releases              Releases list
- *   GET /:did/wiki                  Wiki list
- *   GET /:did/wiki/:slug            Wiki page detail
+ *   GET /                              Landing page (browse any DID)
+ *   GET /:did                          Repo list for that DID
+ *   GET /:did/:repo                    Repo overview
+ *   GET /:did/:repo/issues             Issues list
+ *   GET /:did/:repo/issues/:number     Issue detail
+ *   GET /:did/:repo/patches            Patches list
+ *   GET /:did/:repo/patches/:number    Patch detail
+ *   GET /:did/:repo/releases           Releases list
+ *   GET /:did/:repo/wiki               Wiki list
+ *   GET /:did/:repo/wiki/:slug         Wiki page detail
  *
  * When `targetDid` differs from the local agent's DID, every query
  * passes `from: targetDid` so the SDK routes the request to the remote
@@ -36,6 +37,7 @@ import {
   patchDetailPage,
   patchesListPage,
   releasesListPage,
+  repoListPage,
   wikiDetailPage,
   wikiListPage,
 } from './routes.js';
@@ -85,62 +87,81 @@ export async function handleRequest(
 
   const targetDid = didMatch[1];
   const rest = didMatch[2] ?? '/';
-  const basePath = `/${targetDid}`;
+  const didBasePath = `/${targetDid}`;
 
   // Wrap route dispatch in try/catch — DID resolution failures (invalid
   // or unreachable DIDs) are surfaced as a friendly error page rather
   // than crashing the server.
   try {
-    return await dispatchRoute(ctx, targetDid, basePath, rest);
+    return await dispatchRoute(ctx, targetDid, didBasePath, rest);
   } catch (err) {
     const msg = (err as Error).message ?? 'Unknown error';
     return { status: 502, body: didError(targetDid, msg) };
   }
 }
 
-/** Dispatch to the correct route handler within a `/:did/...` namespace. */
+/**
+ * Dispatch to the correct route handler.
+ *
+ * URL structure: `/:did` lists repos, `/:did/:repo/...` targets a specific repo.
+ */
 async function dispatchRoute(
-  ctx: AgentContext, targetDid: string, basePath: string, rest: string,
+  ctx: AgentContext, targetDid: string, didBasePath: string, rest: string,
 ): Promise<{ status: number; body: string }> {
-  // Static route matching within the DID namespace.
+  // /:did — list all repos for this DID.
   if (rest === '/' || rest === '') {
-    return { status: 200, body: await overviewPage(ctx, targetDid, basePath) };
+    return { status: 200, body: await repoListPage(ctx, targetDid, didBasePath) };
   }
 
-  if (rest === '/issues') {
-    return { status: 200, body: await issuesListPage(ctx, targetDid, basePath) };
+  // Extract repo name as the first segment after the DID.
+  const repoMatch = rest.match(/^\/([a-zA-Z0-9._-]+)(\/.*)?$/);
+  if (!repoMatch) {
+    return { status: 404, body: notFound('Page not found') };
   }
 
-  if (rest === '/patches') {
-    return { status: 200, body: await patchesListPage(ctx, targetDid, basePath) };
+  const repoName = repoMatch[1];
+  const repoRest = repoMatch[2] ?? '/';
+  const basePath = `${didBasePath}/${repoName}`;
+
+  // /:did/:repo — repo overview.
+  if (repoRest === '/' || repoRest === '') {
+    return { status: 200, body: await overviewPage(ctx, targetDid, repoName, basePath) };
   }
 
-  if (rest === '/releases') {
-    return { status: 200, body: await releasesListPage(ctx, targetDid, basePath) };
+  if (repoRest === '/issues') {
+    return { status: 200, body: await issuesListPage(ctx, targetDid, repoName, basePath) };
   }
 
-  if (rest === '/wiki') {
-    return { status: 200, body: await wikiListPage(ctx, targetDid, basePath) };
+  if (repoRest === '/patches') {
+    return { status: 200, body: await patchesListPage(ctx, targetDid, repoName, basePath) };
+  }
+
+  if (repoRest === '/releases') {
+    return { status: 200, body: await releasesListPage(ctx, targetDid, repoName, basePath) };
+  }
+
+  if (repoRest === '/wiki') {
+    return { status: 200, body: await wikiListPage(ctx, targetDid, repoName, basePath) };
   }
 
   // Dynamic route matching.
-  const issueMatch = rest.match(/^\/issues\/(\d+)$/);
-  if (issueMatch) {
-    const html = await issueDetailPage(ctx, targetDid, basePath, issueMatch[1]);
+  const issueMatch2 = repoRest.match(/^\/issues\/(\d+)$/);
+  if (issueMatch2) {
+    const html = await issueDetailPage(ctx, targetDid, repoName, basePath, issueMatch2[1]);
     if (html) { return { status: 200, body: html }; }
     return { status: 404, body: notFound('Issue not found') };
   }
 
-  const patchMatch = rest.match(/^\/patches\/(\d+)$/);
-  if (patchMatch) {
-    const html = await patchDetailPage(ctx, targetDid, basePath, patchMatch[1]);
+  const patchMatch2 = repoRest.match(/^\/patches\/(\d+)$/);
+  if (patchMatch2) {
+    const html = await patchDetailPage(ctx, targetDid, repoName, basePath, patchMatch2[1]);
     if (html) { return { status: 200, body: html }; }
     return { status: 404, body: notFound('Patch not found') };
   }
 
-  const wikiMatch = rest.match(/^\/wiki\/([a-zA-Z0-9_-]+)$/);
-  if (wikiMatch) {
-    const html = await wikiDetailPage(ctx, targetDid, basePath, wikiMatch[1]);
+  const wikiMatch2 = repoRest.match(/^\/wiki\/([a-zA-Z0-9_-]+)$/);
+  if (wikiMatch2) {
+    const html = await wikiDetailPage(ctx, targetDid, repoName, basePath, wikiMatch2[1]);
     if (html) { return { status: 200, body: html }; }
     return { status: 404, body: notFound('Wiki page not found') };
   }

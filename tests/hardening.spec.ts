@@ -402,8 +402,10 @@ describe('Web UI — XSS protection in notFound', () => {
     // call has safe content, but we verify the esc() wrapper is active.
     const mockCtx = { did: 'did:dht:test123' } as any;
 
-    // A valid DID prefix + non-matching route → 404.
-    const url = new URL('/did:dht:test123/nonexistent-route', 'http://localhost:3000');
+    // A valid DID prefix + repo name + non-matching sub-path → 404.
+    // (Under multi-repo routing, the first segment after the DID is the
+    // repo name, so we need a second segment to trigger 404.)
+    const url = new URL('/did:dht:test123/some-repo/nonexistent-route', 'http://localhost:3000');
     const result = await handleRequest(mockCtx, url);
     expect(result.status).toBe(404);
     // Verify the response is HTML (the notFound function produces HTML).
@@ -429,7 +431,7 @@ describe('Web UI — XSS protection in notFound', () => {
 
     // Use a DID that differs from ctx.did so the query is routed to
     // the "remote" DWN, which will throw and trigger didError.
-    const url = new URL('/did:dht:remoteuser/issues', 'http://localhost:3000');
+    const url = new URL('/did:dht:remoteuser/some-repo', 'http://localhost:3000');
     const result = await handleRequest(mockCtx, url);
     // Should be 502 (DID error page) or catch the error.
     expect(result.status).toBe(502);

@@ -16,8 +16,8 @@ import type { AgentContext } from '../agent.js';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -47,7 +47,7 @@ export async function ciCommand(ctx: AgentContext, args: string[]): Promise<void
 
 async function ciStatus(ctx: AgentContext, args: string[]): Promise<void> {
   const commitFilter = args[0];
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const filter: Record<string, unknown> = { contextId: repoContextId };
   if (commitFilter) {
@@ -87,7 +87,7 @@ async function ciStatus(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function ciList(ctx: AgentContext, args: string[]): Promise<void> {
   const limit = parseInt(flagValue(args, '--limit') ?? '10', 10);
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const { records } = await ctx.ci.records.query('repo/checkSuite' as any, {
     filter     : { contextId: repoContextId },
@@ -189,7 +189,7 @@ async function ciCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const tags: Record<string, string> = {
     commitSha,

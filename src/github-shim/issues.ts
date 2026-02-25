@@ -80,7 +80,7 @@ function buildIssueResponse(
 export async function handleListIssues(
   ctx: AgentContext, targetDid: string, repoName: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -141,7 +141,7 @@ export async function handleListIssues(
 export async function handleGetIssue(
   ctx: AgentContext, targetDid: string, repoName: string, number: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -181,7 +181,7 @@ export async function handleGetIssue(
 export async function handleListIssueComments(
   ctx: AgentContext, targetDid: string, repoName: string, number: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -248,7 +248,7 @@ export async function handleCreateIssue(
   ctx: AgentContext, targetDid: string, repoName: string,
   reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -287,7 +287,7 @@ export async function handleUpdateIssue(
   ctx: AgentContext, targetDid: string, repoName: string,
   number: string, reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -339,7 +339,7 @@ export async function handleCreateIssueComment(
   ctx: AgentContext, targetDid: string, repoName: string,
   number: string, reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }

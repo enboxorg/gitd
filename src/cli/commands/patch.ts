@@ -15,8 +15,8 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -56,7 +56,7 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   // Assign the next sequential number.
   const number = await getNextNumber(ctx, repoContextId);
@@ -94,7 +94,7 @@ async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const record = await findPatchByNumber(ctx, repoContextId, numberStr);
   if (!record) {
     console.error(`Patch #${numberStr} not found.`);
@@ -157,7 +157,7 @@ async function patchComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
     console.error(`Patch #${numberStr} not found.`);
@@ -197,7 +197,7 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
     console.error(`Patch #${numberStr} not found.`);
@@ -249,7 +249,7 @@ async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
     console.error(`Patch #${numberStr} not found.`);
@@ -293,7 +293,7 @@ async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
     console.error(`Patch #${numberStr} not found.`);
@@ -333,7 +333,7 @@ async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
 async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
   const statusFilter = flagValue(args, '--status') ?? flagValue(args, '-s');
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const filter: Record<string, unknown> = {};
   if (repoContextId) {

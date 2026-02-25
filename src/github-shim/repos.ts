@@ -1,10 +1,8 @@
 /**
  * GitHub API shim — `/repos/:did/:repo` endpoint.
  *
- * Maps the DWN singleton repo record to a GitHub REST API v3
- * repository response.  The `:repo` segment is validated against the
- * stored repo name but is otherwise informational — repos are singletons
- * per DID in gitd.
+ * Maps a DWN repo record to a GitHub REST API v3 repository response.
+ * The `:repo` URL segment is used to look up the repo by name.
  *
  * @module
  */
@@ -85,7 +83,7 @@ export function buildRepoResponse(
 export async function handleGetRepo(
   ctx: AgentContext, targetDid: string, repoName: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }

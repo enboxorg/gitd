@@ -14,8 +14,8 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -52,7 +52,7 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   // Assign the next sequential number.
   const number = await getNextNumber(ctx, repoContextId);
@@ -83,7 +83,7 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const record = await findIssueByNumber(ctx, repoContextId, numberStr);
   if (!record) {
     console.error(`Issue #${numberStr} not found.`);
@@ -138,7 +138,7 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
   if (!issue) {
     console.error(`Issue #${numberStr} not found.`);
@@ -169,7 +169,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
   if (!issue) {
     console.error(`Issue #${numberStr} not found.`);
@@ -208,7 +208,7 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
   if (!issue) {
     console.error(`Issue #${numberStr} not found.`);
@@ -243,7 +243,7 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
 async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
   const statusFilter = flagValue(args, '--status') ?? flagValue(args, '-s');
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const filter: Record<string, unknown> = {};
   if (repoContextId) {

@@ -11,8 +11,8 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,7 +32,7 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
   const limitStr = flagValue(args, '--limit') ?? flagValue(args, '-n') ?? '20';
   const limit = parseInt(limitStr, 10);
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
   const entries: ActivityEntry[] = [];
 

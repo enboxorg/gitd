@@ -124,7 +124,7 @@ function buildPullResponse(
 export async function handleListPulls(
   ctx: AgentContext, targetDid: string, repoName: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -184,7 +184,7 @@ export async function handleListPulls(
 export async function handleGetPull(
   ctx: AgentContext, targetDid: string, repoName: string, number: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -215,7 +215,7 @@ export async function handleGetPull(
 export async function handleListPullReviews(
   ctx: AgentContext, targetDid: string, repoName: string, number: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -284,7 +284,7 @@ export async function handleCreatePull(
   ctx: AgentContext, targetDid: string, repoName: string,
   reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -332,7 +332,7 @@ export async function handleUpdatePull(
   ctx: AgentContext, targetDid: string, repoName: string,
   number: string, reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -387,7 +387,7 @@ export async function handleMergePull(
   ctx: AgentContext, targetDid: string, repoName: string,
   number: string, reqBody: Record<string, unknown>, _url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -447,7 +447,7 @@ export async function handleCreatePullReview(
   ctx: AgentContext, targetDid: string, repoName: string,
   number: string, reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }

@@ -427,11 +427,12 @@ async function migrateRepoInner(ctx: AgentContext, owner: string, repo: string):
   const slug = `${owner}/${repo}`;
   console.log(`Importing repo metadata from ${slug}...`);
 
-  // Check if a repo record already exists.
-  const { records: existing } = await ctx.repo.records.query('repo');
+  // Check if a repo record with this name already exists.
+  const { records: existing } = await ctx.repo.records.query('repo', {
+    filter: { tags: { name: repo } },
+  });
   if (existing.length > 0) {
-    const data = await existing[0].data.json();
-    console.log(`  Repo record already exists: "${data.name}" — skipping.`);
+    console.log(`  Repo record already exists: "${repo}" — skipping.`);
     return;
   }
 
@@ -499,7 +500,7 @@ async function migrateGitContent(
   console.log(`  Bundle: ${bundleInfo.size} bytes, ${bundleInfo.refCount} ref(s), tip: ${bundleInfo.tipCommit.slice(0, 8)}`);
 
   // Step 3: Upload bundle to DWN.
-  const { contextId: repoContextId, visibility } = await getRepoContext(ctx);
+  const { contextId: repoContextId, visibility } = await getRepoContext(ctx, repo);
   const encrypt = visibility === 'private';
 
   try {
@@ -605,7 +606,7 @@ async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string
   const importComments = !process.env.GITD_MIGRATE_SKIP_COMMENTS;
   console.log(`Importing issues from ${slug}...`);
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, repo);
 
   // Fetch all issues (GitHub API returns PRs as issues too — filter them out).
   const allIssues = await ghFetchAll<GhIssue>(`/repos/${owner}/${repo}/issues?state=all&sort=created&direction=asc`);
@@ -689,7 +690,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
   const importReviews = !process.env.GITD_MIGRATE_SKIP_COMMENTS;
   console.log(`Importing pull requests from ${slug}...`);
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, repo);
 
   const pulls = await ghFetchAll<GhPull>(`/repos/${owner}/${repo}/pulls?state=all&sort=created&direction=asc`);
 
@@ -799,7 +800,7 @@ async function migrateReleasesInner(ctx: AgentContext, owner: string, repo: stri
   const slug = `${owner}/${repo}`;
   console.log(`Importing releases from ${slug}...`);
 
-  const repoContextId = await getRepoContextId(ctx);
+  const repoContextId = await getRepoContextId(ctx, repo);
 
   const releases = await ghFetchAll<GhRelease>(`/repos/${owner}/${repo}/releases`);
 

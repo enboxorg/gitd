@@ -4,6 +4,8 @@
  * @module
  */
 
+import { spawnSync } from 'node:child_process';
+
 /** Extract the value following a flag in argv (e.g. `--port 8080`). */
 export function flagValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -14,6 +16,38 @@ export function flagValue(args: string[], flag: string): string | undefined {
 /** Check whether a boolean flag is present in argv. */
 export function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+/**
+ * Resolve the active repo name from CLI flags, env, or git config.
+ *
+ * Priority:
+ *   1. `--repo <name>` flag
+ *   2. `GITD_REPO` env var
+ *   3. `git config enbox.repo` in the current working directory
+ *   4. `undefined` (caller decides: single-repo fallback or error)
+ */
+export function resolveRepoName(args: string[]): string | undefined {
+  const flag = flagValue(args, '--repo');
+  if (flag) { return flag; }
+
+  const env = process.env.GITD_REPO;
+  if (env) { return env; }
+
+  // Try git config in the current directory.
+  try {
+    const result = spawnSync('git', ['config', 'enbox.repo'], {
+      encoding : 'utf-8',
+      timeout  : 2000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    const value = result.stdout?.trim();
+    if (value && result.status === 0) { return value; }
+  } catch {
+    // Not in a git repo or git not available — fall through.
+  }
+
+  return undefined;
 }
 
 /**

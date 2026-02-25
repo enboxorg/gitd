@@ -75,7 +75,7 @@ function buildReleaseResponse(
 export async function handleListReleases(
   ctx: AgentContext, targetDid: string, repoName: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -116,7 +116,7 @@ export async function handleListReleases(
 export async function handleGetReleaseByTag(
   ctx: AgentContext, targetDid: string, repoName: string, tag: string, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
@@ -148,7 +148,7 @@ export async function handleCreateRelease(
   ctx: AgentContext, targetDid: string, repoName: string,
   reqBody: Record<string, unknown>, url: URL,
 ): Promise<JsonResponse> {
-  const repo = await getRepoRecord(ctx, targetDid);
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) {
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }

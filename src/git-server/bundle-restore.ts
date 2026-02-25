@@ -37,6 +37,9 @@ export type BundleRestoreOptions = {
 
   /** Path where the bare repository should be created. */
   repoPath: string;
+
+  /** Scope bundle queries to a specific repo context. */
+  repoContextId?: string;
 };
 
 /** Result of a bundle restore operation. */
@@ -70,11 +73,14 @@ export type BundleRestoreResult = {
 export async function restoreFromBundles(
   options: BundleRestoreOptions,
 ): Promise<BundleRestoreResult> {
-  const { repo, repoPath } = options;
+  const { repo, repoPath, repoContextId } = options;
 
   // 1. Query for the most recent full bundle.
+  const fullFilter: Record<string, unknown> = { tags: { isFull: true } };
+  if (repoContextId) { fullFilter.contextId = repoContextId; }
+
   const { records: fullBundles } = await repo.records.query('repo/bundle', {
-    filter   : { tags: { isFull: true } },
+    filter   : fullFilter,
     dateSort : DateSort.CreatedDescending,
   });
 
@@ -99,8 +105,11 @@ export async function restoreFromBundles(
     let bundlesApplied = 1;
 
     // 4. Query for incremental bundles newer than the full bundle.
+    const incFilter: Record<string, unknown> = { tags: { isFull: false } };
+    if (repoContextId) { incFilter.contextId = repoContextId; }
+
     const { records: incrementals } = await repo.records.query('repo/bundle', {
-      filter   : { tags: { isFull: false } },
+      filter   : incFilter,
       dateSort : DateSort.CreatedAscending,
     });
 
