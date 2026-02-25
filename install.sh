@@ -2,10 +2,27 @@
 
 set -euo pipefail
 
-PACKAGE='@enbox/dwn-git'
+APP='dwn-git'
+REPO='enboxorg/dwn-git'
+INSTALL_DIR="${HOME}/.${APP}/bin"
+REQUESTED_VERSION="${VERSION:-}"
+NO_MODIFY_PATH=false
 
-log() {
-  printf '==> %s\n' "$*"
+usage() {
+  cat <<'EOF'
+dwn-git installer
+
+Usage: install.sh [options]
+
+Options:
+  -h, --help              Show this help message
+  -v, --version <version> Install a specific version (example: 0.0.1)
+      --no-modify-path    Do not modify shell profile files
+
+Examples:
+  curl -fsSL https://raw.githubusercontent.com/enboxorg/dwn-git/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/enboxorg/dwn-git/main/install.sh | bash -s -- --version 0.0.1
+EOF
 }
 
 fail() {
@@ -17,93 +34,203 @@ has_command() {
   command -v "$1" >/dev/null 2>&1
 }
 
-is_windows() {
-  case "$(uname -s)" in
-    CYGWIN*|MINGW*|MSYS*)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-install_bun() {
-  if is_windows; then
-    if ! has_command powershell.exe; then
-      fail 'Bun is required and powershell.exe was not found to install it.'
-    fi
-
-    log 'Installing Bun via PowerShell'
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& { irm https://bun.sh/install.ps1 | iex }"
-    return
-  fi
-
+http_get() {
   if has_command curl; then
-    log 'Installing Bun via curl'
-    curl -fsSL https://bun.sh/install | bash
+    curl -fsSL "$1"
     return
   fi
 
   if has_command wget; then
-    log 'Installing Bun via wget'
-    wget -qO- https://bun.sh/install | bash
+    wget -qO- "$1"
     return
   fi
 
-  fail 'Bun is required and neither curl nor wget is available to install it.'
+  fail 'curl or wget is required'
 }
 
-resolve_bun() {
-  if has_command bun; then
-    printf '%s\n' "$(command -v bun)"
+download_file() {
+  local url="$1"
+  local out="$2"
+
+  if has_command curl; then
+    curl -fsSL "$url" -o "$out"
     return
   fi
 
-  local bun_install_dir
-  bun_install_dir="${BUN_INSTALL:-$HOME/.bun}"
-
-  if [ -x "$bun_install_dir/bin/bun" ]; then
-    PATH="$bun_install_dir/bin:$PATH"
-    printf '%s\n' "$bun_install_dir/bin/bun"
+  if has_command wget; then
+    wget -q "$url" -O "$out"
     return
   fi
 
-  if [ -x "$bun_install_dir/bin/bun.exe" ]; then
-    PATH="$bun_install_dir/bin:$PATH"
-    printf '%s\n' "$bun_install_dir/bin/bun.exe"
+  fail 'curl or wget is required'
+}
+
+detect_os() {
+  case "$(uname -s)" in
+    Linux) printf 'linux' ;;
+    Darwin) printf 'darwin' ;;
+    CYGWIN*|MINGW*|MSYS*) printf 'windows' ;;
+    *) fail 'unsupported operating system' ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) printf 'x64' ;;
+    aarch64|arm64) printf 'arm64' ;;
+    *) fail 'unsupported CPU architecture' ;;
+  esac
+}
+
+latest_tag() {
+  http_get "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+resolve_tag() {
+  if [ -z "$REQUESTED_VERSION" ]; then
+    latest_tag
     return
   fi
 
-  fail 'Unable to locate Bun after installation.'
+  case "$REQUESTED_VERSION" in
+    v*) printf '%s' "$REQUESTED_VERSION" ;;
+    *) printf 'v%s' "$REQUESTED_VERSION" ;;
+  esac
+}
+
+extract_archive() {
+  local archive="$1"
+  local out_dir="$2"
+  local os="$3"
+
+  if [ "$os" = 'windows' ]; then
+    if ! has_command unzip; then
+      fail 'unzip is required for Windows artifacts'
+    fi
+    unzip -q "$archive" -d "$out_dir"
+    return
+  fi
+
+  if ! has_command tar; then
+    fail 'tar is required'
+  fi
+  tar -xzf "$archive" -C "$out_dir"
+}
+
+add_to_path() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-bash}")"
+
+  local line
+  line="export PATH=${INSTALL_DIR}:\$PATH"
+
+  local files=''
+  case "$shell_name" in
+    zsh) files="${ZDOTDIR:-$HOME}/.zshrc ${ZDOTDIR:-$HOME}/.zshenv" ;;
+    bash) files="$HOME/.bashrc $HOME/.bash_profile $HOME/.profile" ;;
+    *) files="$HOME/.profile" ;;
+  esac
+
+  local config=''
+  for file in $files; do
+    if [ -f "$file" ]; then
+      config="$file"
+      break
+    fi
+  done
+
+  if [ -z "$config" ]; then
+    printf 'Add this to your shell profile:\n'
+    printf '  %s\n' "$line"
+    return
+  fi
+
+  if grep -Fxq "$line" "$config"; then
+    return
+  fi
+
+  if [ -w "$config" ]; then
+    printf '\n# dwn-git\n%s\n' "$line" >> "$config"
+    printf 'Updated PATH in %s\n' "$config"
+    return
+  fi
+
+  printf 'Add this to your shell profile:\n'
+  printf '  %s\n' "$line"
 }
 
 main() {
-  log 'Installing dwn-git CLI'
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -v|--version)
+        if [[ -z "${2:-}" ]]; then
+          fail '--version requires an argument'
+        fi
+        REQUESTED_VERSION="$2"
+        shift 2
+        ;;
+      --no-modify-path)
+        NO_MODIFY_PATH=true
+        shift
+        ;;
+      *)
+        fail "unknown option: $1"
+        ;;
+    esac
+  done
 
-  if ! has_command bun; then
-    install_bun
+  local os
+  os="$(detect_os)"
+  local arch
+  arch="$(detect_arch)"
+  local tag
+  tag="$(resolve_tag)"
+  [ -n "$tag" ] || fail 'unable to determine release tag'
+
+  local archive=''
+  if [ "$os" = 'windows' ]; then
+    archive="dwn-git-${os}-${arch}.zip"
+  else
+    archive="dwn-git-${os}-${arch}.tar.gz"
   fi
 
-  local bun_cmd
-  bun_cmd="$(resolve_bun)"
+  local url
+  url="https://github.com/${REPO}/releases/download/${tag}/${archive}"
 
-  "$bun_cmd" add -g "$PACKAGE"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "${tmp_dir}"' EXIT INT TERM
 
-  local bun_install_dir
-  bun_install_dir="${BUN_INSTALL:-$HOME/.bun}"
-  PATH="$bun_install_dir/bin:$PATH"
+  printf '==> Installing dwn-git %s\n' "$tag"
+  download_file "$url" "${tmp_dir}/${archive}"
+  extract_archive "${tmp_dir}/${archive}" "$tmp_dir" "$os"
 
-  if ! has_command dwn-git; then
-    fail 'Installation completed, but dwn-git is not on PATH.'
+  mkdir -p "$INSTALL_DIR"
+
+  local suffix=''
+  if [ "$os" = 'windows' ]; then
+    suffix='.exe'
   fi
 
-  log 'Installed successfully'
-  dwn-git --version
+  cp "${tmp_dir}/dwn-git${suffix}" "${INSTALL_DIR}/dwn-git${suffix}"
+  cp "${tmp_dir}/git-remote-did${suffix}" "${INSTALL_DIR}/git-remote-did${suffix}"
+  cp "${tmp_dir}/git-remote-did-credential${suffix}" "${INSTALL_DIR}/git-remote-did-credential${suffix}"
 
-  printf 'If this is your first Bun install, add this to your shell profile:\n'
-  printf '  export BUN_INSTALL="%s"\n' "$bun_install_dir"
-  printf '  export PATH="$BUN_INSTALL/bin:$PATH"\n'
+  chmod +x "${INSTALL_DIR}/dwn-git${suffix}"
+  chmod +x "${INSTALL_DIR}/git-remote-did${suffix}"
+  chmod +x "${INSTALL_DIR}/git-remote-did-credential${suffix}"
+
+  if [ "$NO_MODIFY_PATH" = false ] && [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
+    add_to_path
+  fi
+
+  printf '==> Installed to %s\n' "$INSTALL_DIR"
+  "${INSTALL_DIR}/dwn-git${suffix}" --version || true
+  printf 'Run: dwn-git setup\n'
 }
 
 main "$@"

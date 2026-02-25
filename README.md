@@ -291,7 +291,8 @@ curl -fsSL https://raw.githubusercontent.com/enboxorg/dwn-git/main/install.sh | 
 ```
 
 The installer works on Linux, macOS, and Windows (Git Bash/WSL). It installs
-`bun` if needed, then installs the latest `@enbox/dwn-git` globally.
+the latest prebuilt release binaries (`dwn-git`, `git-remote-did`, and
+`git-remote-did-credential`).
 
 ```bash
 # Manual install (if you prefer to run steps yourself)
