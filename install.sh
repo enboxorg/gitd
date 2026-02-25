@@ -90,6 +90,23 @@ detect_arch() {
   esac
 }
 
+detect_libc() {
+  if [ "$(detect_os)" != 'linux' ]; then
+    return
+  fi
+
+  if has_command ldd; then
+    case "$(ldd --version 2>&1)" in
+      *musl*) printf '-musl' ; return ;;
+    esac
+  fi
+
+  if [ -f /etc/alpine-release ]; then
+    printf '-musl'
+    return
+  fi
+}
+
 latest_tag() {
   http_get "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
@@ -195,6 +212,8 @@ main() {
   os="$(detect_os)"
   local arch
   arch="$(detect_arch)"
+  local libc
+  libc="$(detect_libc)"
   local tag
   tag="$(resolve_tag)"
   [ -n "$tag" ] || fail 'unable to determine release tag'
@@ -203,7 +222,7 @@ main() {
   if [ "$os" = 'windows' ]; then
     archive="gitd-${os}-${arch}.zip"
   else
-    archive="gitd-${os}-${arch}.tar.gz"
+    archive="gitd-${os}-${arch}${libc}.tar.gz"
   fi
 
   local url
