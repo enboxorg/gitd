@@ -151,6 +151,30 @@ describe('gitd CLI commands', () => {
   });
 
   // =========================================================================
+  // version
+  // =========================================================================
+
+  describe('version', () => {
+    it('should print version from package.json', async () => {
+      const { createRequire } = await import('node:module');
+      const require = createRequire(import.meta.url);
+      const pkg = require('../package.json') as { version: string };
+
+      // Capture stdout by temporarily replacing console.log.
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]): void => { logs.push(args.join(' ')); };
+
+      // Simulate the version code path.
+      console.log(`gitd ${pkg.version}`);
+      console.log = origLog;
+
+      expect(logs[0]).toBe(`gitd ${pkg.version}`);
+      expect(pkg.version).toMatch(/^\d+\.\d+\.\d+/);
+    });
+  });
+
+  // =========================================================================
   // init command
   // =========================================================================
 

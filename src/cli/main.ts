@@ -69,6 +69,7 @@
 import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
+import { createRequire } from 'node:module';
 import { daemonCommand } from './commands/daemon.js';
 import { githubApiCommand } from './commands/github-api.js';
 import { indexerCommand } from '../indexer/main.js';
@@ -216,8 +217,49 @@ async function getPassword(): Promise<string> {
   const env = process.env.GITD_PASSWORD;
   if (env) { return env; }
 
-  // Interactive prompt via stdin.
+  // Interactive prompt — hide input when running in a TTY.
   process.stdout.write('Vault password: ');
+
+  if (process.stdin.isTTY) {
+    // Raw mode: read character-by-character, echo nothing.
+    const password = await new Promise<string>((resolve) => {
+      let buf = '';
+      process.stdin.setRawMode(true);
+      process.stdin.setEncoding('utf8');
+      process.stdin.resume();
+
+      const onData = (ch: string): void => {
+        const code = ch.charCodeAt(0);
+
+        if (ch === '\r' || ch === '\n') {
+          // Enter — done.
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          resolve(buf);
+        } else if (code === 3) {
+          // Ctrl-C — abort.
+          process.stdin.setRawMode(false);
+          process.stdout.write('\n');
+          process.exit(130);
+        } else if (code === 127 || code === 8) {
+          // Backspace / Delete.
+          if (buf.length > 0) {
+            buf = buf.slice(0, -1);
+          }
+        } else if (code >= 32) {
+          // Printable character.
+          buf += ch;
+        }
+      };
+
+      process.stdin.on('data', onData);
+    });
+    return password;
+  }
+
+  // Non-TTY fallback (piped input).
   const response = await new Promise<string>((resolve) => {
     let buf = '';
     process.stdin.setEncoding('utf8');
@@ -234,7 +276,18 @@ async function getPassword(): Promise<string> {
 // Main
 // ---------------------------------------------------------------------------
 
+function printVersion(): void {
+  const require = createRequire(import.meta.url);
+  const pkg = require('../../package.json') as { version: string };
+  console.log(`gitd ${pkg.version}`);
+}
+
 async function main(): Promise<void> {
+  if (command === '--version' || command === '-v' || command === 'version') {
+    printVersion();
+    return;
+  }
+
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     printUsage();
     return;
