@@ -342,6 +342,13 @@ async function main(): Promise<void> {
       printUsage();
       process.exit(1);
   }
+
+  // One-shot commands reach here after completing.  The Web5 agent keeps
+  // LevelDB stores and other handles open, which prevents the process from
+  // exiting naturally.  Long-running commands (serve, web, daemon, indexer,
+  // github-api, shim) never reach this point because they block on an
+  // infinite promise internally.
+  process.exit(0);
 }
 
 main().catch((err: Error) => {
