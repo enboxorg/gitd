@@ -66,11 +66,14 @@
  * @module
  */
 
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { authCommand } from './commands/auth.js';
 import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
-import { createRequire } from 'node:module';
 import { daemonCommand } from './commands/daemon.js';
 import { flagValue } from './flags.js';
 import { githubApiCommand } from './commands/github-api.js';
@@ -285,9 +288,20 @@ async function getPassword(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 function printVersion(): void {
-  const require = createRequire(import.meta.url);
-  const pkg = require('../../package.json') as { version: string };
-  console.log(`gitd ${pkg.version}`);
+  // Walk up from the current file to find package.json.
+  // Works from both src/cli/main.ts and dist/esm/cli/main.js.
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 5; i++) {
+    try {
+      const raw = readFileSync(join(dir, 'package.json'), 'utf-8');
+      const pkg = JSON.parse(raw) as { version: string };
+      console.log(`gitd ${pkg.version}`);
+      return;
+    } catch {
+      dir = dirname(dir);
+    }
+  }
+  console.log('gitd (unknown version)');
 }
 
 async function main(): Promise<void> {
