@@ -16,12 +16,15 @@
  *     helper = /path/to/git-remote-did-credential
  *
  * Environment:
- *   GITD_PASSWORD — vault password for the local agent
+ *   GITD_PASSWORD    — vault password for the local agent
+ *   ENBOX_PROFILE    — (optional) profile name override
  *
  * @module
  */
 
-import { Web5 } from '@enbox/api';
+import type { BearerDid } from '@enbox/dids';
+
+import { Web5UserAgent } from '@enbox/agent';
 
 import {
   createPushTokenPayload,
@@ -33,6 +36,7 @@ import {
   formatCredentialResponse,
   parseCredentialRequest,
 } from './credential-helper.js';
+import { profileDataPath, resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
 // Main
@@ -63,10 +67,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { web5, did } = await Web5.connect({
-    password,
-    sync: 'off',
-  });
+  const { did, bearerDid } = await connectForCredentials(password);
 
   // Extract the owner DID and repo from the URL path.
   const path = request.path ?? '';
@@ -82,8 +83,8 @@ async function main(): Promise<void> {
   const payload = createPushTokenPayload(did, ownerDid, repo);
   const token = encodePushToken(payload);
 
-  // Sign the token using the agent's DID signer.
-  const signer = await web5.agent.agentDid.getSigner();
+  // Sign the token using the identity's DID signer (not the agent DID).
+  const signer = await bearerDid.getSigner();
   const tokenBytes = new TextEncoder().encode(token);
   const signature = await signer.sign({ data: tokenBytes });
   const signatureBase64url = Buffer.from(signature).toString('base64url');
@@ -94,6 +95,38 @@ async function main(): Promise<void> {
   };
 
   process.stdout.write(formatCredentialResponse(creds));
+}
+
+// ---------------------------------------------------------------------------
+// Agent connection
+// ---------------------------------------------------------------------------
+
+/**
+ * Connect to the Web5 agent and return the identity DID and its BearerDid.
+ *
+ * Resolves the active profile (env, git config, global default, or single
+ * fallback) and connects using the profile's agent data path.  Falls back
+ * to the legacy CWD-relative `DATA/AGENT` path when no profile exists.
+ */
+async function connectForCredentials(
+  password: string,
+): Promise<{ did: string; bearerDid: BearerDid }> {
+  // Resolve profile (env, git config, global default, single fallback).
+  // When a profile exists, the agent lives at ~/.enbox/profiles/<name>/DATA/AGENT.
+  // Otherwise, fall back to the CWD-relative default path (legacy).
+  const profileName = resolveProfile();
+  const dataPath = profileName ? profileDataPath(profileName) : undefined;
+
+  const agent = await Web5UserAgent.create(dataPath ? { dataPath } : undefined);
+  await agent.start({ password });
+
+  const identities = await agent.identity.list();
+  const identity = identities[0];
+  if (!identity) {
+    throw new Error('No identity found in agent');
+  }
+
+  return { did: identity.did.uri, bearerDid: identity.did };
 }
 
 // ---------------------------------------------------------------------------
