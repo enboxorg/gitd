@@ -11,6 +11,11 @@ export function flagValue(args: string[], flag: string): string | undefined {
   return args[idx + 1];
 }
 
+/** Check whether a boolean flag is present in argv. */
+export function hasFlag(args: string[], flag: string): boolean {
+  return args.includes(flag);
+}
+
 /**
  * Parse a port number string, validating that it's a valid TCP port.
  * Exits the process with an error if the value is not a valid port.

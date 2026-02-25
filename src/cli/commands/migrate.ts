@@ -1,8 +1,13 @@
 /**
  * `gitd migrate` — import repository data from GitHub.
  *
- * Fetches repo metadata, issues, pull requests, and releases from the
- * GitHub REST API and creates corresponding DWN records.
+ * Fetches repo metadata, git content, issues, pull requests, and releases
+ * from the GitHub REST API and creates corresponding DWN records.
+ *
+ * Git content (bare clone, bundle, refs) is included by default.
+ * Pass `--no-git` to import only metadata (issues, PRs, releases).
+ * The repos directory defaults to `./repos` (same as `gitd serve`);
+ * override with `--repos <path>` or the `GITD_REPOS` env var.
  *
  * Authentication is resolved automatically:
  *   1. `GITHUB_TOKEN` env var (if set)
@@ -12,11 +17,15 @@
  * from the `origin` (or `github`) remote of the current git repository.
  *
  * Usage:
- *   gitd migrate all [owner/repo]            Import everything
- *   gitd migrate repo [owner/repo]           Import repo metadata only
+ *   gitd migrate all [owner/repo]            Import everything (default: with git content)
+ *   gitd migrate repo [owner/repo]           Import repo metadata + git content
  *   gitd migrate issues [owner/repo]         Import issues + comments
  *   gitd migrate pulls [owner/repo]          Import PRs as patches + reviews
  *   gitd migrate releases [owner/repo]       Import releases
+ *
+ * Flags:
+ *   --repos <path>   Base path for bare repos (default: ./repos)
+ *   --no-git         Skip git content (clone/bundle/refs)
  *
  * @module
  */
@@ -24,11 +33,11 @@
 import type { AgentContext } from '../agent.js';
 
 import { createFullBundle } from '../../git-server/bundle-sync.js';
-import { flagValue } from '../flags.js';
 import { getRepoContext } from '../repo-context.js';
 import { getRepoContextId } from '../repo-context.js';
 import { GitBackend } from '../../git-server/git-backend.js';
 import { readGitRefs } from '../../git-server/ref-sync.js';
+import { flagValue, hasFlag } from '../flags.js';
 import { readFile, unlink } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 
@@ -236,7 +245,7 @@ export async function migrateCommand(ctx: AgentContext, args: string[]): Promise
     case 'pulls': return migratePulls(ctx, rest);
     case 'releases': return migrateReleases(ctx, rest);
     default:
-      console.error('Usage: gitd migrate <all|repo|issues|pulls|releases> [owner/repo] [--repos <path>]');
+      console.error('Usage: gitd migrate <all|repo|issues|pulls|releases> [owner/repo] [--repos <path>] [--no-git]');
       process.exit(1);
   }
 }
@@ -334,17 +343,19 @@ function prependAuthor(body: string, ghLogin: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the repos base path from CLI flags or environment.
- * Returns `null` when no explicit path was provided, so callers can
- * decide whether to skip git content migration.
+ * Resolve the repos base path from CLI flags, environment, or default.
+ *
+ * Priority: `--repos <path>` > `GITD_REPOS` env > `./repos` (same default
+ * as `gitd serve`).
  */
-function resolveReposPath(args: string[]): string | null {
-  return flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? null;
+function resolveReposPath(args: string[]): string {
+  return flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
 }
 
 async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
   const reposPath = resolveReposPath(args);
+  const skipGit = hasFlag(args, '--no-git');
   const slug = `${owner}/${repo}`;
 
   const token = resolveGitHubToken();
@@ -360,16 +371,16 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
     await migrateRepoInner(ctx, owner, repo);
 
     // Step 2: git content (clone, bundle, refs).
-    if (reposPath) {
+    if (skipGit) {
+      console.log('  Skipping git content (--no-git).');
+    } else {
       try {
         await migrateGitContent(ctx, owner, repo, reposPath);
       } catch (err) {
         console.error(`  Warning: git content migration failed: ${(err as Error).message}`);
         console.error('  Metadata, issues, PRs, and releases will still be imported.');
-        console.error('  Re-run with a valid --repos path to retry git content migration.\n');
+        console.error('  Re-run without --no-git to retry git content migration.\n');
       }
-    } else {
-      console.log('  Skipping git content — pass --repos <path> or set GITD_REPOS to include git data.');
     }
 
     // Step 3: issues + comments.
@@ -398,12 +409,13 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
 async function migrateRepo(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
   const reposPath = resolveReposPath(args);
+  const skipGit = hasFlag(args, '--no-git');
   try {
     await migrateRepoInner(ctx, owner, repo);
-    if (reposPath) {
-      await migrateGitContent(ctx, owner, repo, reposPath);
+    if (skipGit) {
+      console.log('  Skipping git content (--no-git).');
     } else {
-      console.log('  Skipping git content — pass --repos <path> or set GITD_REPOS to include git data.');
+      await migrateGitContent(ctx, owner, repo, reposPath);
     }
   } catch (err) {
     console.error(`Failed to migrate repo: ${(err as Error).message}`);

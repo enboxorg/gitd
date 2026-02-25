@@ -1311,10 +1311,10 @@ describe('gitd CLI commands', () => {
       // When no owner/repo arg is given, resolveGhRepo falls back to
       // the current directory's git remotes.  We're inside the gitd repo
       // so this should succeed (and the repo record already exists).
-      // No --repos flag → git content migration is skipped.
+      // Pass --no-git since the test mock doesn't serve real git content.
       mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const logs = await captureLog(() => migrateCommand(ctx, ['repo']));
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo', '--no-git']));
       expect(logs.some((l) => l.includes('Detected GitHub repo'))).toBe(true);
       expect(logs.some((l) => l.includes('already exists'))).toBe(true);
       expect(logs.some((l) => l.includes('Skipping git content'))).toBe(true);
@@ -1325,7 +1325,7 @@ describe('gitd CLI commands', () => {
       // falls through to auto-detection from git remotes.
       mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'noslash']));
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'noslash', '--no-git']));
       expect(logs.some((l) => l.includes('Detected GitHub repo'))).toBe(true);
     });
 
@@ -1369,7 +1369,7 @@ describe('gitd CLI commands', () => {
     it('should skip repo import when repo already exists', async () => {
       mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'testowner/testrepo']));
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'testowner/testrepo', '--no-git']));
       expect(logs.some((l) => l.includes('already exists'))).toBe(true);
       expect(logs.some((l) => l.includes('skipping'))).toBe(true);
     });
