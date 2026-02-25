@@ -293,11 +293,11 @@ export function jsonUnauthorized(message: string): JsonResponse {
 
 /**
  * Validate a Bearer token from the Authorization header.
- * Returns `true` if the token matches `DWN_GIT_API_TOKEN`, or if
+ * Returns `true` if the token matches `GITD_API_TOKEN`, or if
  * no token is configured (open access).
  */
 export function validateBearerToken(authHeader: string | null): boolean {
-  const expected = process.env.DWN_GIT_API_TOKEN;
+  const expected = process.env.GITD_API_TOKEN;
   if (!expected) { return true; } // No token configured — open access.
   if (!authHeader?.startsWith('Bearer ')) { return false; }
   const token = authHeader.slice(7);

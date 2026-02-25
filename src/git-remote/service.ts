@@ -11,7 +11,7 @@
  *
  * @example
  * ```ts
- * import { createGitTransportService } from '@enbox/dwn-git/git-remote/service';
+ * import { createGitTransportService } from '@enbox/gitd/git-remote/service';
  *
  * const service = createGitTransportService({
  *   id              : '#git',

@@ -1,19 +1,19 @@
 /**
- * `dwn-git serve` — start the git transport sidecar server.
+ * `gitd serve` — start the git transport sidecar server.
  *
  * Starts a smart HTTP git server that serves bare repositories and
  * authenticates pushes using DID-signed tokens. After each successful
  * push, git refs are mirrored to DWN records via ForgeRefsProtocol and
  * a git bundle is synced to a DWN record via ForgeRepoProtocol.
  *
- * Usage: dwn-git serve [--port <port>] [--repos <path>] [--prefix <path>]
+ * Usage: gitd serve [--port <port>] [--repos <path>] [--prefix <path>]
  *                       [--public-url <url>]
  *
  * Environment:
- *   DWN_GIT_PORT        — server port (default: 9418)
- *   DWN_GIT_REPOS       — base path for bare repos (default: ./repos)
- *   DWN_GIT_PREFIX      — URL path prefix (default: none)
- *   DWN_GIT_PUBLIC_URL  — public URL for the server (enables DID service registration)
+ *   GITD_PORT        — server port (default: 9418)
+ *   GITD_REPOS       — base path for bare repos (default: ./repos)
+ *   GITD_PREFIX      — URL path prefix (default: none)
+ *   GITD_PUBLIC_URL  — public URL for the server (enables DID service registration)
  *
  * @module
  */
@@ -36,10 +36,10 @@ import { flagValue, parsePort } from '../flags.js';
 // ---------------------------------------------------------------------------
 
 export async function serveCommand(ctx: AgentContext, args: string[]): Promise<void> {
-  const port = parsePort(flagValue(args, '--port') ?? process.env.DWN_GIT_PORT ?? '9418');
-  const basePath = flagValue(args, '--repos') ?? process.env.DWN_GIT_REPOS ?? './repos';
-  const pathPrefix = flagValue(args, '--prefix') ?? process.env.DWN_GIT_PREFIX;
-  const publicUrl = flagValue(args, '--public-url') ?? process.env.DWN_GIT_PUBLIC_URL;
+  const port = parsePort(flagValue(args, '--port') ?? process.env.GITD_PORT ?? '9418');
+  const basePath = flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
+  const pathPrefix = flagValue(args, '--prefix') ?? process.env.GITD_PREFIX;
+  const publicUrl = flagValue(args, '--public-url') ?? process.env.GITD_PUBLIC_URL;
 
   // Look up the repo context (contextId + visibility) for ref/bundle syncing.
   const { contextId: repoContextId, visibility } = await getRepoContext(ctx);
@@ -123,7 +123,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     }
   }
 
-  console.log(`dwn-git server listening on port ${server.port}`);
+  console.log(`gitd server listening on port ${server.port}`);
   console.log(`  DID:     ${ctx.did}`);
   console.log(`  Repos:   ${basePath}`);
   if (pathPrefix) {

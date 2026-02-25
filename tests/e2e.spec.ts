@@ -144,7 +144,7 @@ describe('E2E: init → serve → clone → push → verify', () => {
     await exec('git config user.email "e2e@test.com"', { cwd: CLONE_PATH });
     await exec('git config user.name "E2E Test"', { cwd: CLONE_PATH });
     await exec('git checkout -b main', { cwd: CLONE_PATH });
-    await exec('echo "hello from dwn-git" > README.md', { cwd: CLONE_PATH });
+    await exec('echo "hello from gitd" > README.md', { cwd: CLONE_PATH });
     await exec('git add README.md', { cwd: CLONE_PATH });
     await exec('git commit -m "initial commit"', { cwd: CLONE_PATH });
     await exec('git push -u origin main', { cwd: CLONE_PATH });
@@ -206,7 +206,7 @@ describe('E2E: init → serve → clone → push → verify', () => {
     await exec(`git clone --branch main "${cloneUrl}" "${secondClone}"`);
 
     const { stdout } = await exec('cat README.md', { cwd: secondClone });
-    expect(stdout).toContain('hello from dwn-git');
+    expect(stdout).toContain('hello from gitd');
     expect(stdout).toContain('update');
 
     rmSync(secondClone, { recursive: true, force: true });
@@ -608,7 +608,7 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
   });
 
   it('should verify repo state via repo record query (repo info)', async () => {
-    // Verify the DWN repo record matches expectations (equivalent to `dwn-git repo info`).
+    // Verify the DWN repo record matches expectations (equivalent to `gitd repo info`).
     const { records } = await repoHandle.records.query('repo');
     expect(records.length).toBe(1);
 

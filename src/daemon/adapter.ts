@@ -34,7 +34,7 @@ export interface ShimAdapter {
   /** Default port when none is configured. */
   readonly defaultPort: number;
 
-  /** Environment variable that overrides the default port (e.g. `'DWN_GIT_GITHUB_API_PORT'`). */
+  /** Environment variable that overrides the default port (e.g. `'GITD_GITHUB_API_PORT'`). */
   readonly portEnvVar: string;
 
   /**

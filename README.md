@@ -1,10 +1,10 @@
-# dwn-git
+# gitd
 
-A decentralized forge (GitHub alternative) built on [DWN](https://github.com/enboxorg/enbox) protocols. Git is already decentralized — `dwn-git` decentralizes the rest: issues, pull requests, code review, CI status, releases, package registry, and social features.
+A decentralized forge (GitHub alternative) built on [DWN](https://github.com/enboxorg/enbox) protocols. Git is already decentralized — `gitd` decentralizes the rest: issues, pull requests, code review, CI status, releases, package registry, and social features.
 
 ## Thesis
 
-GitHub centralizes the social layer around git: identity, access control, issue tracking, code review, package hosting, and discovery all depend on a single provider. `dwn-git` replaces that layer with DWN protocols, where:
+GitHub centralizes the social layer around git: identity, access control, issue tracking, code review, package hosting, and discovery all depend on a single provider. `gitd` replaces that layer with DWN protocols, where:
 
 - **Identity is self-sovereign** — DIDs replace GitHub usernames. Portable across providers.
 - **Every user owns their namespace** — your issues, stars, and contributions live on your DWN, not a central server.
@@ -15,124 +15,124 @@ GitHub centralizes the social layer around git: identity, access control, issue 
 
 ## What Works Today
 
-`dwn-git` has a working MVP covering the full lifecycle:
+`gitd` has a working MVP covering the full lifecycle:
 
-### CLI (`dwn-git`)
+### CLI (`gitd`)
 
 ```bash
 # Setup & transport
-dwn-git setup                     # Configure git for DID-based remotes
-dwn-git clone did:dht:abc/repo   # Clone via DID resolution
-dwn-git init my-repo              # Create a repo record + bare git repo
-dwn-git serve                     # Start git transport server with ref sync + bundle sync
+gitd setup                     # Configure git for DID-based remotes
+gitd clone did:dht:abc/repo   # Clone via DID resolution
+gitd init my-repo              # Create a repo record + bare git repo
+gitd serve                     # Start git transport server with ref sync + bundle sync
 
 # Repository management
-dwn-git repo info                 # Show repo metadata + collaborators
-dwn-git repo add-collaborator <did> maintainer
-dwn-git repo remove-collaborator <did>
+gitd repo info                 # Show repo metadata + collaborators
+gitd repo add-collaborator <did> maintainer
+gitd repo remove-collaborator <did>
 
 # Issues (sequential numbering)
-dwn-git issue create "Bug report" # Create issue #1
-dwn-git issue show 1              # Show issue details + comments
-dwn-git issue comment 1 "On it"  # Add a comment
-dwn-git issue close 1             # Close an issue
-dwn-git issue reopen 1            # Reopen a closed issue
-dwn-git issue list                # List all issues
+gitd issue create "Bug report" # Create issue #1
+gitd issue show 1              # Show issue details + comments
+gitd issue comment 1 "On it"  # Add a comment
+gitd issue close 1             # Close an issue
+gitd issue reopen 1            # Reopen a closed issue
+gitd issue list                # List all issues
 
 # Patches (pull requests)
-dwn-git patch create "Add X"     # Create patch #1
-dwn-git patch show 1              # Show patch details + reviews
-dwn-git patch comment 1 "LGTM"  # Add a review comment
-dwn-git patch merge 1             # Merge a patch
-dwn-git patch close 2             # Close without merging
-dwn-git patch reopen 2            # Reopen a closed patch
-dwn-git patch list                # List all patches
+gitd patch create "Add X"     # Create patch #1
+gitd patch show 1              # Show patch details + reviews
+gitd patch comment 1 "LGTM"  # Add a review comment
+gitd patch merge 1             # Merge a patch
+gitd patch close 2             # Close without merging
+gitd patch reopen 2            # Reopen a closed patch
+gitd patch list                # List all patches
 
 # Releases
-dwn-git release create v1.0.0    # Create a release
-dwn-git release show v1.0.0      # Show release details + assets
-dwn-git release list              # List releases
+gitd release create v1.0.0    # Create a release
+gitd release show v1.0.0      # Show release details + assets
+gitd release list              # List releases
 
 # CI / Check suites
-dwn-git ci create <commit>       # Create a check suite
-dwn-git ci run <suite-id> lint   # Add a check run to a suite
-dwn-git ci update <run-id> --status completed --conclusion success
-dwn-git ci status                 # Show latest CI status
-dwn-git ci show <suite-id>       # Show suite details + runs
-dwn-git ci list                   # List recent check suites
+gitd ci create <commit>       # Create a check suite
+gitd ci run <suite-id> lint   # Add a check run to a suite
+gitd ci update <run-id> --status completed --conclusion success
+gitd ci status                 # Show latest CI status
+gitd ci show <suite-id>       # Show suite details + runs
+gitd ci list                   # List recent check suites
 
 # Package registry
-dwn-git registry publish my-pkg 1.0.0 ./pkg.tgz
-dwn-git registry info my-pkg     # Show package details
-dwn-git registry versions my-pkg # List published versions
-dwn-git registry list             # List all packages
-dwn-git registry yank my-pkg 1.0.0
+gitd registry publish my-pkg 1.0.0 ./pkg.tgz
+gitd registry info my-pkg     # Show package details
+gitd registry versions my-pkg # List published versions
+gitd registry list             # List all packages
+gitd registry yank my-pkg 1.0.0
 
 # Attestations & verification
-dwn-git registry attest my-pkg 1.0.0 --claim reproducible-build
-dwn-git registry attestations my-pkg 1.0.0
-dwn-git registry verify my-pkg 1.0.0 --trusted did:jwk:build-svc
+gitd registry attest my-pkg 1.0.0 --claim reproducible-build
+gitd registry attestations my-pkg 1.0.0
+gitd registry verify my-pkg 1.0.0 --trusted did:jwk:build-svc
 
 # Package resolution & trust chain
-dwn-git registry resolve did:dht:abc/my-pkg@1.0.0
-dwn-git registry verify-deps did:dht:abc/my-pkg@1.0.0 --trusted did:jwk:ci
+gitd registry resolve did:dht:abc/my-pkg@1.0.0
+gitd registry verify-deps did:dht:abc/my-pkg@1.0.0 --trusted did:jwk:ci
 
 # Wiki
-dwn-git wiki create getting-started "Getting Started" --body "# Welcome"
-dwn-git wiki show getting-started
-dwn-git wiki edit getting-started --body "# Updated"
-dwn-git wiki list
+gitd wiki create getting-started "Getting Started" --body "# Welcome"
+gitd wiki show getting-started
+gitd wiki edit getting-started --body "# Updated"
+gitd wiki list
 
 # Organizations & teams
-dwn-git org create my-org        # Create an organization
-dwn-git org info                  # Show org details + members + teams
-dwn-git org add-member <did>     # Add a member
-dwn-git org add-owner <did>      # Add an owner
-dwn-git org team create backend  # Create a team
+gitd org create my-org        # Create an organization
+gitd org info                  # Show org details + members + teams
+gitd org add-member <did>     # Add a member
+gitd org add-owner <did>      # Add an owner
+gitd org team create backend  # Create a team
 
 # Social
-dwn-git social star <did>        # Star a repo
-dwn-git social stars              # List starred repos
-dwn-git social follow <did>      # Follow a user
-dwn-git social following          # List followed users
+gitd social star <did>        # Star a repo
+gitd social stars              # List starred repos
+gitd social follow <did>      # Follow a user
+gitd social following          # List followed users
 
 # Notifications
-dwn-git notification list         # List notifications
-dwn-git notification list --unread
-dwn-git notification read <id>   # Mark as read
-dwn-git notification clear        # Clear read notifications
+gitd notification list         # List notifications
+gitd notification list --unread
+gitd notification read <id>   # Mark as read
+gitd notification clear        # Clear read notifications
 
 # GitHub migration
-dwn-git migrate all owner/repo   # Import repo, issues, PRs, releases from GitHub
-dwn-git migrate issues owner/repo
-dwn-git migrate pulls owner/repo
-dwn-git migrate releases owner/repo
+gitd migrate all owner/repo   # Import repo, issues, PRs, releases from GitHub
+gitd migrate issues owner/repo
+gitd migrate pulls owner/repo
+gitd migrate releases owner/repo
 
 # Web UI
-dwn-git web                       # Start read-only web UI on port 8080
-dwn-git web --port 3000           # Custom port
+gitd web                       # Start read-only web UI on port 8080
+gitd web --port 3000           # Custom port
 
 # Indexer (repo discovery + aggregation)
-dwn-git indexer                   # Start indexer on port 8090
-dwn-git indexer --seed <did>      # Discover DIDs from a seed user
-dwn-git indexer --interval 30     # Crawl every 30 seconds
+gitd indexer                   # Start indexer on port 8090
+gitd indexer --seed <did>      # Discover DIDs from a seed user
+gitd indexer --interval 30     # Crawl every 30 seconds
 
 # Unified daemon — all shims in one process
-dwn-git daemon                    # Start all shims with default ports
-dwn-git daemon --only github,npm  # Only start specific shims
-dwn-git daemon --disable oci      # Disable specific shims
-dwn-git daemon --config cfg.json  # Use a config file
-dwn-git daemon --list             # List available shim adapters
+gitd daemon                    # Start all shims with default ports
+gitd daemon --only github,npm  # Only start specific shims
+gitd daemon --disable oci      # Disable specific shims
+gitd daemon --config cfg.json  # Use a config file
+gitd daemon --list             # List available shim adapters
 
 # Individual shims (standalone mode)
-dwn-git github-api                # GitHub API shim on port 8181
-dwn-git shim npm                  # npm registry shim on port 4873
-dwn-git shim go                   # Go module proxy on port 4874
-dwn-git shim oci                  # OCI/Docker registry on port 5555
+gitd github-api                # GitHub API shim on port 8181
+gitd shim npm                  # npm registry shim on port 4873
+gitd shim go                   # Go module proxy on port 4874
+gitd shim oci                  # OCI/Docker registry on port 5555
 
 # Activity & identity
-dwn-git log                       # Activity feed (recent issues + patches)
-dwn-git whoami                    # Show connected DID
+gitd log                       # Activity feed (recent issues + patches)
+gitd whoami                    # Show connected DID
 ```
 
 ### Git Transport
@@ -155,11 +155,11 @@ dwn-git whoami                    # Show connected DID
 - Landing page at `/` with DID input form; all routes are DID-scoped: `/:did/`, `/:did/issues`, etc.
 - Routes: `/:did` (overview), `/:did/issues`, `/:did/issues/:n`, `/:did/patches`, `/:did/patches/:n`, `/:did/releases`, `/:did/wiki`, `/:did/wiki/:slug`
 - Remote DWN queries use the SDK's `from` parameter — resolved via the target DID's service endpoints
-- Start with `dwn-git web [--port <port>]` (default: 8080, configurable via `DWN_GIT_WEB_PORT`)
+- Start with `gitd web [--port <port>]` (default: 8080, configurable via `GITD_WEB_PORT`)
 
 ### GitHub Migration
 
-- `dwn-git migrate all owner/repo` — import repo metadata, issues, pull requests, and releases
+- `gitd migrate all owner/repo` — import repo metadata, issues, pull requests, and releases
 - Supports pagination, error handling, and author attribution
 - GitHub author info embedded in body as `[migrated from GitHub — @username]` prefix
 
@@ -172,7 +172,7 @@ dwn-git whoami                    # Show connected DID
 - **Trending repos** — ranked by recent star activity within a time window
 - **User profiles** — repo count, total stars received, follower/following counts
 - **REST API** — `/api/repos`, `/api/repos/search?q=`, `/api/repos/trending`, `/api/users/:did`, `/api/stats`
-- Start with `dwn-git indexer [--port <port>] [--interval <sec>] [--seed <did>]`
+- Start with `gitd indexer [--port <port>] [--interval <sec>] [--seed <did>]`
 
 ### GitHub API Compatibility Shim
 
@@ -184,7 +184,7 @@ dwn-git whoami                    # Show connected DID
   - **Write**: create/update issues, create issue comments, create/update/merge pull requests, create pull reviews, create releases
 - GitHub-compatible response shapes: numeric IDs, pagination (`Link` header, `per_page`), rate limit headers
 - CORS enabled, `X-GitHub-Media-Type: github.v3` header
-- Start with `dwn-git github-api [--port <port>]` (default: 8181, configurable via `DWN_GIT_GITHUB_API_PORT`)
+- Start with `gitd github-api [--port <port>]` (default: 8181, configurable via `GITD_GITHUB_API_PORT`)
 
 ### Attestation System
 
@@ -192,9 +192,9 @@ dwn-git whoami                    # Show connected DID
 - Attestors (CI services, auditors) create signed claims about package versions
 - Claims include `reproducible-build`, `code-review`, `security-audit`, etc.
 - Optional `sourceCommit` and `sourceRepo` fields link attestations to specific builds
-- `dwn-git registry attest <name> <version> --claim <claim>` to create attestations
-- `dwn-git registry attestations <name> <version>` to list all attestations
-- `dwn-git registry verify <name> <version> [--trusted <did>,...]` to verify integrity
+- `gitd registry attest <name> <version> --claim <claim>` to create attestations
+- `gitd registry attestations <name> <version>` to list all attestations
+- `gitd registry verify <name> <version> [--trusted <did>,...]` to verify integrity
 
 ### Package Resolver & Trust Chain
 
@@ -202,28 +202,28 @@ dwn-git whoami                    # Show connected DID
 - Resolution flow: resolve DID -> query package -> query version -> fetch tarball
 - Verification checks: package exists, publisher match, version author, tarball integrity, attestations
 - Recursive dependency trust chain validation with cycle detection and depth limiting
-- `dwn-git registry resolve <did>/<name>@<version>` to resolve and inspect a remote package
-- `dwn-git registry verify-deps <did>/<name>@<version>` to build and verify the full dependency tree
+- `gitd registry resolve <did>/<name>@<version>` to resolve and inspect a remote package
+- `gitd registry verify-deps <did>/<name>@<version>` to build and verify the full dependency tree
 - No central authority — the entire chain is verifiable via DIDs and DWN record signatures
 
 ### Package Manager Shims
 
 Local HTTP proxy servers that speak native package manager protocols, resolving DID-scoped packages from DWN records. Each shim acts as a translation layer between standard tooling and the decentralized registry.
 
-**npm registry shim** (`dwn-git shim npm`):
+**npm registry shim** (`gitd shim npm`):
 - Serves the npm registry HTTP API on localhost (default port 4873)
 - Works with `npm install`, `bun install`, `yarn add`, `pnpm add`
 - DID-scoped packages via npm scopes: `npm install --registry=http://localhost:4873 @did:dht:abc123/my-pkg`
 - Endpoints: packument (all versions), version metadata, tarball download
 - Includes DWN provenance metadata in `_dwn` fields
 
-**Go module proxy shim** (`dwn-git shim go`):
+**Go module proxy shim** (`gitd shim go`):
 - Serves the GOPROXY protocol on localhost (default port 4874)
 - Module paths: `GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0`
 - Endpoints: `/@v/list`, `/@v/{ver}.info`, `/@v/{ver}.mod`, `/@v/{ver}.zip`, `/@latest`
 - Generates `go.mod` files with DID-scoped dependency mappings
 
-**OCI/Docker registry shim** (`dwn-git shim oci`):
+**OCI/Docker registry shim** (`gitd shim oci`):
 - Serves the OCI Distribution Spec v2 on localhost (default port 5555)
 - Works with `docker pull`, `podman pull`, and any OCI-compatible tool
 - Image naming: `docker pull localhost:5555/did:dht:abc123/my-image:v1.0.0`
@@ -232,10 +232,10 @@ Local HTTP proxy servers that speak native package manager protocols, resolving 
 
 ### Unified Daemon
 
-Run all ecosystem shims in a single process with `dwn-git daemon`. Each shim runs on its own port and speaks the native protocol of its ecosystem — no custom plugins or wrappers needed.
+Run all ecosystem shims in a single process with `gitd daemon`. Each shim runs on its own port and speaks the native protocol of its ecosystem — no custom plugins or wrappers needed.
 
 - **Plugin architecture**: `ShimAdapter` interface makes adding new ecosystems trivial (implement one file, register it)
-- **Config-driven**: optional `dwn-git.daemon.json` to set ports and enable/disable shims
+- **Config-driven**: optional `gitd.daemon.json` to set ports and enable/disable shims
 - **CLI flags**: `--only github,npm` to run a subset, `--disable oci` to exclude, `--list` to see all adapters
 - **Health checks**: every adapter's server responds to `GET /health` with `{ status: 'ok', shim: '<id>' }`
 - **Graceful shutdown**: SIGINT/SIGTERM stops all servers cleanly
@@ -287,43 +287,43 @@ See [PLAN.md](./PLAN.md) for the full architecture document covering:
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/enboxorg/dwn-git/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/enboxorg/gitd/main/install.sh | bash
 ```
 
 The installer works on Linux, macOS, and Windows (Git Bash/WSL). It installs
-the latest prebuilt release binaries (`dwn-git`, `git-remote-did`, and
+the latest prebuilt release binaries (`gitd`, `git-remote-did`, and
 `git-remote-did-credential`).
 
 ```bash
 # Manual install (if you prefer to run steps yourself)
-bun add -g @enbox/dwn-git
+bun add -g @enbox/gitd
 ```
 
 ### Sub-path Exports
 
 ```typescript
 // Protocol definitions and types
-import { ForgeRepoProtocol, ForgeIssuesProtocol } from '@enbox/dwn-git';
+import { ForgeRepoProtocol, ForgeIssuesProtocol } from '@enbox/gitd';
 
 // Git transport server
-import { createGitServer, createBundleSyncer, restoreFromBundles } from '@enbox/dwn-git/git-server';
+import { createGitServer, createBundleSyncer, restoreFromBundles } from '@enbox/gitd/git-server';
 
 // Git remote helper utilities
-import { parseDidUrl, resolveGitEndpoint } from '@enbox/dwn-git/git-remote';
+import { parseDidUrl, resolveGitEndpoint } from '@enbox/gitd/git-remote';
 
 // Indexer service
-import { IndexerStore, IndexerCrawler, handleApiRequest } from '@enbox/dwn-git/indexer';
+import { IndexerStore, IndexerCrawler, handleApiRequest } from '@enbox/gitd/indexer';
 
 // GitHub API compatibility shim
-import { handleShimRequest, startShimServer } from '@enbox/dwn-git/github-shim';
+import { handleShimRequest, startShimServer } from '@enbox/gitd/github-shim';
 
 // Package resolver and trust chain
-import { resolveFullPackage, verifyPackageVersion, buildTrustChain } from '@enbox/dwn-git/resolver';
+import { resolveFullPackage, verifyPackageVersion, buildTrustChain } from '@enbox/gitd/resolver';
 
 // Package manager shims
-import { handleNpmRequest, startNpmShim } from '@enbox/dwn-git/shims/npm';
-import { handleGoProxyRequest, startGoShim } from '@enbox/dwn-git/shims/go';
-import { handleOciRequest, startOciShim } from '@enbox/dwn-git/shims/oci';
+import { handleNpmRequest, startNpmShim } from '@enbox/gitd/shims/npm';
+import { handleGoProxyRequest, startGoShim } from '@enbox/gitd/shims/go';
+import { handleOciRequest, startOciShim } from '@enbox/gitd/shims/oci';
 ```
 
 ## Development
@@ -342,7 +342,7 @@ Production-hardened with 10 security fixes across all server-facing code:
 
 - **Path traversal protection** — repo names validated, resolved paths confined to base directory
 - **Request body size limits** — 1 MB JSON / 50 MB git packs, returns 413 on overflow
-- **Bearer token auth** — optional `DWN_GIT_API_TOKEN` for API write endpoints (constant-time comparison)
+- **Bearer token auth** — optional `GITD_API_TOKEN` for API write endpoints (constant-time comparison)
 - **SSRF protection** — DID-resolved URLs blocked from private/loopback IP ranges
 - **DID resolution timeouts** — 30s timeout prevents hanging on malicious endpoints
 - **XSS protection** — all HTML output escaped in web UI error pages

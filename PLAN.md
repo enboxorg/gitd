@@ -1,4 +1,4 @@
-# dwn-git: Architecture & Implementation Plan
+# gitd: Architecture & Implementation Plan
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ Git is decentralized. GitHub is not.
 
 GitHub centralizes five layers on top of git that don't need to be centralized:
 
-| Layer | GitHub's approach | dwn-git approach |
+| Layer | GitHub's approach | gitd approach |
 |---|---|---|
 | **Identity** | GitHub usernames, bound to github.com | DIDs (self-sovereign, portable) |
 | **Access control** | GitHub org/team/collaborator ACLs | DWN protocol roles with cryptographic auth |
@@ -101,9 +101,9 @@ External contributions (from strangers) follow one of these patterns:
 
 ### 3.2 Composable protocols
 
-Rather than one monolithic protocol, `dwn-git` uses 11 composable protocols. Each handles one domain (repo, issues, patches, etc.) and references the others via `uses` for cross-protocol role authorization. This mirrors how `@enbox/protocols` composes `ListsDefinition` with `SocialGraphDefinition`.
+Rather than one monolithic protocol, `gitd` uses 11 composable protocols. Each handles one domain (repo, issues, patches, etc.) and references the others via `uses` for cross-protocol role authorization. This mirrors how `@enbox/protocols` composes `ListsDefinition` with `SocialGraphDefinition`.
 
-**`$ref` wrapping**: The DWN SDK requires composing protocols to include a `$ref` node in their `structure` that references the foreign protocol's root type. For `dwn-git`, all 5 protocols that compose with `forge-repo` (issues, patches, ci, releases, wiki) wrap their top-level type inside a `repo: { $ref: 'repo:repo' }` node. This means protocolPaths include the `repo/` prefix (e.g., `'repo/issue'` instead of `'issue'`). At write time, the `parentContextId` of the `$ref` child (e.g., the issue) is set to the `contextId` of the referenced repo record, establishing the cross-protocol link without needing a `repoRecordId` tag.
+**`$ref` wrapping**: The DWN SDK requires composing protocols to include a `$ref` node in their `structure` that references the foreign protocol's root type. For `gitd`, all 5 protocols that compose with `forge-repo` (issues, patches, ci, releases, wiki) wrap their top-level type inside a `repo: { $ref: 'repo:repo' }` node. This means protocolPaths include the `repo/` prefix (e.g., `'repo/issue'` instead of `'issue'`). At write time, the `parentContextId` of the `$ref` child (e.g., the issue) is set to the `contextId` of the referenced repo record, establishing the cross-protocol link without needing a `repoRecordId` tag.
 
 ### 3.3 Immutability where it matters
 
@@ -1072,12 +1072,12 @@ The resolver builds a trust chain: resolve each DID, verify tarball signatures m
 
 ### Package Manager Shims
 
-To enable native tooling (npm, go, docker) to consume DID-scoped packages without custom plugins, `dwn-git` provides local proxy shims that speak the native protocol of each tool:
+To enable native tooling (npm, go, docker) to consume DID-scoped packages without custom plugins, `gitd` provides local proxy shims that speak the native protocol of each tool:
 
 **npm registry shim** — Implements the npm registry HTTP API. npm/bun/yarn/pnpm see a standard registry and install DID-scoped packages:
 
 ```bash
-dwn-git shim npm --port 4873
+gitd shim npm --port 4873
 npm install --registry=http://localhost:4873 @did:dht:abc123/my-pkg@1.0.0
 ```
 
@@ -1089,7 +1089,7 @@ The DID is embedded in the npm scope: `@did:dht:abc123` → DID `did:dht:abc123`
 **Go module proxy shim** — Implements the GOPROXY protocol. Go tools use standard `go get`:
 
 ```bash
-dwn-git shim go --port 4874
+gitd shim go --port 4874
 GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0
 ```
 
@@ -1103,7 +1103,7 @@ Module paths use `did.enbox.org/` as a virtual domain prefix. The shim generates
 **OCI/Docker registry shim** — Implements the OCI Distribution Spec v2. Docker/Podman pull images:
 
 ```bash
-dwn-git shim oci --port 5555
+gitd shim oci --port 5555
 docker pull localhost:5555/did:dht:abc123/my-image:v1.0.0
 ```
 
@@ -1293,7 +1293,7 @@ No "explore" page without an indexing service. This is a solved problem with ind
 
 Tools like VS Code, JetBrains IDEs, and `gh` CLI assume GitHub's REST/GraphQL API. Options:
 - **Centralized shim** (temporary): a service that translates GitHub API calls to DWN protocol queries. Lets existing tools work during migration.
-- **Native integrations** (long-term): VS Code extension, CLI tool (`dwn-git`), web UI
+- **Native integrations** (long-term): VS Code extension, CLI tool (`gitd`), web UI
 - **Some won't matter**: many GitHub-specific features (Actions YAML, Dependabot) are deeply coupled to GitHub's infrastructure. These get replaced by DWN-native equivalents, not shimmed.
 
 ### 11.7 Migration from GitHub
@@ -1327,7 +1327,7 @@ The smallest useful forge — repos, issues, patches.
 - [x] **forge-patches**: PR CRUD, revisions, reviews, merge results — protocol definition complete, integration-tested (cross-protocol roles via `$ref`)
 - [x] Integration tests against a real DWN instance — 15 tests covering repo, issues, patches, CI, and role revocation (242 total tests, 738 assertions)
 - [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
-- [x] CLI prototype: `dwn-git init`, `dwn-git issue create/list`, `dwn-git patch create/list`, `dwn-git whoami` — 12 CLI tests (254 total, 762 assertions)
+- [x] CLI prototype: `gitd init`, `gitd issue create/list`, `gitd patch create/list`, `gitd whoami` — 12 CLI tests (254 total, 762 assertions)
 
 ### Phase 2: Git Transport (complete)
 
@@ -1370,14 +1370,14 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
 - [x] **GitHub API compatibility shim**: read + write (18 endpoints — 10 GET, 8 POST/PATCH/PUT)
 - [x] **Package manager shims**: npm registry proxy, Go module proxy, OCI/Docker registry proxy — 56 tests, 122 assertions
-- [x] **Unified daemon**: `ShimAdapter` interface, config-driven multi-shim process, `dwn-git daemon` command — 34 tests, 85 assertions
+- [x] **Unified daemon**: `ShimAdapter` interface, config-driven multi-shim process, `gitd daemon` command — 34 tests, 85 assertions
 
 ---
 
 ## 13. Directory Structure
 
 ```
-dwn-git/
+gitd/
 ├── PLAN.md                     # This document
 ├── README.md
 ├── LICENSE
@@ -1522,7 +1522,7 @@ Comprehensive security hardening applied across all server-facing code:
 
 ### 14.3 Authentication & Authorization
 
-- **Bearer token auth for API writes** — The GitHub API shim supports optional Bearer token authentication for all mutating endpoints (POST, PATCH, PUT, DELETE). Configured via `DWN_GIT_API_TOKEN` environment variable. Uses constant-time comparison to prevent timing attacks. When no token is configured, access is open (local development mode).
+- **Bearer token auth for API writes** — The GitHub API shim supports optional Bearer token authentication for all mutating endpoints (POST, PATCH, PUT, DELETE). Configured via `GITD_API_TOKEN` environment variable. Uses constant-time comparison to prevent timing attacks. When no token is configured, access is open (local development mode).
 - **Nonce replay protection** — The push authenticator tracks used nonces in a time-bounded set. Replayed tokens are rejected. Expired nonces are evicted automatically (TTL = maxTokenAge + 60s clock skew).
 
 ### 14.4 Resource Limits

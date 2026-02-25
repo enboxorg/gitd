@@ -82,7 +82,7 @@ function captureError(fn: () => Promise<void>): Promise<{ errors: string[]; exit
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe('dwn-git CLI commands', () => {
+describe('gitd CLI commands', () => {
   let web5: Web5;
   let did: string;
   let ctx: AgentContext;

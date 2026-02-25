@@ -21,7 +21,7 @@ export const npmAdapter: ShimAdapter = {
   id          : 'npm',
   name        : 'npm registry',
   defaultPort : 4873,
-  portEnvVar  : 'DWN_GIT_NPM_SHIM_PORT',
+  portEnvVar  : 'GITD_NPM_SHIM_PORT',
   corsMethods : 'GET, OPTIONS',
   corsHeaders : 'Authorization, Accept',
   usageHint   : 'npm install --registry=http://localhost:{port} @did:dht:<id>/<package>',

@@ -6,10 +6,10 @@
  *
  * Usage:
  * ```ts
- * import { createGitServer } from '@enbox/dwn-git/git-server/server';
+ * import { createGitServer } from '@enbox/gitd/git-server/server';
  *
  * const server = createGitServer({
- *   basePath : '/var/lib/dwn-git/repos',
+ *   basePath : '/var/lib/gitd/repos',
  *   port     : 9418,
  * });
  *

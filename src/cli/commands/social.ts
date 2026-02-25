@@ -1,16 +1,16 @@
 /**
- * `dwn-git social` — stars, follows, and activity feeds.
+ * `gitd social` — stars, follows, and activity feeds.
  *
  * Stars and follows live on the actor's DWN (data sovereignty).
  * Aggregate counts require an indexer.
  *
  * Usage:
- *   dwn-git star <did>                         Star a repo (by owner DID)
- *   dwn-git unstar <did>                       Remove a star
- *   dwn-git stars                              List starred repos
- *   dwn-git follow <did>                       Follow a user
- *   dwn-git unfollow <did>                     Unfollow a user
- *   dwn-git following                          List followed users
+ *   gitd star <did>                         Star a repo (by owner DID)
+ *   gitd unstar <did>                       Remove a star
+ *   gitd stars                              List starred repos
+ *   gitd follow <did>                       Follow a user
+ *   gitd unfollow <did>                     Unfollow a user
+ *   gitd following                          List followed users
  *
  * @module
  */
@@ -33,7 +33,7 @@ export async function socialCommand(ctx: AgentContext, args: string[]): Promise<
     case 'unfollow': return unfollowUser(ctx, rest);
     case 'following': return listFollowing(ctx);
     default:
-      console.error('Usage: dwn-git social <star|unstar|stars|follow|unfollow|following>');
+      console.error('Usage: gitd social <star|unstar|stars|follow|unfollow|following>');
       process.exit(1);
   }
 }
@@ -45,7 +45,7 @@ export async function socialCommand(ctx: AgentContext, args: string[]): Promise<
 async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
   const repoDid = args[0];
   if (!repoDid) {
-    console.error('Usage: dwn-git social star <repo-owner-did>');
+    console.error('Usage: gitd social star <repo-owner-did>');
     process.exit(1);
   }
 
@@ -95,7 +95,7 @@ async function starRepo(ctx: AgentContext, args: string[]): Promise<void> {
 async function unstarRepo(ctx: AgentContext, args: string[]): Promise<void> {
   const repoDid = args[0];
   if (!repoDid) {
-    console.error('Usage: dwn-git social unstar <repo-owner-did>');
+    console.error('Usage: gitd social unstar <repo-owner-did>');
     process.exit(1);
   }
 
@@ -144,7 +144,7 @@ async function listStars(ctx: AgentContext): Promise<void> {
 async function followUser(ctx: AgentContext, args: string[]): Promise<void> {
   const targetDid = args[0];
   if (!targetDid) {
-    console.error('Usage: dwn-git social follow <did>');
+    console.error('Usage: gitd social follow <did>');
     process.exit(1);
   }
 
@@ -178,7 +178,7 @@ async function followUser(ctx: AgentContext, args: string[]): Promise<void> {
 async function unfollowUser(ctx: AgentContext, args: string[]): Promise<void> {
   const targetDid = args[0];
   if (!targetDid) {
-    console.error('Usage: dwn-git social unfollow <did>');
+    console.error('Usage: gitd social unfollow <did>');
     process.exit(1);
   }
 

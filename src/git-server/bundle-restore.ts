@@ -146,7 +146,7 @@ export async function restoreFromBundles(
 
 /** Generate a unique temp file path for a bundle. */
 function tempBundlePath(): string {
-  return join(tmpdir(), `dwn-git-restore-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
+  return join(tmpdir(), `gitd-restore-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
 }
 
 /** Ensure the parent directory of a path exists. */

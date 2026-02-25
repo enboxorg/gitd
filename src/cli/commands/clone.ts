@@ -1,11 +1,11 @@
 /**
- * `dwn-git clone <did>/<repo>` — clone a repository by DID.
+ * `gitd clone <did>/<repo>` — clone a repository by DID.
  *
  * Convenience wrapper that:
  * 1. Validates the DID/repo argument
  * 2. Spawns `git clone did::<did>/<repo>` with inherited stdio
  *
- * Usage: dwn-git clone <did>/<repo> [-- <git-clone-args...>]
+ * Usage: gitd clone <did>/<repo> [-- <git-clone-args...>]
  *
  * @module
  */
@@ -20,11 +20,11 @@ export async function cloneCommand(args: string[]): Promise<void> {
   const target = args[0];
 
   if (!target) {
-    console.error('Usage: dwn-git clone <did>/<repo> [-- <git-clone-args...>]');
+    console.error('Usage: gitd clone <did>/<repo> [-- <git-clone-args...>]');
     console.error('');
     console.error('Examples:');
-    console.error('  dwn-git clone did:dht:abc123/my-repo');
-    console.error('  dwn-git clone did:dht:abc123/my-repo -- --depth 1');
+    console.error('  gitd clone did:dht:abc123/my-repo');
+    console.error('  gitd clone did:dht:abc123/my-repo -- --depth 1');
     process.exit(1);
   }
 

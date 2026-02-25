@@ -16,7 +16,7 @@
  *     helper = /path/to/git-remote-did-credential
  *
  * Environment:
- *   DWN_GIT_PASSWORD — vault password for the local agent
+ *   GITD_PASSWORD — vault password for the local agent
  *
  * @module
  */
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   }
 
   // Connect to the local agent to get the DID and signing key.
-  const password = process.env.DWN_GIT_PASSWORD;
+  const password = process.env.GITD_PASSWORD;
   if (!password) {
     // Credential helpers must be non-interactive. If no password is set,
     // silently exit and let git fall back to another credential helper.

@@ -1,13 +1,13 @@
 /**
- * `dwn-git ci` — view CI check suites and check runs.
+ * `gitd ci` — view CI check suites and check runs.
  *
  * Usage:
- *   dwn-git ci status [<commit>]              Show latest check suite status
- *   dwn-git ci list [--limit <n>]             List recent check suites
- *   dwn-git ci show <suite-id>                Show check suite details + runs
- *   dwn-git ci create <commit> [--app <name>] Create a check suite (for CI bots)
- *   dwn-git ci run <suite-id> <name>          Add a check run to a suite
- *   dwn-git ci update <run-id> --status <s>   Update a check run status
+ *   gitd ci status [<commit>]              Show latest check suite status
+ *   gitd ci list [--limit <n>]             List recent check suites
+ *   gitd ci show <suite-id>                Show check suite details + runs
+ *   gitd ci create <commit> [--app <name>] Create a check suite (for CI bots)
+ *   gitd ci run <suite-id> <name>          Add a check run to a suite
+ *   gitd ci update <run-id> --status <s>   Update a check run status
  *
  * @module
  */
@@ -36,7 +36,7 @@ export async function ciCommand(ctx: AgentContext, args: string[]): Promise<void
     case 'run': return ciRun(ctx, rest);
     case 'update': return ciUpdate(ctx, rest);
     default:
-      console.error('Usage: dwn-git ci <status|list|show|create|run|update>');
+      console.error('Usage: gitd ci <status|list|show|create|run|update>');
       process.exit(1);
   }
 }
@@ -122,7 +122,7 @@ async function ciList(ctx: AgentContext, args: string[]): Promise<void> {
 async function ciShow(ctx: AgentContext, args: string[]): Promise<void> {
   const suiteId = args[0];
   if (!suiteId) {
-    console.error('Usage: dwn-git ci show <suite-id>');
+    console.error('Usage: gitd ci show <suite-id>');
     process.exit(1);
   }
 
@@ -181,11 +181,11 @@ async function ciShow(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function ciCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const commitSha = args[0];
-  const app = flagValue(args, '--app') ?? 'dwn-git-ci';
+  const app = flagValue(args, '--app') ?? 'gitd-ci';
   const branch = flagValue(args, '--branch');
 
   if (!commitSha) {
-    console.error('Usage: dwn-git ci create <commit-sha> [--app <name>] [--branch <branch>]');
+    console.error('Usage: gitd ci create <commit-sha> [--app <name>] [--branch <branch>]');
     process.exit(1);
   }
 
@@ -221,7 +221,7 @@ async function ciRun(ctx: AgentContext, args: string[]): Promise<void> {
   const name = args[1];
 
   if (!suiteId || !name) {
-    console.error('Usage: dwn-git ci run <suite-id> <name>');
+    console.error('Usage: gitd ci run <suite-id> <name>');
     process.exit(1);
   }
 
@@ -260,7 +260,7 @@ async function ciUpdate(ctx: AgentContext, args: string[]): Promise<void> {
   const conclusion = flagValue(args, '--conclusion');
 
   if (!runId || !newStatus) {
-    console.error('Usage: dwn-git ci update <run-id> --status <queued|in_progress|completed> [--conclusion <success|failure|cancelled|skipped>]');
+    console.error('Usage: gitd ci update <run-id> --status <queued|in_progress|completed> [--conclusion <success|failure|cancelled|skipped>]');
     process.exit(1);
   }
 

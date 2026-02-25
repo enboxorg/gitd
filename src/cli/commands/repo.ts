@@ -1,10 +1,10 @@
 /**
- * `dwn-git repo` — repository management commands.
+ * `gitd repo` — repository management commands.
  *
  * Usage:
- *   dwn-git repo info                           Show repository metadata
- *   dwn-git repo add-collaborator <did> <role>  Grant a role
- *   dwn-git repo remove-collaborator <did>      Revoke a collaborator role
+ *   gitd repo info                           Show repository metadata
+ *   gitd repo add-collaborator <did> <role>  Grant a role
+ *   gitd repo remove-collaborator <did>      Revoke a collaborator role
  *
  * Roles: maintainer, triager, contributor
  *
@@ -36,7 +36,7 @@ export async function repoCommand(ctx: AgentContext, args: string[]): Promise<vo
     case 'add-collaborator': return addCollaborator(ctx, rest);
     case 'remove-collaborator': return removeCollaborator(ctx, rest);
     default:
-      console.error('Usage: dwn-git repo <info|add-collaborator|remove-collaborator>');
+      console.error('Usage: gitd repo <info|add-collaborator|remove-collaborator>');
       process.exit(1);
   }
 }
@@ -49,7 +49,7 @@ async function repoInfo(ctx: AgentContext): Promise<void> {
   const { records } = await ctx.repo.records.query('repo');
 
   if (records.length === 0) {
-    console.error('No repository found. Run `dwn-git init <name>` first.');
+    console.error('No repository found. Run `gitd init <name>` first.');
     process.exit(1);
   }
 
@@ -95,7 +95,7 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
   const alias = flagValue(args, '--alias') ?? flagValue(args, '-a');
 
   if (!did || !role) {
-    console.error('Usage: dwn-git repo add-collaborator <did> <role> [--alias <name>]');
+    console.error('Usage: gitd repo add-collaborator <did> <role> [--alias <name>]');
     console.error(`  Roles: ${VALID_ROLES.join(', ')}`);
     process.exit(1);
   }
@@ -131,7 +131,7 @@ async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<vo
   const did = args[0];
 
   if (!did) {
-    console.error('Usage: dwn-git repo remove-collaborator <did>');
+    console.error('Usage: gitd repo remove-collaborator <did>');
     process.exit(1);
   }
 

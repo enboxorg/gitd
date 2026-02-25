@@ -5,7 +5,7 @@
  * container images from DWN records.
  *
  * Usage:
- *   dwn-git shim oci [--port 5555]
+ *   gitd shim oci [--port 5555]
  *
  * Then:
  *   docker pull localhost:5555/did:dht:abc123/my-image:v1.0.0

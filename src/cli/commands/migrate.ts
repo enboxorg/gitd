@@ -1,16 +1,16 @@
 /**
- * `dwn-git migrate` — import repository data from GitHub.
+ * `gitd migrate` — import repository data from GitHub.
  *
  * Fetches repo metadata, issues, pull requests, and releases from the
  * GitHub REST API and creates corresponding DWN records.  A `GITHUB_TOKEN`
  * env var is recommended for authenticated requests (higher rate limits).
  *
  * Usage:
- *   dwn-git migrate all <owner/repo>            Import everything
- *   dwn-git migrate repo <owner/repo>           Import repo metadata only
- *   dwn-git migrate issues <owner/repo>         Import issues + comments
- *   dwn-git migrate pulls <owner/repo>          Import PRs as patches + reviews
- *   dwn-git migrate releases <owner/repo>       Import releases
+ *   gitd migrate all <owner/repo>            Import everything
+ *   gitd migrate repo <owner/repo>           Import repo metadata only
+ *   gitd migrate issues <owner/repo>         Import issues + comments
+ *   gitd migrate pulls <owner/repo>          Import PRs as patches + reviews
+ *   gitd migrate releases <owner/repo>       Import releases
  *
  * @module
  */
@@ -29,7 +29,7 @@ const GITHUB_API = 'https://api.github.com';
 function githubHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Accept'     : 'application/vnd.github+json',
-    'User-Agent' : 'dwn-git-migrate/0.1',
+    'User-Agent' : 'gitd-migrate/0.1',
   };
   const token = process.env.GITHUB_TOKEN;
   if (token) { headers['Authorization'] = `Bearer ${token}`; }
@@ -147,7 +147,7 @@ export async function migrateCommand(ctx: AgentContext, args: string[]): Promise
     case 'pulls': return migratePulls(ctx, rest);
     case 'releases': return migrateReleases(ctx, rest);
     default:
-      console.error('Usage: dwn-git migrate <all|repo|issues|pulls|releases> <owner/repo>');
+      console.error('Usage: gitd migrate <all|repo|issues|pulls|releases> <owner/repo>');
       process.exit(1);
   }
 }
@@ -159,7 +159,7 @@ export async function migrateCommand(ctx: AgentContext, args: string[]): Promise
 function parseGhRepo(args: string[]): { owner: string; repo: string } {
   const target = args[0];
   if (!target || !target.includes('/')) {
-    console.error('Usage: dwn-git migrate <subcommand> <owner/repo>');
+    console.error('Usage: gitd migrate <subcommand> <owner/repo>');
     process.exit(1);
   }
 
@@ -284,7 +284,7 @@ async function migrateIssues(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string): Promise<number> {
   const slug = `${owner}/${repo}`;
-  const importComments = !process.env.DWN_GIT_MIGRATE_SKIP_COMMENTS;
+  const importComments = !process.env.GITD_MIGRATE_SKIP_COMMENTS;
   console.log(`Importing issues from ${slug}...`);
 
   const repoContextId = await getRepoContextId(ctx);
@@ -368,7 +368,7 @@ async function migratePulls(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function migratePullsInner(ctx: AgentContext, owner: string, repo: string): Promise<number> {
   const slug = `${owner}/${repo}`;
-  const importReviews = !process.env.DWN_GIT_MIGRATE_SKIP_COMMENTS;
+  const importReviews = !process.env.GITD_MIGRATE_SKIP_COMMENTS;
   console.log(`Importing pull requests from ${slug}...`);
 
   const repoContextId = await getRepoContextId(ctx);
@@ -386,7 +386,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
     const author = ghPull.user?.login ?? 'unknown';
     const body = prependAuthor(ghPull.body ?? '', author);
 
-    // Map GitHub PR state to dwn-git patch status.
+    // Map GitHub PR state to gitd patch status.
     let patchStatus: string;
     if (ghPull.merged) {
       patchStatus = 'merged';

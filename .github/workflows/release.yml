@@ -56,17 +56,17 @@ jobs:
             out_suffix=".exe"
           fi
 
-          bun build src/cli/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/dwn-git${out_suffix}"
+          bun build src/cli/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/gitd${out_suffix}"
           bun build src/git-remote/main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did${out_suffix}"
           bun build src/git-remote/credential-main.ts --compile --target "${{ matrix.target }}" --outfile "dist/release/git-remote-did-credential${out_suffix}"
 
       - name: Package artifact
         run: |
-          artifact="dwn-git-${{ matrix.os }}-${{ matrix.arch }}.${{ matrix.ext }}"
+          artifact="gitd-${{ matrix.os }}-${{ matrix.arch }}.${{ matrix.ext }}"
           if [ "${{ matrix.ext }}" = "zip" ]; then
-            (cd dist/release && zip -q "../../${artifact}" dwn-git.exe git-remote-did.exe git-remote-did-credential.exe)
+            (cd dist/release && zip -q "../../${artifact}" gitd.exe git-remote-did.exe git-remote-did-credential.exe)
           else
-            (cd dist/release && tar -czf "../../${artifact}" dwn-git git-remote-did git-remote-did-credential)
+            (cd dist/release && tar -czf "../../${artifact}" gitd git-remote-did git-remote-did-credential)
           fi
           echo "artifact=${artifact}" >> "$GITHUB_ENV"
 

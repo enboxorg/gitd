@@ -1,13 +1,13 @@
 /**
- * `dwn-git issue` — create, list, show, comment on, and manage issues.
+ * `gitd issue` — create, list, show, comment on, and manage issues.
  *
  * Usage:
- *   dwn-git issue create <title> [--body <text>]
- *   dwn-git issue show <number>
- *   dwn-git issue comment <number> <body>
- *   dwn-git issue close <number> [--reason <text>]
- *   dwn-git issue reopen <number>
- *   dwn-git issue list [--status <open|closed>]
+ *   gitd issue create <title> [--body <text>]
+ *   gitd issue show <number>
+ *   gitd issue comment <number> <body>
+ *   gitd issue close <number> [--reason <text>]
+ *   gitd issue reopen <number>
+ *   gitd issue list [--status <open|closed>]
  *
  * @module
  */
@@ -34,7 +34,7 @@ export async function issueCommand(ctx: AgentContext, args: string[]): Promise<v
     case 'list':
     case 'ls': return issueList(ctx, rest);
     default:
-      console.error('Usage: dwn-git issue <create|show|comment|close|reopen|list>');
+      console.error('Usage: gitd issue <create|show|comment|close|reopen|list>');
       process.exit(1);
   }
 }
@@ -48,7 +48,7 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const body = flagValue(args, '--body') ?? flagValue(args, '-m') ?? '';
 
   if (!title) {
-    console.error('Usage: dwn-git issue create <title> [--body <text>]');
+    console.error('Usage: gitd issue create <title> [--body <text>]');
     process.exit(1);
   }
 
@@ -79,7 +79,7 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
 async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git issue show <number>');
+    console.error('Usage: gitd issue show <number>');
     process.exit(1);
   }
 
@@ -134,7 +134,7 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
   const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
 
   if (!numberStr || !body) {
-    console.error('Usage: dwn-git issue comment <number> <body>');
+    console.error('Usage: gitd issue comment <number> <body>');
     process.exit(1);
   }
 
@@ -165,7 +165,7 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
 async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git issue close <number>');
+    console.error('Usage: gitd issue close <number>');
     process.exit(1);
   }
 
@@ -204,7 +204,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
 async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git issue reopen <number>');
+    console.error('Usage: gitd issue reopen <number>');
     process.exit(1);
   }
 

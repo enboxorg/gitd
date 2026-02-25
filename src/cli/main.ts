@@ -1,67 +1,67 @@
 #!/usr/bin/env bun
 /**
- * dwn-git CLI — decentralized forge powered by DWN protocols.
+ * gitd CLI — decentralized forge powered by DWN protocols.
  *
  * Usage:
- *   dwn-git setup                              Configure git for DID transport
- *   dwn-git clone <did>/<repo>                 Clone a repo via DID
- *   dwn-git init <name> [--description <text>] Create a repo record + bare git repo
- *   dwn-git repo info                          Show repo metadata
- *   dwn-git repo add-collaborator <did> <role> Grant a role
- *   dwn-git repo remove-collaborator <did>     Revoke a collaborator role
- *   dwn-git issue create <title>               File an issue
- *   dwn-git issue show <number>                Show issue details + comments
- *   dwn-git issue comment <number> <body>      Add a comment to an issue
- *   dwn-git issue close <number>               Close an issue
- *   dwn-git issue list [--status <open|closed>]
- *   dwn-git patch create <title>               Open a patch (PR)
- *   dwn-git patch show <number>                Show patch details + reviews
- *   dwn-git patch comment <number> <body>      Add a comment/review
- *   dwn-git patch merge <number>               Merge a patch
- *   dwn-git patch list [--status <status>]
- *   dwn-git release create <tag>               Create a release
- *   dwn-git release show <tag>                 Show release details
- *   dwn-git release list                       List releases
- *   dwn-git ci status [<commit>]               Show latest CI status
- *   dwn-git ci create <commit>                 Create a check suite
- *   dwn-git ci run <suite-id> <name>           Add a check run
- *   dwn-git ci update <run-id> --status <s>    Update a check run status
- *   dwn-git registry publish <name> <ver> <tarball>  Publish a package version
- *   dwn-git registry info <name>               Show package details
- *   dwn-git registry versions <name>           List published versions
- *   dwn-git registry list                      List all packages
- *   dwn-git registry yank <name> <version>     Mark a version as deprecated
- *   dwn-git registry attest <name> <ver> --claim <c>  Create attestation
- *   dwn-git registry attestations <name> <ver> List attestations
- *   dwn-git registry verify <name> <ver>       Verify a package version
- *   dwn-git registry resolve <did>/<name>@<ver> Resolve a remote package
- *   dwn-git registry verify-deps <did>/<name>@<ver> Verify trust chain
- *   dwn-git wiki create <slug> <title>         Create a wiki page
- *   dwn-git wiki show <slug>                   Show a wiki page
- *   dwn-git org create <name>                  Create an organization
- *   dwn-git org info                           Show org details
- *   dwn-git social star <did>                  Star a repo
- *   dwn-git social follow <did>                Follow a user
- *   dwn-git notification list [--unread]       List notifications
- *   dwn-git migrate all <owner/repo>            Import everything from GitHub
- *   dwn-git migrate issues <owner/repo>         Import issues + comments
- *   dwn-git migrate pulls <owner/repo>          Import PRs as patches
- *   dwn-git migrate releases <owner/repo>       Import releases
- *   dwn-git web [--port <port>]                Start the read-only web UI
- *   dwn-git indexer [--port] [--interval] [--seed]  Start the indexer service
- *   dwn-git daemon [--config <path>] [--only ...] Start unified shim daemon
- *   dwn-git github-api [--port <port>]         Start GitHub API compatibility shim
- *   dwn-git shim npm [--port 4873]             Start npm registry proxy
- *   dwn-git shim go  [--port 4874]             Start Go module proxy (GOPROXY)
- *   dwn-git shim oci [--port 5555]             Start OCI/Docker registry proxy
- *   dwn-git log                                Show recent activity
- *   dwn-git serve [--port <port>]              Start the git transport server
- *   dwn-git whoami                             Show connected DID
+ *   gitd setup                              Configure git for DID transport
+ *   gitd clone <did>/<repo>                 Clone a repo via DID
+ *   gitd init <name> [--description <text>] Create a repo record + bare git repo
+ *   gitd repo info                          Show repo metadata
+ *   gitd repo add-collaborator <did> <role> Grant a role
+ *   gitd repo remove-collaborator <did>     Revoke a collaborator role
+ *   gitd issue create <title>               File an issue
+ *   gitd issue show <number>                Show issue details + comments
+ *   gitd issue comment <number> <body>      Add a comment to an issue
+ *   gitd issue close <number>               Close an issue
+ *   gitd issue list [--status <open|closed>]
+ *   gitd patch create <title>               Open a patch (PR)
+ *   gitd patch show <number>                Show patch details + reviews
+ *   gitd patch comment <number> <body>      Add a comment/review
+ *   gitd patch merge <number>               Merge a patch
+ *   gitd patch list [--status <status>]
+ *   gitd release create <tag>               Create a release
+ *   gitd release show <tag>                 Show release details
+ *   gitd release list                       List releases
+ *   gitd ci status [<commit>]               Show latest CI status
+ *   gitd ci create <commit>                 Create a check suite
+ *   gitd ci run <suite-id> <name>           Add a check run
+ *   gitd ci update <run-id> --status <s>    Update a check run status
+ *   gitd registry publish <name> <ver> <tarball>  Publish a package version
+ *   gitd registry info <name>               Show package details
+ *   gitd registry versions <name>           List published versions
+ *   gitd registry list                      List all packages
+ *   gitd registry yank <name> <version>     Mark a version as deprecated
+ *   gitd registry attest <name> <ver> --claim <c>  Create attestation
+ *   gitd registry attestations <name> <ver> List attestations
+ *   gitd registry verify <name> <ver>       Verify a package version
+ *   gitd registry resolve <did>/<name>@<ver> Resolve a remote package
+ *   gitd registry verify-deps <did>/<name>@<ver> Verify trust chain
+ *   gitd wiki create <slug> <title>         Create a wiki page
+ *   gitd wiki show <slug>                   Show a wiki page
+ *   gitd org create <name>                  Create an organization
+ *   gitd org info                           Show org details
+ *   gitd social star <did>                  Star a repo
+ *   gitd social follow <did>                Follow a user
+ *   gitd notification list [--unread]       List notifications
+ *   gitd migrate all <owner/repo>            Import everything from GitHub
+ *   gitd migrate issues <owner/repo>         Import issues + comments
+ *   gitd migrate pulls <owner/repo>          Import PRs as patches
+ *   gitd migrate releases <owner/repo>       Import releases
+ *   gitd web [--port <port>]                Start the read-only web UI
+ *   gitd indexer [--port] [--interval] [--seed]  Start the indexer service
+ *   gitd daemon [--config <path>] [--only ...] Start unified shim daemon
+ *   gitd github-api [--port <port>]         Start GitHub API compatibility shim
+ *   gitd shim npm [--port 4873]             Start npm registry proxy
+ *   gitd shim go  [--port 4874]             Start Go module proxy (GOPROXY)
+ *   gitd shim oci [--port 5555]             Start OCI/Docker registry proxy
+ *   gitd log                                Show recent activity
+ *   gitd serve [--port <port>]              Start the git transport server
+ *   gitd whoami                             Show connected DID
  *
  * Environment:
- *   DWN_GIT_PASSWORD  — vault password (prompted interactively if not set)
- *   DWN_GIT_PORT      — server port for `serve` (default: 9418)
- *   DWN_GIT_REPOS     — base path for bare repos (default: ./repos)
+ *   GITD_PASSWORD  — vault password (prompted interactively if not set)
+ *   GITD_PORT      — server port for `serve` (default: 9418)
+ *   GITD_REPOS     — base path for bare repos (default: ./repos)
  *
  * @module
  */
@@ -102,7 +102,7 @@ const rest = args.slice(1);
 // ---------------------------------------------------------------------------
 
 function printUsage(): void {
-  console.log('dwn-git — decentralized forge powered by DWN protocols\n');
+  console.log('gitd — decentralized forge powered by DWN protocols\n');
   console.log('Commands:');
   console.log('  setup                                       Configure git for DID-based remotes');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
@@ -194,16 +194,16 @@ function printUsage(): void {
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
   console.log('Environment:');
-  console.log('  DWN_GIT_PASSWORD  vault password (prompted if not set)');
-  console.log('  DWN_GIT_PORT      server port for `serve` (default: 9418)');
-  console.log('  DWN_GIT_WEB_PORT  web UI port for `web` (default: 8080)');
-  console.log('  DWN_GIT_REPOS     base path for bare repos (default: ./repos)');
-  console.log('  DWN_GIT_INDEXER_PORT      indexer API port (default: 8090)');
-  console.log('  DWN_GIT_INDEXER_INTERVAL  crawl interval in seconds (default: 60)');
-  console.log('  DWN_GIT_GITHUB_API_PORT   GitHub API shim port (default: 8181)');
-  console.log('  DWN_GIT_NPM_SHIM_PORT    npm shim port (default: 4873)');
-  console.log('  DWN_GIT_GO_SHIM_PORT     Go proxy shim port (default: 4874)');
-  console.log('  DWN_GIT_OCI_SHIM_PORT    OCI registry shim port (default: 5555)');
+  console.log('  GITD_PASSWORD  vault password (prompted if not set)');
+  console.log('  GITD_PORT      server port for `serve` (default: 9418)');
+  console.log('  GITD_WEB_PORT  web UI port for `web` (default: 8080)');
+  console.log('  GITD_REPOS     base path for bare repos (default: ./repos)');
+  console.log('  GITD_INDEXER_PORT      indexer API port (default: 8090)');
+  console.log('  GITD_INDEXER_INTERVAL  crawl interval in seconds (default: 60)');
+  console.log('  GITD_GITHUB_API_PORT   GitHub API shim port (default: 8181)');
+  console.log('  GITD_NPM_SHIM_PORT    npm shim port (default: 4873)');
+  console.log('  GITD_GO_SHIM_PORT     Go proxy shim port (default: 4874)');
+  console.log('  GITD_OCI_SHIM_PORT    OCI registry shim port (default: 5555)');
   console.log('  GITHUB_TOKEN      GitHub API token for migration (optional, higher rate limits)');
 }
 
@@ -213,7 +213,7 @@ function printUsage(): void {
 
 async function getPassword(): Promise<string> {
   // Prefer env var for non-interactive use / testing.
-  const env = process.env.DWN_GIT_PASSWORD;
+  const env = process.env.GITD_PASSWORD;
   if (env) { return env; }
 
   // Interactive prompt via stdin.

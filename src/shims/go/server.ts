@@ -5,7 +5,7 @@
  * Go modules from DWN records.
  *
  * Usage:
- *   dwn-git shim go [--port 4874]
+ *   gitd shim go [--port 4874]
  *
  * Then:
  *   GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0

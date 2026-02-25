@@ -96,7 +96,7 @@ export async function handleShimRequest(
   reqBody: Record<string, unknown> = {},
   authHeader: string | null = null,
 ): Promise<JsonResponse> {
-  // Authenticate mutating requests when DWN_GIT_API_TOKEN is configured.
+  // Authenticate mutating requests when GITD_API_TOKEN is configured.
   if (method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE') {
     if (!validateBearerToken(authHeader)) {
       return jsonUnauthorized('Valid Bearer token required for write operations.');

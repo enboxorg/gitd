@@ -66,7 +66,7 @@ export type AgentContext = {
  * Connect to the local Web5 agent, initializing on first launch.
  *
  * The agent's persistent data lives under `dataPath` (default:
- * `~/.dwn-git/agent`).  Sync is disabled — the CLI operates against
+ * `~/.gitd/agent`).  Sync is disabled — the CLI operates against
  * the local DWN only.
  */
 export async function connectAgent(password: string): Promise<AgentContext> {

@@ -1,4 +1,4 @@
-# CLAUDE.md — Agent Instructions for dwn-git
+# CLAUDE.md — Agent Instructions for gitd
 
 ## Workflow: Git Worktrees
 
@@ -10,7 +10,7 @@ All work MUST be done in fresh git worktrees. Never work directly on `main`.
 2. Create a fresh worktree from the latest `main`:
    ```sh
    git fetch origin
-   git worktree add ../dwn-git-<short-name> -b <branch-name> origin/main
+   git worktree add ../gitd-<short-name> -b <branch-name> origin/main
    ```
    Branch naming: `feat/<topic>`, `fix/<topic>`, or `chore/<topic>`.
 3. Work inside the worktree directory for all changes.
@@ -39,7 +39,7 @@ All new or changed behavior must have corresponding tests. Do not skip tests.
 
 1. Delete the worktree and the local branch:
    ```sh
-   git worktree remove ../dwn-git-<short-name>
+   git worktree remove ../gitd-<short-name>
    git branch -d <branch-name>
    ```
 2. New work starts in a new fresh worktree. Never reuse old worktrees.
@@ -52,7 +52,7 @@ All new or changed behavior must have corresponding tests. Do not skip tests.
 - **Test**: `bun test .spec.ts`.
 - **Lint**: `bun run lint` (ESLint with `@typescript-eslint`, `@stylistic`, `--max-warnings 0`).
 - **SDK**: Uses `@enbox/api`, `@enbox/crypto`, `@enbox/dids`, `@enbox/dwn-sdk-js`. Never reference `@web5/*` or `tbddev.org`.
-- **Exports**: Single entry point via `./dist/esm/index.js`. CLI binaries: `dwn-git`, `git-remote-did`, `git-remote-did-credential`.
+- **Exports**: Single entry point via `./dist/esm/index.js`. CLI binaries: `gitd`, `git-remote-did`, `git-remote-did-credential`.
 - **Style**: Explicit return types required (`@typescript-eslint/explicit-function-return-type`). Colon-aligned key-spacing. Single quotes. Semicolons required.
 
 ## Rules

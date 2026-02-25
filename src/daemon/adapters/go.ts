@@ -21,7 +21,7 @@ export const goAdapter: ShimAdapter = {
   id          : 'go',
   name        : 'Go module proxy',
   defaultPort : 4874,
-  portEnvVar  : 'DWN_GIT_GO_SHIM_PORT',
+  portEnvVar  : 'GITD_GO_SHIM_PORT',
   corsMethods : 'GET, OPTIONS',
   corsHeaders : 'Authorization, Accept',
   usageHint   : 'GOPROXY=http://localhost:{port} go get did.enbox.org/did:dht:<id>/<module>@v1.0.0',

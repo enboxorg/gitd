@@ -51,7 +51,7 @@ function parseJson(body: string): any {
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe('dwn-git indexer', () => {
+describe('gitd indexer', () => {
   let ctx: AgentContext;
   let store: IndexerStore;
   let crawler: IndexerCrawler;

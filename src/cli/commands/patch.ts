@@ -1,14 +1,14 @@
 /**
- * `dwn-git patch` — create, list, show, comment on, and merge patches (pull requests).
+ * `gitd patch` — create, list, show, comment on, and merge patches (pull requests).
  *
  * Usage:
- *   dwn-git patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
- *   dwn-git patch show <number>
- *   dwn-git patch comment <number> <body>
- *   dwn-git patch merge <number> [--strategy <merge|squash|rebase>]
- *   dwn-git patch close <number>
- *   dwn-git patch reopen <number>
- *   dwn-git patch list [--status <draft|open|closed|merged>]
+ *   gitd patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
+ *   gitd patch show <number>
+ *   gitd patch comment <number> <body>
+ *   gitd patch merge <number> [--strategy <merge|squash|rebase>]
+ *   gitd patch close <number>
+ *   gitd patch reopen <number>
+ *   gitd patch list [--status <draft|open|closed|merged>]
  *
  * @module
  */
@@ -36,7 +36,7 @@ export async function patchCommand(ctx: AgentContext, args: string[]): Promise<v
     case 'list':
     case 'ls': return patchList(ctx, rest);
     default:
-      console.error('Usage: dwn-git patch <create|show|comment|merge|close|reopen|list>');
+      console.error('Usage: gitd patch <create|show|comment|merge|close|reopen|list>');
       process.exit(1);
   }
 }
@@ -52,7 +52,7 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const head = flagValue(args, '--head');
 
   if (!title) {
-    console.error('Usage: dwn-git patch create <title> [--body <text>] [--base <branch>] [--head <branch>]');
+    console.error('Usage: gitd patch create <title> [--body <text>] [--base <branch>] [--head <branch>]');
     process.exit(1);
   }
 
@@ -90,7 +90,7 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
 async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git patch show <number>');
+    console.error('Usage: gitd patch show <number>');
     process.exit(1);
   }
 
@@ -153,7 +153,7 @@ async function patchComment(ctx: AgentContext, args: string[]): Promise<void> {
   const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
 
   if (!numberStr || !body) {
-    console.error('Usage: dwn-git patch comment <number> <body>');
+    console.error('Usage: gitd patch comment <number> <body>');
     process.exit(1);
   }
 
@@ -188,7 +188,7 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const strategy = flagValue(args, '--strategy') ?? 'merge';
 
   if (!numberStr) {
-    console.error('Usage: dwn-git patch merge <number> [--strategy <merge|squash|rebase>]');
+    console.error('Usage: gitd patch merge <number> [--strategy <merge|squash|rebase>]');
     process.exit(1);
   }
 
@@ -245,7 +245,7 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
 async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git patch close <number>');
+    console.error('Usage: gitd patch close <number>');
     process.exit(1);
   }
 
@@ -289,7 +289,7 @@ async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
 async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: dwn-git patch reopen <number>');
+    console.error('Usage: gitd patch reopen <number>');
     process.exit(1);
   }
 
