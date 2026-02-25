@@ -157,6 +157,13 @@ export function startWebServer(options: WebServerOptions): Server {
   const { ctx, port } = options;
 
   const server = createServer(async (req, res) => {
+    // Health check endpoint.
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'web-ui' }));
+      return;
+    }
+
     try {
       const url = new URL(req.url ?? '/', `http://localhost:${port}`);
       const result = await handleRequest(ctx, url);
@@ -197,10 +204,10 @@ a{color:#0969da}</style></head>
 
 function notFound(message: string): string {
   return `<!DOCTYPE html>
-<html><head><title>${message}</title>
+<html><head><title>${esc(message)}</title>
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f8fa}
 .msg{text-align:center}h1{color:#24292f}a{color:#0969da}</style></head>
-<body><div class="msg"><h1>${message}</h1><p><a href="/">Go to home</a></p></div></body></html>`;
+<body><div class="msg"><h1>${esc(message)}</h1><p><a href="/">Go to home</a></p></div></body></html>`;
 }
 
 function landingPage(localDid: string): string {

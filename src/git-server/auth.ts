@@ -215,6 +215,18 @@ export function createPushAuthenticator(
 ): (request: Request, did: string, repo: string) => Promise<boolean> {
   const { verifySignature, authorizePush, maxTokenAge = 300 } = options;
 
+  // Nonce replay protection: track used nonces with timestamps for TTL eviction.
+  const usedNonces = new Map<string, number>();
+  const nonceMaxAge = (maxTokenAge + 60) * 1000; // ms — token TTL + clock skew
+
+  /** Evict expired nonces to prevent unbounded growth. */
+  function evictExpiredNonces(): void {
+    const cutoff = Date.now() - nonceMaxAge;
+    for (const [nonce, ts] of usedNonces) {
+      if (ts < cutoff) { usedNonces.delete(nonce); }
+    }
+  }
+
   return async (request: Request, ownerDid: string, repo: string): Promise<boolean> => {
     // Extract HTTP Basic auth credentials.
     // Username is fixed to "did-auth" (DIDs contain colons, which conflict
@@ -278,6 +290,13 @@ export function createPushAuthenticator(
     if (!signatureValid) {
       return false;
     }
+
+    // Nonce replay protection — reject already-used nonces.
+    evictExpiredNonces();
+    if (usedNonces.has(payload.nonce)) {
+      return false;
+    }
+    usedNonces.set(payload.nonce, Date.now());
 
     // Optional: Check role-based push authorization.
     if (authorizePush) {

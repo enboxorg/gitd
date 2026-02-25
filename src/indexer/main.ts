@@ -19,22 +19,23 @@
 
 import type { AgentContext } from '../cli/agent.js';
 
-import { flagValue } from '../cli/flags.js';
 import { IndexerCrawler } from './crawler.js';
 import { IndexerStore } from './store.js';
 import { startApiServer } from './api.js';
+import { flagValue, parsePort } from '../cli/flags.js';
 
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
 
 export async function indexerCommand(ctx: AgentContext, args: string[]): Promise<void> {
-  const port = parseInt(
-    flagValue(args, '--port') ?? process.env.DWN_GIT_INDEXER_PORT ?? '8090', 10,
+  const port = parsePort(
+    flagValue(args, '--port') ?? process.env.DWN_GIT_INDEXER_PORT ?? '8090',
   );
-  const intervalSec = parseInt(
+  const intervalRaw = parseInt(
     flagValue(args, '--interval') ?? process.env.DWN_GIT_INDEXER_INTERVAL ?? '60', 10,
   );
+  const intervalSec = Number.isNaN(intervalRaw) || intervalRaw <= 0 ? 60 : intervalRaw;
   const seedDid = flagValue(args, '--seed');
 
   const store = new IndexerStore();

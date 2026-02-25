@@ -72,10 +72,33 @@ export type UserProfile = {
 };
 
 // ---------------------------------------------------------------------------
+// Size limits
+// ---------------------------------------------------------------------------
+
+/** Configurable size limits for the in-memory store. */
+export type IndexerStoreLimits = {
+  /** Maximum number of tracked DIDs. @default 100_000 */
+  maxDids? : number;
+  /** Maximum number of indexed repos. @default 100_000 */
+  maxRepos? : number;
+  /** Maximum number of indexed stars. @default 500_000 */
+  maxStars? : number;
+  /** Maximum number of indexed follows. @default 500_000 */
+  maxFollows? : number;
+};
+
+const DEFAULT_LIMITS: Required<IndexerStoreLimits> = {
+  maxDids    : 100_000,
+  maxRepos   : 100_000,
+  maxStars   : 500_000,
+  maxFollows : 500_000,
+};
+
+// ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
-/** In-memory indexer store. */
+/** In-memory indexer store with configurable size limits. */
 export class IndexerStore {
   /** Repos keyed by `did:recordId`. */
   private _repos = new Map<string, IndexedRepo>();
@@ -92,12 +115,24 @@ export class IndexerStore {
   /** Per-DID crawl cursors. */
   private _cursors = new Map<string, CrawlCursor>();
 
+  /** Size limits for LRU-style eviction. */
+  private _limits: Required<IndexerStoreLimits>;
+
+  public constructor(limits?: IndexerStoreLimits) {
+    this._limits = { ...DEFAULT_LIMITS, ...limits };
+  }
+
   // -----------------------------------------------------------------------
   // DID management
   // -----------------------------------------------------------------------
 
-  /** Register a DID for crawling. */
+  /** Register a DID for crawling. Evicts oldest entry if at capacity. */
   public addDid(did: string): void {
+    if (this._dids.has(did)) { this._dids.add(did); return; }
+    if (this._dids.size >= this._limits.maxDids) {
+      const oldest = this._dids.values().next().value;
+      if (oldest !== undefined) { this._dids.delete(oldest); }
+    }
     this._dids.add(did);
   }
 
@@ -125,10 +160,15 @@ export class IndexerStore {
   // Repo operations
   // -----------------------------------------------------------------------
 
-  /** Upsert an indexed repo. */
+  /** Upsert an indexed repo. Evicts oldest entry if at capacity. */
   public putRepo(repo: IndexedRepo): void {
-    this._repos.set(`${repo.did}:${repo.recordId}`, repo);
-    this._dids.add(repo.did);
+    const key = `${repo.did}:${repo.recordId}`;
+    if (!this._repos.has(key) && this._repos.size >= this._limits.maxRepos) {
+      const oldest = this._repos.keys().next().value;
+      if (oldest !== undefined) { this._repos.delete(oldest); }
+    }
+    this._repos.set(key, repo);
+    this.addDid(repo.did);
   }
 
   /** Get an indexed repo by DID (returns first match). */
@@ -148,10 +188,15 @@ export class IndexerStore {
   // Star operations
   // -----------------------------------------------------------------------
 
-  /** Upsert an indexed star. */
+  /** Upsert an indexed star. Evicts oldest entry if at capacity. */
   public putStar(star: IndexedStar): void {
-    this._stars.set(`${star.starrerDid}:${star.repoDid}:${star.repoRecordId}`, star);
-    this._dids.add(star.starrerDid);
+    const key = `${star.starrerDid}:${star.repoDid}:${star.repoRecordId}`;
+    if (!this._stars.has(key) && this._stars.size >= this._limits.maxStars) {
+      const oldest = this._stars.keys().next().value;
+      if (oldest !== undefined) { this._stars.delete(oldest); }
+    }
+    this._stars.set(key, star);
+    this.addDid(star.starrerDid);
   }
 
   /** Remove a star. */
@@ -190,11 +235,16 @@ export class IndexerStore {
   // Follow operations
   // -----------------------------------------------------------------------
 
-  /** Upsert an indexed follow. */
+  /** Upsert an indexed follow. Evicts oldest entry if at capacity. */
   public putFollow(follow: IndexedFollow): void {
-    this._follows.set(`${follow.followerDid}:${follow.targetDid}`, follow);
-    this._dids.add(follow.followerDid);
-    this._dids.add(follow.targetDid);
+    const key = `${follow.followerDid}:${follow.targetDid}`;
+    if (!this._follows.has(key) && this._follows.size >= this._limits.maxFollows) {
+      const oldest = this._follows.keys().next().value;
+      if (oldest !== undefined) { this._follows.delete(oldest); }
+    }
+    this._follows.set(key, follow);
+    this.addDid(follow.followerDid);
+    this.addDid(follow.targetDid);
   }
 
   /** Remove a follow. */

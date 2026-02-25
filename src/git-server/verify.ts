@@ -44,10 +44,18 @@ function getResolver(): UniversalResolver {
  *
  * @returns A `SignatureVerifier` callback
  */
+/** DID resolution timeout in milliseconds. */
+const DID_RESOLUTION_TIMEOUT_MS = 30_000;
+
 export function createDidSignatureVerifier(): SignatureVerifier {
   return async (did: string, payload: Uint8Array, signature: Uint8Array): Promise<boolean> => {
     try {
-      const { didDocument, didResolutionMetadata } = await getResolver().resolve(did);
+      const { didDocument, didResolutionMetadata } = await Promise.race([
+        getResolver().resolve(did),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`DID resolution timed out for ${did}`)), DID_RESOLUTION_TIMEOUT_MS),
+        ),
+      ]);
 
       if (didResolutionMetadata.error || !didDocument) {
         return false;

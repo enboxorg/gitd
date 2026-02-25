@@ -14,10 +14,10 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { startGoShim } from '../../shims/go/server.js';
 import { startNpmShim } from '../../shims/npm/server.js';
 import { startOciShim } from '../../shims/oci/server.js';
+import { flagValue, parsePort } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Default ports
@@ -37,8 +37,8 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
 
   switch (sub) {
     case 'npm': {
-      const port = parseInt(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_NPM_SHIM_PORT ?? DEFAULT_NPM_PORT, 10,
+      const port = parsePort(
+        flagValue(rest, '--port') ?? process.env.DWN_GIT_NPM_SHIM_PORT ?? DEFAULT_NPM_PORT,
       );
       console.log('Starting npm registry shim...');
       startNpmShim({ ctx, port });
@@ -47,8 +47,8 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
     }
 
     case 'go': {
-      const port = parseInt(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_GO_SHIM_PORT ?? DEFAULT_GO_PORT, 10,
+      const port = parsePort(
+        flagValue(rest, '--port') ?? process.env.DWN_GIT_GO_SHIM_PORT ?? DEFAULT_GO_PORT,
       );
       console.log('Starting Go module proxy shim...');
       startGoShim({ ctx, port });
@@ -58,8 +58,8 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
 
     case 'oci':
     case 'docker': {
-      const port = parseInt(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_OCI_SHIM_PORT ?? DEFAULT_OCI_PORT, 10,
+      const port = parsePort(
+        flagValue(rest, '--port') ?? process.env.DWN_GIT_OCI_SHIM_PORT ?? DEFAULT_OCI_PORT,
       );
       console.log('Starting OCI/Docker registry shim...');
       startOciShim({ ctx, port });

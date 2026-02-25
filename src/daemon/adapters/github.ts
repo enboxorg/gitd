@@ -14,6 +14,9 @@ import type { ShimAdapter } from '../adapter.js';
 import { handleShimRequest } from '../../github-shim/server.js';
 import { baseHeaders, jsonMethodNotAllowed } from '../../github-shim/helpers.js';
 
+/** Maximum JSON request body size (1 MB). */
+const MAX_JSON_BODY = 1 * 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 // Adapter
 // ---------------------------------------------------------------------------
@@ -41,12 +44,22 @@ export const githubAdapter: ShimAdapter = {
       return;
     }
 
-    // Parse body for mutating methods.
+    // Parse body for mutating methods (with size limit).
     let reqBody: Record<string, unknown> = {};
     if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
       const chunks: Buffer[] = [];
+      let totalSize = 0;
+      let tooLarge = false;
       for await (const chunk of req) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        totalSize += buf.length;
+        if (totalSize > MAX_JSON_BODY) { tooLarge = true; break; }
+        chunks.push(buf);
+      }
+      if (tooLarge) {
+        res.writeHead(413, baseHeaders());
+        res.end(JSON.stringify({ message: 'Payload Too Large' }));
+        return;
       }
       const raw = Buffer.concat(chunks).toString('utf-8');
       if (raw.length > 0) {
@@ -61,7 +74,8 @@ export const githubAdapter: ShimAdapter = {
     }
 
     try {
-      const result = await handleShimRequest(ctx, url, method, reqBody);
+      const authHeader = req.headers.authorization ?? null;
+      const result = await handleShimRequest(ctx, url, method, reqBody, authHeader);
       res.writeHead(result.status, result.headers);
       res.end(result.body);
     } catch {
