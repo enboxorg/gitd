@@ -37,6 +37,7 @@ import {
   DID_AUTH_USERNAME,
   parseAuthPassword,
 } from '../src/git-server/auth.js';
+import { profileDataPath, upsertProfile } from '../src/profiles/config.js';
 
 const exec = promisify(execCb);
 
@@ -658,4 +659,269 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     expect(payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(payload.nonce).toBeDefined();
   });
+});
+
+// ===========================================================================
+// E2E: Profile-based agent — full flow with identity profiles
+// ===========================================================================
+
+describe('E2E: profile-based agent → repo → serve → clone → auth push', () => {
+  let profileDid: string;
+  let profilePrivateKey: Record<string, unknown>;
+  let repoContextId: string;
+  let repoHandle: AgentContext['repo'];
+  let refsHandle: AgentContext['refs'];
+  let server: GitServer;
+  let cloneUrl: string;
+
+  const PROFILE_NAME = 'e2e-profile-test';
+  const PROFILE_ENBOX_HOME = '__TESTDATA__/profile-e2e-enbox-home';
+  const PROFILE_REPOS_PATH = '__TESTDATA__/profile-e2e-repos';
+  const PROFILE_CLONE_PATH = '__TESTDATA__/profile-e2e-clone';
+
+  let origEnboxHome: string | undefined;
+
+  beforeAll(async () => {
+    rmSync(PROFILE_ENBOX_HOME, { recursive: true, force: true });
+    rmSync(PROFILE_REPOS_PATH, { recursive: true, force: true });
+    rmSync(PROFILE_CLONE_PATH, { recursive: true, force: true });
+
+    // Redirect profile storage to test directory.
+    origEnboxHome = process.env.ENBOX_HOME;
+    process.env.ENBOX_HOME = PROFILE_ENBOX_HOME;
+
+    // --- Step 1: Create agent at the profile's canonical data path ---
+    const dataPath = profileDataPath(PROFILE_NAME);
+    const agent = await Web5UserAgent.create({ dataPath });
+    await agent.initialize({ password: 'profile-e2e' });
+    await agent.start({ password: 'profile-e2e' });
+
+    // Create identity (using did:jwk for offline-friendly tests).
+    const identity = await agent.identity.create({
+      didMethod  : 'jwk',
+      metadata   : { name: 'Profile E2E Test' },
+      didOptions : { algorithm: 'Ed25519' },
+    });
+
+    const { web5, did } = await Web5.connect({
+      agent,
+      connectedDid : identity.did.uri,
+      sync         : 'off',
+    });
+    profileDid = did;
+
+    // Extract private key for credential signing.
+    const portableDid = await identity.did.export();
+    profilePrivateKey = portableDid.privateKeys![0] as Record<string, unknown>;
+
+    // --- Step 2: Register profile in config (simulates `gitd auth login`) ---
+    upsertProfile(PROFILE_NAME, {
+      name      : PROFILE_NAME,
+      did       : profileDid,
+      createdAt : new Date().toISOString(),
+    });
+
+    // --- Step 3: Set up repo + refs protocols ---
+    repoHandle = web5.using(ForgeRepoProtocol);
+    refsHandle = web5.using(ForgeRefsProtocol);
+    await repoHandle.configure();
+    await refsHandle.configure();
+
+    // --- Step 4: Create repo record ---
+    const { record } = await repoHandle.records.create('repo', {
+      data : { name: 'profile-e2e-repo', description: 'Profile E2E test', defaultBranch: 'main', dwnEndpoints: [] },
+      tags : { name: 'profile-e2e-repo', visibility: 'public' },
+    });
+    repoContextId = record.contextId!;
+
+    // --- Step 5: Init bare repo on disk ---
+    const backend = new GitBackend({ basePath: PROFILE_REPOS_PATH });
+    await backend.initRepo(profileDid, 'profile-e2e-repo');
+
+    // --- Step 6: Start authenticated server with bundle + ref sync ---
+    const verifySignature = createDidSignatureVerifier();
+    const authorizePush = createDwnPushAuthorizer({
+      repo     : repoHandle,
+      ownerDid : profileDid,
+    });
+
+    const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Basic ')) { return false; }
+
+      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+      const colonIdx = decoded.indexOf(':');
+      if (colonIdx === -1) { return false; }
+
+      const username = decoded.slice(0, colonIdx);
+      const password = decoded.slice(colonIdx + 1);
+      if (username !== DID_AUTH_USERNAME) { return false; }
+
+      let signed;
+      try { signed = parseAuthPassword(password); } catch { return false; }
+
+      let payload;
+      try { payload = decodePushToken(signed.token); } catch { return false; }
+
+      if (payload.owner !== did || payload.repo !== repo) { return false; }
+      if (payload.exp < Math.floor(Date.now() / 1000)) { return false; }
+
+      const tokenBytes = new TextEncoder().encode(signed.token);
+      const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
+      if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
+
+      return authorizePush(payload.did, did, repo);
+    };
+
+    const refSyncer = createRefSyncer({
+      refs          : refsHandle,
+      repoContextId : repoContextId,
+    });
+
+    const bundleSyncer = createBundleSyncer({
+      repo          : repoHandle,
+      repoContextId : repoContextId,
+      visibility    : 'public',
+    });
+
+    const onPushComplete = async (pushDid: string, repoName: string, repoPath: string): Promise<void> => {
+      await refSyncer(pushDid, repoName, repoPath);
+      await bundleSyncer(pushDid, repoName, repoPath);
+    };
+
+    server = await createGitServer({
+      basePath         : PROFILE_REPOS_PATH,
+      port             : 0,
+      authenticatePush : authenticatePush,
+      onPushComplete   : onPushComplete,
+    });
+
+    cloneUrl = `http://localhost:${server.port}/${profileDid}/profile-e2e-repo`;
+  }, 30000);
+
+  afterAll(async () => {
+    try { if (server) { await server.stop(); } } catch { /* may already be stopped */ }
+    rmSync(PROFILE_ENBOX_HOME, { recursive: true, force: true });
+    rmSync(PROFILE_REPOS_PATH, { recursive: true, force: true });
+    rmSync(PROFILE_CLONE_PATH, { recursive: true, force: true });
+
+    if (origEnboxHome !== undefined) {
+      process.env.ENBOX_HOME = origEnboxHome;
+    } else {
+      delete process.env.ENBOX_HOME;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Helper: build credentials from profile identity
+  // -----------------------------------------------------------------------
+  async function profileCredentials(): Promise<{ username: string; password: string }> {
+    const creds = await generatePushCredentials(
+      { path: `/${profileDid}/profile-e2e-repo` },
+      profileDid,
+      profilePrivateKey,
+    );
+    if (!creds) { throw new Error('generatePushCredentials returned undefined'); }
+    return creds;
+  }
+
+  // -----------------------------------------------------------------------
+  // Tests
+  // -----------------------------------------------------------------------
+
+  it('should have profile data stored at ~/.enbox/profiles/<name>/DATA/AGENT', () => {
+    const dataPath = profileDataPath(PROFILE_NAME);
+    expect(existsSync(dataPath)).toBe(true);
+  });
+
+  it('should clone the repo served by the profile-based agent', async () => {
+    rmSync(PROFILE_CLONE_PATH, { recursive: true, force: true });
+    await exec(`git clone "${cloneUrl}" "${PROFILE_CLONE_PATH}"`);
+    expect(existsSync(`${PROFILE_CLONE_PATH}/.git`)).toBe(true);
+  });
+
+  it('should push with credentials signed by the profile identity', async () => {
+    await exec('git config user.email "profile@test.com"', { cwd: PROFILE_CLONE_PATH });
+    await exec('git config user.name "Profile Test"', { cwd: PROFILE_CLONE_PATH });
+    await exec('git checkout -b main', { cwd: PROFILE_CLONE_PATH });
+    await exec('echo "profile e2e content" > README.md', { cwd: PROFILE_CLONE_PATH });
+    await exec('git add README.md', { cwd: PROFILE_CLONE_PATH });
+    await exec('git commit -m "profile e2e commit"', { cwd: PROFILE_CLONE_PATH });
+
+    const creds = await profileCredentials();
+    const helper = `!f() { test "$1" = get && echo "username=${creds.username}" && echo "password=${creds.password}"; }; f`;
+    await exec(`git config --replace-all credential.helper '${helper}'`, { cwd: PROFILE_CLONE_PATH });
+
+    await exec('GIT_TERMINAL_PROMPT=0 git push -u origin main', { cwd: PROFILE_CLONE_PATH });
+  });
+
+  it('should have the pushed commit in the bare repo', async () => {
+    const repoPath = server.backend.repoPath(profileDid, 'profile-e2e-repo');
+    const { stdout } = await exec('git log --oneline main', { cwd: repoPath });
+    expect(stdout).toContain('profile e2e commit');
+  });
+
+  it('should sync refs to DWN after profile-signed push', async () => {
+    await new Promise((r) => setTimeout(r, 500));
+
+    let { records: refRecords } = await refsHandle.records.query('repo/ref' as any);
+
+    if (refRecords.length === 0) {
+      const repoPath = server.backend.repoPath(profileDid, 'profile-e2e-repo');
+      const syncer = createRefSyncer({ refs: refsHandle, repoContextId });
+      await syncer(profileDid, 'profile-e2e-repo', repoPath);
+      ({ records: refRecords } = await refsHandle.records.query('repo/ref' as any));
+    }
+
+    expect(refRecords.length).toBeGreaterThanOrEqual(1);
+
+    const refData = await refRecords[0].data.json();
+    expect(refData.name).toBe('refs/heads/main');
+    expect(refData.target).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('should sync bundles to DWN after profile-signed push', async () => {
+    await new Promise((r) => setTimeout(r, 500));
+
+    const { records } = await repoHandle.records.query('repo/bundle', {});
+    expect(records.length).toBeGreaterThanOrEqual(1);
+
+    const tags = records[0].tags as Record<string, unknown>;
+    expect(tags.isFull).toBe(true);
+    expect(tags.tipCommit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('should restore from bundles on cold start (profile agent data persists)', async () => {
+    await server.stop();
+
+    const restoreRepos = '__TESTDATA__/profile-e2e-restore-repos';
+    const restoreClone = '__TESTDATA__/profile-e2e-restore-clone';
+    rmSync(restoreRepos, { recursive: true, force: true });
+    rmSync(restoreClone, { recursive: true, force: true });
+
+    const restoreServer = await createGitServer({
+      basePath       : restoreRepos,
+      port           : 0,
+      onRepoNotFound : async (_repoDid: string, _repoName: string, repoPath: string): Promise<boolean> => {
+        const result = await restoreFromBundles({ repo: repoHandle, repoPath });
+        return result.success;
+      },
+    });
+
+    try {
+      const restoreUrl = `http://localhost:${restoreServer.port}/${profileDid}/profile-e2e-repo`;
+      await exec(`git clone --branch main "${restoreUrl}" "${restoreClone}"`);
+
+      expect(existsSync(`${restoreClone}/.git`)).toBe(true);
+      const { stdout } = await exec('cat README.md', { cwd: restoreClone });
+      expect(stdout).toContain('profile e2e content');
+
+      const { stdout: logOutput } = await exec('git log --oneline', { cwd: restoreClone });
+      expect(logOutput).toContain('profile e2e commit');
+    } finally {
+      await restoreServer.stop();
+      rmSync(restoreRepos, { recursive: true, force: true });
+      rmSync(restoreClone, { recursive: true, force: true });
+    }
+  }, 30000);
 });
