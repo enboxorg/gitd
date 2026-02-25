@@ -1498,5 +1498,37 @@ dwn-git/
     ├── github-shim.spec.ts     # GitHub API shim tests (92 tests)
     ├── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
     ├── shims.spec.ts           # Package manager shim tests (56 tests)
-    └── daemon.spec.ts          # Unified daemon tests (34 tests)
+    ├── daemon.spec.ts          # Unified daemon tests (34 tests)
+    └── hardening.spec.ts       # Production hardening security tests (38 tests)
 ```
+
+---
+
+## 14. Production Hardening
+
+Comprehensive security hardening applied across all server-facing code:
+
+### 14.1 Input Validation & Injection Prevention
+
+- **Path traversal protection** — `GitBackend.repoPath()` validates repo names against `/^[a-zA-Z0-9._-]+$/` and verifies the resolved path stays within the base directory. `parseRoute()` in the HTTP handler applies the same validation.
+- **XSS protection** — All user-facing HTML output in the web UI is escaped via `esc()`, including the `notFound()` and `didError()` error pages.
+- **Port validation** — All CLI commands use `parsePort()` which validates port numbers are integers in the range 1–65535 and exits with a clear error for invalid input.
+
+### 14.2 Network Security
+
+- **Request body size limits** — All HTTP servers enforce configurable maximum body sizes: 1 MB for JSON API bodies (GitHub shim, daemon adapters), 50 MB for git pack data (configurable via `maxBodySize` option). Oversized requests receive `413 Payload Too Large`.
+- **SSRF protection** — DID-resolved service endpoint URLs are validated against a denylist of private/loopback IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, ::1, fc00::/7, fe80::/10) and `localhost`. Prevents attackers from crafting DID documents that point to internal infrastructure.
+- **DID resolution timeouts** — All DID resolution calls are wrapped with a 30-second timeout to prevent hanging on malicious or unreachable endpoints.
+
+### 14.3 Authentication & Authorization
+
+- **Bearer token auth for API writes** — The GitHub API shim supports optional Bearer token authentication for all mutating endpoints (POST, PATCH, PUT, DELETE). Configured via `DWN_GIT_API_TOKEN` environment variable. Uses constant-time comparison to prevent timing attacks. When no token is configured, access is open (local development mode).
+- **Nonce replay protection** — The push authenticator tracks used nonces in a time-bounded set. Replayed tokens are rejected. Expired nonces are evicted automatically (TTL = maxTokenAge + 60s clock skew).
+
+### 14.4 Resource Limits
+
+- **Indexer store size limits** — The in-memory `IndexerStore` accepts configurable limits (`maxDids`, `maxRepos`, `maxStars`, `maxFollows`) with FIFO eviction when capacity is reached. Defaults: 100K DIDs, 100K repos, 500K stars, 500K follows.
+
+### 14.5 Observability
+
+- **Health endpoints** — All standalone servers (git server, GitHub API shim, web UI) and all daemon adapter servers expose `GET /health` returning `{ "status": "ok", "service": "<name>" }` for load balancer and monitoring integration.

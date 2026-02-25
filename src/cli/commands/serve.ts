@@ -26,17 +26,17 @@ import { createDwnPushAuthorizer } from '../../git-server/push-authorizer.js';
 import { createGitServer } from '../../git-server/server.js';
 import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
-import { flagValue } from '../flags.js';
 import { getRepoContext } from '../repo-context.js';
 import { registerGitService } from '../../git-server/did-service.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
+import { flagValue, parsePort } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
 
 export async function serveCommand(ctx: AgentContext, args: string[]): Promise<void> {
-  const port = parseInt(flagValue(args, '--port') ?? process.env.DWN_GIT_PORT ?? '9418', 10);
+  const port = parsePort(flagValue(args, '--port') ?? process.env.DWN_GIT_PORT ?? '9418');
   const basePath = flagValue(args, '--repos') ?? process.env.DWN_GIT_REPOS ?? './repos';
   const pathPrefix = flagValue(args, '--prefix') ?? process.env.DWN_GIT_PREFIX;
   const publicUrl = flagValue(args, '--public-url') ?? process.env.DWN_GIT_PUBLIC_URL;

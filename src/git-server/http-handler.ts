@@ -243,6 +243,11 @@ function parseRoute(pathname: string): GitRoute | undefined {
 
   if (!repo || !action) { return undefined; }
 
+  // Reject path-traversal and unsafe repo names.
+  if (!/^[a-zA-Z0-9._-]+$/.test(repo) || repo === '.' || repo === '..') {
+    return undefined;
+  }
+
   return { did, repo, action };
 }
 

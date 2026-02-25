@@ -62,8 +62,9 @@ export function resolveConfig(
     const entry = config.shims?.[adapter.id];
     const envPort = process.env[adapter.portEnvVar];
 
+    const envParsed = envPort ? parseInt(envPort, 10) : undefined;
     const port = entry?.port
-      ?? (envPort ? parseInt(envPort, 10) : undefined)
+      ?? (envParsed !== undefined && !Number.isNaN(envParsed) ? envParsed : undefined)
       ?? adapter.defaultPort;
 
     const enabled = entry?.enabled ?? true;

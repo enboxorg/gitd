@@ -30,6 +30,9 @@ import { GitBackend } from './git-backend.js';
 // Types
 // ---------------------------------------------------------------------------
 
+/** Default maximum request body size for git pack data (50 MB). */
+const DEFAULT_MAX_BODY_GIT = 50 * 1024 * 1024;
+
 /** Configuration for the git transport sidecar server. */
 export type GitServerOptions = {
   /** Base directory for storing bare repositories. */
@@ -62,6 +65,12 @@ export type GitServerOptions = {
    * @see GitHttpHandlerOptions.onRepoNotFound
    */
   onRepoNotFound?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
+
+  /**
+   * Maximum request body size in bytes for POST requests (git pack data).
+   * @default 50 * 1024 * 1024 (50 MB)
+   */
+  maxBodySize?: number;
 };
 
 /** A running git server instance. */
@@ -95,6 +104,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     authenticatePush,
     onPushComplete,
     onRepoNotFound,
+    maxBodySize = DEFAULT_MAX_BODY_GIT,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -108,6 +118,13 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
   });
 
   const server = createServer(async (req, res) => {
+    // Health check endpoint.
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'git-server' }));
+      return;
+    }
+
     try {
       // Build a Request object from the Node.js IncomingMessage.
       const url = `http://${req.headers.host ?? 'localhost'}${req.url ?? '/'}`;
@@ -118,10 +135,16 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
         }
       }
 
-      // Collect request body for POST.
+      // Collect request body for POST with size limit.
       let body: Uint8Array | undefined;
       if (req.method === 'POST') {
-        body = await collectRequestBody(req);
+        const collected = await collectRequestBody(req, maxBodySize);
+        if (collected === null) {
+          res.writeHead(413, { 'Content-Type': 'text/plain' });
+          res.end('Payload Too Large');
+          return;
+        }
+        body = collected;
       }
 
       const request = new Request(url, {
@@ -182,12 +205,32 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Collect the full request body from a Node.js IncomingMessage. */
-function collectRequestBody(req: IncomingMessage): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
+/**
+ * Collect the full request body from a Node.js IncomingMessage.
+ * Returns `null` if the body exceeds `maxBytes`.
+ */
+function collectRequestBody(req: IncomingMessage, maxBytes: number = DEFAULT_MAX_BODY_GIT): Promise<Uint8Array | null> {
+  return new Promise((resolve) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
-    req.on('error', reject);
+    let totalSize = 0;
+    let exceeded = false;
+    req.on('data', (chunk: Buffer) => {
+      if (exceeded) { return; }
+      totalSize += chunk.length;
+      if (totalSize > maxBytes) {
+        exceeded = true;
+        // Stop reading but don't destroy — let the response be sent.
+        req.resume();
+        resolve(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!exceeded) { resolve(new Uint8Array(Buffer.concat(chunks))); }
+    });
+    req.on('error', () => {
+      if (!exceeded) { resolve(null); }
+    });
   });
 }

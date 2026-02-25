@@ -41,7 +41,7 @@ import { createServer } from 'node:http';
 import { handleGetRepo } from './repos.js';
 import { handleGetUser } from './users.js';
 
-import { baseHeaders, jsonMethodNotAllowed, jsonNotFound } from './helpers.js';
+import { baseHeaders, jsonMethodNotAllowed, jsonNotFound, jsonUnauthorized, validateBearerToken } from './helpers.js';
 import { handleCreateIssue, handleCreateIssueComment, handleGetIssue, handleListIssueComments, handleListIssues, handleUpdateIssue } from './issues.js';
 import { handleCreatePull, handleCreatePullReview, handleGetPull, handleListPullReviews, handleListPulls, handleMergePull, handleUpdatePull } from './pulls.js';
 import { handleCreateRelease, handleGetReleaseByTag, handleListReleases } from './releases.js';
@@ -60,6 +60,9 @@ export type ShimServerOptions = {
 // ---------------------------------------------------------------------------
 
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS']);
+
+/** Maximum JSON request body size (1 MB). */
+const MAX_JSON_BODY = 1 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // DID extraction regex
@@ -84,13 +87,21 @@ const USERS_RE = /^\/users\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)$/;
  *
  * @param method  HTTP method (defaults to `'GET'` for backward compat).
  * @param reqBody Parsed JSON body for POST/PATCH/PUT requests.
+ * @param authHeader The Authorization header value (for write endpoint auth).
  */
 export async function handleShimRequest(
   ctx: AgentContext,
   url: URL,
   method: string = 'GET',
   reqBody: Record<string, unknown> = {},
+  authHeader: string | null = null,
 ): Promise<JsonResponse> {
+  // Authenticate mutating requests when DWN_GIT_API_TOKEN is configured.
+  if (method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE') {
+    if (!validateBearerToken(authHeader)) {
+      return jsonUnauthorized('Valid Bearer token required for write operations.');
+    }
+  }
   const path = url.pathname;
 
   // -------------------------------------------------------------------------
@@ -224,6 +235,13 @@ export function startShimServer(options: ShimServerOptions): Server {
   const server = createServer(async (req, res) => {
     const method = req.method ?? 'GET';
 
+    // Health check endpoint.
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'github-api' }));
+      return;
+    }
+
     // Handle CORS preflight.
     if (method === 'OPTIONS') {
       res.writeHead(204, {
@@ -246,12 +264,22 @@ export function startShimServer(options: ShimServerOptions): Server {
     try {
       const url = new URL(req.url ?? '/', `http://localhost:${port}`);
 
-      // Parse request body for mutating methods.
+      // Parse request body for mutating methods (with size limit).
       let reqBody: Record<string, unknown> = {};
       if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
         const chunks: Buffer[] = [];
+        let totalSize = 0;
+        let tooLarge = false;
         for await (const chunk of req) {
-          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          totalSize += buf.length;
+          if (totalSize > MAX_JSON_BODY) { tooLarge = true; break; }
+          chunks.push(buf);
+        }
+        if (tooLarge) {
+          res.writeHead(413, baseHeaders());
+          res.end(JSON.stringify({ message: 'Payload Too Large' }));
+          return;
         }
         const raw = Buffer.concat(chunks).toString('utf-8');
         if (raw.length > 0) {
@@ -265,7 +293,8 @@ export function startShimServer(options: ShimServerOptions): Server {
         }
       }
 
-      const result = await handleShimRequest(ctx, url, method, reqBody);
+      const authHeader = req.headers.authorization ?? null;
+      const result = await handleShimRequest(ctx, url, method, reqBody, authHeader);
 
       res.writeHead(result.status, result.headers);
       res.end(result.body);

@@ -12,15 +12,15 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { startShimServer } from '../../github-shim/server.js';
+import { flagValue, parsePort } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
 
 export async function githubApiCommand(ctx: AgentContext, args: string[]): Promise<void> {
-  const port = parseInt(flagValue(args, '--port') ?? process.env.DWN_GIT_GITHUB_API_PORT ?? '8181', 10);
+  const port = parsePort(flagValue(args, '--port') ?? process.env.DWN_GIT_GITHUB_API_PORT ?? '8181');
 
   console.log('Starting GitHub API compatibility shim...');
   startShimServer({ ctx, port });

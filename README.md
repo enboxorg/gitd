@@ -327,9 +327,26 @@ bun run lint:fix       # Auto-fix lint issues
 bun test               # Run all tests
 ```
 
+## Security Hardening
+
+Production-hardened with 10 security fixes across all server-facing code:
+
+- **Path traversal protection** — repo names validated, resolved paths confined to base directory
+- **Request body size limits** — 1 MB JSON / 50 MB git packs, returns 413 on overflow
+- **Bearer token auth** — optional `DWN_GIT_API_TOKEN` for API write endpoints (constant-time comparison)
+- **SSRF protection** — DID-resolved URLs blocked from private/loopback IP ranges
+- **DID resolution timeouts** — 30s timeout prevents hanging on malicious endpoints
+- **XSS protection** — all HTML output escaped in web UI error pages
+- **Nonce replay protection** — push auth tokens tracked with TTL eviction
+- **Indexer size limits** — configurable caps with FIFO eviction (default 100K repos)
+- **Health endpoints** — `GET /health` on all servers for monitoring
+- **Port validation** — CLI rejects invalid `--port` values with clear errors
+
+See PLAN.md Section 14 for full details.
+
 ## Status
 
-**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim (read + write), package manager shims (npm, Go, OCI/Docker), and unified daemon with `ShimAdapter` plugin architecture. 833+ tests across 20 test files. See PLAN.md Section 12 for the full roadmap.
+**All phases complete + production hardened** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim (read + write), package manager shims (npm, Go, OCI/Docker), unified daemon with `ShimAdapter` plugin architecture, and comprehensive security hardening. 871+ tests across 21 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 

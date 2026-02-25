@@ -11,8 +11,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { join, resolve } from 'node:path';
 
 import { existsSync, mkdirSync } from 'node:fs';
 
@@ -67,10 +67,18 @@ export class GitBackend {
    * @param did - The DID of the repository owner
    * @param repo - The repository name
    * @returns Absolute path to the bare repo directory
+   * @throws If the repo name contains path traversal characters
    */
   public repoPath(did: string, repo: string): string {
+    validateRepoName(repo);
     const didHash = hashDid(did);
-    return join(this._basePath, didHash, `${repo}.git`);
+    const repoDir = join(this._basePath, didHash, `${repo}.git`);
+    const resolved = resolve(repoDir);
+    const base = resolve(this._basePath);
+    if (!resolved.startsWith(base + '/') && resolved !== base) {
+      throw new Error(`Path traversal detected: repo name '${repo}' escapes base directory`);
+    }
+    return resolved;
   }
 
   /**
@@ -143,6 +151,24 @@ export class GitBackend {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Allowed characters in a repository name: alphanumeric, dots, hyphens, underscores. */
+const SAFE_REPO_NAME_RE = /^[a-zA-Z0-9._-]+$/;
+
+/**
+ * Validate that a repository name is safe for filesystem use.
+ * Rejects path traversal components and unsafe characters.
+ *
+ * @throws If the repo name is invalid
+ */
+function validateRepoName(name: string): void {
+  if (!name || !SAFE_REPO_NAME_RE.test(name)) {
+    throw new Error(`Invalid repository name: '${name}'. Names must match ${SAFE_REPO_NAME_RE}`);
+  }
+  if (name === '.' || name === '..' || name.startsWith('.git')) {
+    throw new Error(`Invalid repository name: '${name}'`);
+  }
+}
 
 /** Hash a DID to a short filesystem-safe directory name. */
 function hashDid(did: string): string {

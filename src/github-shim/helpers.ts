@@ -277,3 +277,35 @@ export function toISODate(dateStr: string | undefined): string {
   // DWN dates may already be ISO 8601; normalize to ensure consistency.
   return new Date(dateStr).toISOString();
 }
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/** Build a 401 Unauthorized JSON response. */
+export function jsonUnauthorized(message: string): JsonResponse {
+  return {
+    status  : 401,
+    headers : baseHeaders(),
+    body    : JSON.stringify({ message }),
+  };
+}
+
+/**
+ * Validate a Bearer token from the Authorization header.
+ * Returns `true` if the token matches `DWN_GIT_API_TOKEN`, or if
+ * no token is configured (open access).
+ */
+export function validateBearerToken(authHeader: string | null): boolean {
+  const expected = process.env.DWN_GIT_API_TOKEN;
+  if (!expected) { return true; } // No token configured — open access.
+  if (!authHeader?.startsWith('Bearer ')) { return false; }
+  const token = authHeader.slice(7);
+  // Constant-time comparison to prevent timing attacks.
+  if (token.length !== expected.length) { return false; }
+  let mismatch = 0;
+  for (let i = 0; i < token.length; i++) {
+    mismatch |= token.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return mismatch === 0;
+}

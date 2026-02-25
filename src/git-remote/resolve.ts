@@ -47,16 +47,24 @@ function getResolver(): UniversalResolver {
   return resolver;
 }
 
+/** DID resolution timeout in milliseconds. */
+const DID_RESOLUTION_TIMEOUT_MS = 30_000;
+
 /**
  * Resolve a DID to a git transport HTTPS endpoint.
  *
  * @param did - Full DID URI (e.g. `did:dht:abc123xyz`)
  * @param repo - Optional repo name to append to the endpoint path
  * @returns The resolved git transport endpoint
- * @throws If resolution fails or no git-compatible service is found
+ * @throws If resolution fails, times out, or no git-compatible service is found
  */
 export async function resolveGitEndpoint(did: string, repo?: string): Promise<GitEndpoint> {
-  const { didDocument, didResolutionMetadata } = await getResolver().resolve(did);
+  const { didDocument, didResolutionMetadata } = await Promise.race([
+    getResolver().resolve(did),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`DID resolution timed out after ${DID_RESOLUTION_TIMEOUT_MS}ms for ${did}`)), DID_RESOLUTION_TIMEOUT_MS),
+    ),
+  ]);
 
   if (didResolutionMetadata.error) {
     throw new Error(`DID resolution failed for ${did}: ${didResolutionMetadata.error}`);
@@ -105,17 +113,85 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
 function extractEndpointUrl(service: DidService): string {
   const ep = service.serviceEndpoint;
 
+  let url: string | undefined;
   if (typeof ep === 'string') {
-    return ep;
-  }
-  if (Array.isArray(ep) && ep.length > 0) {
+    url = ep;
+  } else if (Array.isArray(ep) && ep.length > 0) {
     const first = ep[0];
     if (typeof first === 'string') {
-      return first;
+      url = first;
     }
   }
 
-  throw new Error(`Cannot extract URL from service endpoint: ${JSON.stringify(ep)}`);
+  if (!url) {
+    throw new Error(`Cannot extract URL from service endpoint: ${JSON.stringify(ep)}`);
+  }
+
+  assertNotPrivateUrl(url);
+  return url;
+}
+
+// ---------------------------------------------------------------------------
+// SSRF protection
+// ---------------------------------------------------------------------------
+
+/**
+ * Private / loopback IP ranges that must never be contacted via
+ * DID-resolved URLs (prevents SSRF attacks).
+ */
+const PRIVATE_IP_PATTERNS: RegExp[] = [
+  /^127\./, // 127.0.0.0/8 loopback
+  /^10\./, // 10.0.0.0/8 private
+  /^172\.(1[6-9]|2\d|3[01])\./, // 172.16.0.0/12 private
+  /^192\.168\./, // 192.168.0.0/16 private
+  /^169\.254\./, // 169.254.0.0/16 link-local
+  /^0\./, // 0.0.0.0/8
+];
+
+const PRIVATE_IPV6_PATTERNS: RegExp[] = [
+  /^::1$/, // IPv6 loopback
+  /^fc/i, // fc00::/7 unique local
+  /^fd/i, // fc00::/7 unique local
+  /^fe80:/i, // fe80::/10 link-local
+];
+
+/**
+ * Assert that a URL does not resolve to a private/loopback address.
+ * @throws If the URL hostname is a private or loopback IP
+ */
+function assertNotPrivateUrl(urlString: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new Error(`Invalid URL from DID service endpoint: ${urlString}`);
+  }
+
+  const hostname = parsed.hostname;
+
+  // Strip IPv6 brackets if present.
+  const bare = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+
+  // Reject localhost by name.
+  if (bare === 'localhost' || bare.endsWith('.localhost')) {
+    throw new Error(`SSRF blocked: resolved endpoint points to localhost: ${urlString}`);
+  }
+
+  // Check IPv4 private ranges.
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(bare)) {
+      throw new Error(`SSRF blocked: resolved endpoint points to private IP: ${urlString}`);
+    }
+  }
+
+  // Check IPv6 private ranges.
+  for (const pattern of PRIVATE_IPV6_PATTERNS) {
+    if (pattern.test(bare)) {
+      throw new Error(`SSRF blocked: resolved endpoint points to private IPv6: ${urlString}`);
+    }
+  }
 }
 
 /**
