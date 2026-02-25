@@ -65,6 +65,10 @@
     "./shims/oci": {
       "types": "./dist/types/shims/oci/index.d.ts",
       "import": "./dist/esm/shims/oci/index.js"
+    },
+    "./daemon": {
+      "types": "./dist/types/daemon/index.d.ts",
+      "import": "./dist/esm/daemon/index.js"
     }
   },
   "keywords": [

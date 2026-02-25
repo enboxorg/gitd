@@ -1370,6 +1370,7 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
 - [x] **GitHub API compatibility shim**: read + write (18 endpoints — 10 GET, 8 POST/PATCH/PUT)
 - [x] **Package manager shims**: npm registry proxy, Go module proxy, OCI/Docker registry proxy — 56 tests, 122 assertions
+- [x] **Unified daemon**: `ShimAdapter` interface, config-driven multi-shim process, `dwn-git daemon` command — 34 tests, 85 assertions
 
 ---
 
@@ -1457,6 +1458,16 @@ dwn-git/
 │           ├── index.ts
 │           ├── registry.ts     # OCI Distribution API handlers
 │           └── server.ts       # HTTP server
+│   └── daemon/                 # Unified shim daemon
+│       ├── index.ts            # Barrel re-export
+│       ├── adapter.ts          # ShimAdapter interface + config types
+│       ├── server.ts           # DaemonServer lifecycle (start, stop, health)
+│       └── adapters/           # Per-ecosystem adapter implementations
+│           ├── index.ts        # Adapter registry (builtinAdapters)
+│           ├── github.ts       # GitHub API adapter
+│           ├── npm.ts          # npm registry adapter
+│           ├── go.ts           # Go module proxy adapter
+│           └── oci.ts          # OCI/Docker registry adapter
 ├── schemas/                    # JSON Schema files (34 files)
 │   ├── repo/
 │   ├── refs/
@@ -1486,5 +1497,6 @@ dwn-git/
     ├── credential-helper.spec.ts # Credential helper tests
     ├── github-shim.spec.ts     # GitHub API shim tests (92 tests)
     ├── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
-    └── shims.spec.ts           # Package manager shim tests (56 tests)
+    ├── shims.spec.ts           # Package manager shim tests (56 tests)
+    └── daemon.spec.ts          # Unified daemon tests (34 tests)
 ```

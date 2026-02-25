@@ -49,6 +49,7 @@
  *   dwn-git migrate releases <owner/repo>       Import releases
  *   dwn-git web [--port <port>]                Start the read-only web UI
  *   dwn-git indexer [--port] [--interval] [--seed]  Start the indexer service
+ *   dwn-git daemon [--config <path>] [--only ...] Start unified shim daemon
  *   dwn-git github-api [--port <port>]         Start GitHub API compatibility shim
  *   dwn-git shim npm [--port 4873]             Start npm registry proxy
  *   dwn-git shim go  [--port 4874]             Start Go module proxy (GOPROXY)
@@ -68,6 +69,7 @@
 import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
+import { daemonCommand } from './commands/daemon.js';
 import { githubApiCommand } from './commands/github-api.js';
 import { indexerCommand } from '../indexer/main.js';
 import { initCommand } from './commands/init.js';
@@ -178,6 +180,9 @@ function printUsage(): void {
   console.log('');
   console.log('  indexer [--port <port>] [--interval <sec>]  Start the indexer service');
   console.log('  indexer --seed <did>                        Discover DIDs from a seed');
+  console.log('');
+  console.log('  daemon [--config <path>] [--only ...]        Start all shims in one process');
+  console.log('  daemon --list                               List available shim adapters');
   console.log('');
   console.log('  github-api [--port <port>]                  Start GitHub API shim (default: 8181)');
   console.log('');
@@ -310,6 +315,10 @@ async function main(): Promise<void> {
 
     case 'indexer':
       await indexerCommand(ctx, rest);
+      break;
+
+    case 'daemon':
+      await daemonCommand(ctx, rest);
       break;
 
     case 'github-api':
