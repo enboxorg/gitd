@@ -12,7 +12,10 @@
  * @module
  */
 
-import type { TypedWeb5 } from '@enbox/api';
+import type { ProviderAuthParams, RegistrationTokenData, TypedWeb5 } from '@enbox/api';
+
+import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
@@ -97,6 +100,87 @@ export type ConnectOptions = {
 };
 
 // ---------------------------------------------------------------------------
+// Registration token persistence
+// ---------------------------------------------------------------------------
+
+/** Re-export for external use. */
+export type { ProviderAuthParams, RegistrationTokenData };
+
+/** File name for cached DWN registration tokens. */
+const TOKENS_FILE = 'registration-tokens.json';
+
+/**
+ * Resolve the path to the registration-tokens file for a profile.
+ * The tokens file sits next to the `DATA/` directory inside the profile:
+ *   `~/.enbox/profiles/<name>/registration-tokens.json`
+ *
+ * When `dataPath` ends with `/DATA/AGENT`, the profile root is two levels up.
+ * Otherwise, falls back to a sibling of `dataPath`.
+ */
+function tokensPath(dataPath: string): string {
+  // dataPath is typically `~/.enbox/profiles/<name>/DATA/AGENT`.
+  // Walk up to the profile root (`<name>/`).
+  const profileRoot = dataPath.endsWith('/DATA/AGENT')
+    ? dirname(dirname(dataPath))
+    : dirname(dataPath);
+  return join(profileRoot, TOKENS_FILE);
+}
+
+/** Load cached registration tokens from disk. */
+function loadRegistrationTokens(
+  dataPath: string,
+): Record<string, RegistrationTokenData> {
+  const path = tokensPath(dataPath);
+  if (!existsSync(path)) { return {}; }
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, RegistrationTokenData>;
+  } catch {
+    return {};
+  }
+}
+
+/** Persist registration tokens to disk. */
+function saveRegistrationTokens(
+  dataPath: string,
+  tokens: Record<string, RegistrationTokenData>,
+): void {
+  const path = tokensPath(dataPath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(tokens, null, 2) + '\n', 'utf-8');
+}
+
+// ---------------------------------------------------------------------------
+// Provider auth callback
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle the `provider-auth-v0` flow for DWN servers that require it.
+ *
+ * The Enbox DWN servers expose an authorize endpoint that returns a JSON
+ * response with `{ code, state }` directly (no interactive browser flow).
+ * This callback fetches that URL and returns the auth code to the SDK.
+ */
+async function handleProviderAuth(
+  params: ProviderAuthParams,
+): Promise<{ code: string; state: string }> {
+  const response = await fetch(params.authorizeUrl, {
+    method : 'GET',
+    signal : AbortSignal.timeout(30_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `Provider auth failed for ${params.dwnEndpoint}: `
+      + `${response.status} ${response.statusText}: ${body}`,
+    );
+  }
+
+  const result = await response.json() as { code: string; state: string };
+  return { code: result.code, state: result.state };
+}
+
+// ---------------------------------------------------------------------------
 // Agent bootstrap
 // ---------------------------------------------------------------------------
 
@@ -151,17 +235,60 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
       });
     }
 
+    // Build the registration option so the SDK handles both PoW and
+    // provider-auth-v0 servers automatically.  Tokens are cached on disk
+    // so that re-auth only happens when they expire.
+    const cachedTokens = loadRegistrationTokens(dataPath);
+    let registrationOk = false;
+
     const result = await Web5.connect({
       agent,
-      connectedDid: identity.did.uri,
+      connectedDid : identity.did.uri,
       sync,
+      registration : {
+        registrationTokens     : cachedTokens,
+        onProviderAuthRequired : handleProviderAuth,
+        onRegistrationTokens(tokens): void {
+          saveRegistrationTokens(dataPath, tokens);
+        },
+        onSuccess(): void { registrationOk = true; },
+        onFailure(error): void {
+          // Log but don't throw — the agent can still function locally
+          // even if DWN registration fails (sync will fail later).
+          console.error('[dwn-registration] failed:', error);
+        },
+      },
     });
+
+    if (registrationOk) {
+      // Silently note success — useful when debugging sync issues.
+      // console.log('[dwn-registration] ok');
+    }
 
     return bindProtocols(result.web5, result.did, recoveryPhrase);
   }
 
   // Legacy: let Web5.connect() manage the agent (uses CWD-relative path).
-  const result = await Web5.connect({ password, sync });
+  // Still wire up provider-auth so legacy setups can register with
+  // provider-auth-v0 DWN servers.
+  const legacyDataPath = join(process.cwd(), 'DATA', 'AGENT');
+  const legacyCachedTokens = loadRegistrationTokens(legacyDataPath);
+
+  const result = await Web5.connect({
+    password,
+    sync,
+    registration: {
+      registrationTokens     : legacyCachedTokens,
+      onProviderAuthRequired : handleProviderAuth,
+      onRegistrationTokens(tokens): void {
+        saveRegistrationTokens(legacyDataPath, tokens);
+      },
+      onSuccess(): void { /* ok */ },
+      onFailure(error): void {
+        console.error('[dwn-registration] failed:', error);
+      },
+    },
+  });
 
   if (result.recoveryPhrase) {
     console.log('');
