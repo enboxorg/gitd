@@ -203,6 +203,15 @@ export function jsonNotFound(message: string): JsonResponse {
   };
 }
 
+/** Build a 201 Created JSON response. */
+export function jsonCreated(data: unknown, extraHeaders?: Record<string, string>): JsonResponse {
+  return {
+    status  : 201,
+    headers : { ...baseHeaders(), ...extraHeaders },
+    body    : JSON.stringify(data),
+  };
+}
+
 /** Build a 422 JSON response (validation error). */
 export function jsonValidationError(message: string): JsonResponse {
   return {
@@ -210,6 +219,56 @@ export function jsonValidationError(message: string): JsonResponse {
     headers : baseHeaders(),
     body    : JSON.stringify({ message, documentation_url: 'https://docs.github.com/rest' }),
   };
+}
+
+/** Build a 405 Method Not Allowed JSON response. */
+export function jsonMethodNotAllowed(message: string): JsonResponse {
+  return {
+    status  : 405,
+    headers : baseHeaders(),
+    body    : JSON.stringify({ message }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sequential numbering
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the next sequential issue number.
+ * Returns `max(existing numbers) + 1`, or 1 if no issues exist.
+ */
+export async function getNextIssueNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
+  const { records } = await ctx.issues.records.query('repo/issue', {
+    filter: { contextId: repoContextId },
+  });
+
+  let maxNumber = 0;
+  for (const rec of records) {
+    const recTags = rec.tags as Record<string, string> | undefined;
+    const num = parseInt(recTags?.number ?? '0', 10);
+    if (num > maxNumber) { maxNumber = num; }
+  }
+
+  return maxNumber + 1;
+}
+
+/**
+ * Get the next sequential patch number.
+ */
+export async function getNextPatchNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    filter: { contextId: repoContextId },
+  });
+
+  let maxNumber = 0;
+  for (const rec of records) {
+    const recTags = rec.tags as Record<string, string> | undefined;
+    const num = parseInt(recTags?.number ?? '0', 10);
+    if (num > maxNumber) { maxNumber = num; }
+  }
+
+  return maxNumber + 1;
 }
 
 /** Convert an ISO date string to GitHub's ISO 8601 format. */

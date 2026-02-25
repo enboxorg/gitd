@@ -173,10 +173,12 @@ dwn-git whoami                    # Show connected DID
 
 ### GitHub API Compatibility Shim
 
-- Read-only HTTP server that translates GitHub REST API v3 requests into DWN queries
-- Allows existing GitHub-compatible tools (VS Code extensions, `gh` CLI, CI systems) to read DWN data
+- HTTP server that translates GitHub REST API v3 requests into DWN queries and writes
+- Allows existing GitHub-compatible tools (VS Code extensions, `gh` CLI, CI systems) to interact with DWN data
 - DID is used as the GitHub "owner" in URLs: `GET /repos/:did/:repo/issues`
-- 10 Phase 1 endpoints: repo info, issues (list/detail/comments), pulls (list/detail/reviews), releases (list/by-tag), user profile
+- 18 endpoints (10 read, 8 write):
+  - **Read (GET)**: repo info, issues (list/detail/comments), pulls (list/detail/reviews), releases (list/by-tag), user profile
+  - **Write**: create/update issues, create issue comments, create/update/merge pull requests, create pull reviews, create releases
 - GitHub-compatible response shapes: numeric IDs, pagination (`Link` header, `per_page`), rate limit headers
 - CORS enabled, `X-GitHub-Media-Type: github.v3` header
 - Start with `dwn-git github-api [--port <port>]` (default: 8181, configurable via `DWN_GIT_GITHUB_API_PORT`)
@@ -301,7 +303,7 @@ bun test               # Run all tests
 
 ## Status
 
-**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim, and package manager shims (npm, Go, OCI/Docker). 763+ tests across 19 test files. See PLAN.md Section 12 for the full roadmap.
+**All phases complete** — working MVP with CLI commands for all 11 protocols, git transport, DID-signed push auth, ref mirroring, bundle storage, package registry with attestation system and dependency trust chain verification, GitHub migration tool, read-only web UI, indexer service, GitHub API compatibility shim (read + write), and package manager shims (npm, Go, OCI/Docker). 799+ tests across 19 test files. See PLAN.md Section 12 for the full roadmap.
 
 ## License
 
