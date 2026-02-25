@@ -6,6 +6,8 @@
 
 import { spawnSync } from 'node:child_process';
 
+import { profileReposPath } from '../profiles/config.js';
+
 /** Extract the value following a flag in argv (e.g. `--port 8080`). */
 export function flagValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -64,4 +66,31 @@ export function parsePort(value: string): number {
     process.exit(1);
   }
   return port;
+}
+
+/**
+ * Resolve the base path for bare git repositories.
+ *
+ * Priority (highest to lowest):
+ *   1. `--repos <path>` CLI flag
+ *   2. `GITD_REPOS` environment variable
+ *   3. Profile-based path: `~/.enbox/profiles/<name>/repos/`
+ *   4. Fallback: `./repos` (CWD-relative, legacy behaviour)
+ *
+ * When a profile is active, repos are stored alongside the agent data
+ * so they follow the identity rather than the working directory.
+ */
+export function resolveReposPath(
+  args: string[],
+  profileName?: string | null,
+): string {
+  const flag = flagValue(args, '--repos');
+  if (flag) { return flag; }
+
+  const env = process.env.GITD_REPOS;
+  if (env) { return env; }
+
+  if (profileName) { return profileReposPath(profileName); }
+
+  return './repos';
 }

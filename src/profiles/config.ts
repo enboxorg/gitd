@@ -10,6 +10,7 @@
  *     config.json               Global config (this module)
  *     profiles/
  *       <name>/DATA/AGENT/...   Per-profile Web5 agent stores
+ *       <name>/repos/...        Per-profile bare git repos
  *
  * @module
  */
@@ -41,6 +42,11 @@ export function profilesDir(): string {
 /** Path to a specific profile's agent data directory. */
 export function profileDataPath(name: string): string {
   return join(profilesDir(), name, 'DATA', 'AGENT');
+}
+
+/** Path to a specific profile's bare git repos directory. */
+export function profileReposPath(name: string): string {
+  return join(profilesDir(), name, 'repos');
 }
 
 // ---------------------------------------------------------------------------

@@ -350,6 +350,72 @@ describe('gitd CLI commands', () => {
   });
 
   // =========================================================================
+  // Repos path resolution
+  // =========================================================================
+
+  describe('resolveReposPath', () => {
+    it('should return profile-based path when profileName is set', () => {
+      const { resolveReposPath } = require('../src/cli/flags.js');
+      const result = resolveReposPath([], 'test-profile');
+      expect(result).toContain('.enbox');
+      expect(result).toContain('profiles');
+      expect(result).toContain('test-profile');
+      expect(result).toContain('repos');
+    });
+
+    it('should prefer --repos flag over profile path', () => {
+      const { resolveReposPath } = require('../src/cli/flags.js');
+      const result = resolveReposPath(['--repos', '/custom/path'], 'test-profile');
+      expect(result).toBe('/custom/path');
+    });
+
+    it('should prefer GITD_REPOS env over profile path', () => {
+      const { resolveReposPath } = require('../src/cli/flags.js');
+      process.env.GITD_REPOS = '/env/repos';
+      try {
+        const result = resolveReposPath([], 'test-profile');
+        expect(result).toBe('/env/repos');
+      } finally {
+        delete process.env.GITD_REPOS;
+      }
+    });
+
+    it('should fall back to ./repos when no profile', () => {
+      const { resolveReposPath } = require('../src/cli/flags.js');
+      const result = resolveReposPath([]);
+      expect(result).toBe('./repos');
+    });
+  });
+
+  describe('profileReposPath', () => {
+    it('should return ~/.enbox/profiles/<name>/repos', () => {
+      const { profileReposPath } = require('../src/profiles/config.js');
+      const result = profileReposPath('my-profile');
+      expect(result).toContain('my-profile');
+      expect(result.endsWith('/repos')).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // Post-init instructions
+  // =========================================================================
+
+  describe('init post-init instructions', () => {
+    it('should print next-steps after successful init', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const logs = await captureLog(() =>
+        initCommand(ctx, ['post-init-test', '--repos', REPOS_PATH]),
+      );
+      expect(logs.some((l) => l.includes('Next steps'))).toBe(true);
+      expect(logs.some((l) => l.includes('git remote add origin'))).toBe(true);
+      expect(logs.some((l) => l.includes('git push'))).toBe(true);
+      expect(logs.some((l) => l.includes('gitd serve'))).toBe(true);
+      // Should include the DID in the remote URL.
+      expect(logs.some((l) => l.includes(ctx.did))).toBe(true);
+    });
+  });
+
+  // =========================================================================
   // repo commands
   // =========================================================================
 

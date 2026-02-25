@@ -209,7 +209,7 @@ function printUsage(): void {
   console.log('  GITD_PASSWORD      vault password (prompted if not set)');
   console.log('  GITD_PORT          server port for `serve` (default: 9418)');
   console.log('  GITD_WEB_PORT      web UI port for `web` (default: 8080)');
-  console.log('  GITD_REPOS         base path for bare repos (default: ./repos)');
+  console.log('  GITD_REPOS         base path for bare repos (default: ~/.enbox/profiles/<name>/repos/)');
   console.log('  GITD_SYNC          DWN sync interval: off|5s|30s|1m (default: 30s for serve, off otherwise)');
   console.log('  GITD_DWN_ENDPOINT  DWN endpoint URL for repo records');
   console.log('  GITD_INDEXER_PORT      indexer API port (default: 8090)');
@@ -349,6 +349,7 @@ async function main(): Promise<void> {
   const sync = noSync ? 'off' : (syncFlag ?? syncEnv ?? syncDefault);
 
   const ctx = await connectAgent({ password, dataPath, sync: sync as any });
+  ctx.profileName = profileName ?? undefined;
 
   switch (command) {
     case 'init':

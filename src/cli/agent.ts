@@ -51,6 +51,8 @@ import { ForgeWikiProtocol } from '../wiki.js';
 /** Context returned by `connectAgent()` — provides typed protocol handles. */
 export type AgentContext = {
   did : string;
+  /** Active profile name, or `undefined` when running in legacy (CWD) mode. */
+  profileName? : string;
   repo : TypedWeb5<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
   refs : TypedWeb5<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
   issues : TypedWeb5<typeof ForgeIssuesProtocol.definition, ForgeIssuesSchemaMap>;

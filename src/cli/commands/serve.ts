@@ -31,7 +31,7 @@ import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
-import { flagValue, parsePort } from '../flags.js';
+import { flagValue, parsePort, resolveReposPath } from '../flags.js';
 import {
   getDwnEndpoints,
   registerGitService,
@@ -44,7 +44,7 @@ import {
 
 export async function serveCommand(ctx: AgentContext, args: string[]): Promise<void> {
   const port = parsePort(flagValue(args, '--port') ?? process.env.GITD_PORT ?? '9418');
-  const basePath = flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
+  const basePath = resolveReposPath(args, ctx.profileName);
   const pathPrefix = flagValue(args, '--prefix') ?? process.env.GITD_PREFIX;
   const publicUrl = flagValue(args, '--public-url') ?? process.env.GITD_PUBLIC_URL;
 
