@@ -892,13 +892,32 @@ describe('dwn-git CLI commands', () => {
 
     it('should star a repo', async () => {
       const { socialCommand } = await import('../src/cli/commands/social.js');
-      const logs = await captureLog(() => socialCommand(ctx, ['star', 'did:jwk:repoowner123']));
-      expect(logs.some((l) => l.includes('Starred did:jwk:repoowner123'))).toBe(true);
+      // Star the local agent's own repo (initialized earlier as 'my-test-repo').
+      const logs = await captureLog(() => socialCommand(ctx, ['star', ctx.did]));
+      expect(logs.some((l) => l.includes(`Starred ${ctx.did}`))).toBe(true);
+      expect(logs.some((l) => l.includes('my-test-repo'))).toBe(true);
+    });
+
+    it('should store correct repoRecordId and repoName in star record', async () => {
+      // Query the repo record to get its ID for comparison.
+      const { records: repoRecords } = await ctx.repo.records.query('repo');
+      expect(repoRecords.length).toBeGreaterThan(0);
+      const expectedRecordId = repoRecords[0].id;
+
+      // Query the star record we just created.
+      const { records: stars } = await ctx.social.records.query('star', {
+        filter: { tags: { repoDid: ctx.did } },
+      });
+      expect(stars.length).toBe(1);
+
+      const starData = await stars[0].data.json();
+      expect(starData.repoRecordId).toBe(expectedRecordId);
+      expect(starData.repoName).toBe('my-test-repo');
     });
 
     it('should not double-star', async () => {
       const { socialCommand } = await import('../src/cli/commands/social.js');
-      const logs = await captureLog(() => socialCommand(ctx, ['star', 'did:jwk:repoowner123']));
+      const logs = await captureLog(() => socialCommand(ctx, ['star', ctx.did]));
       expect(logs.some((l) => l.includes('Already starred'))).toBe(true);
     });
 
@@ -906,13 +925,14 @@ describe('dwn-git CLI commands', () => {
       const { socialCommand } = await import('../src/cli/commands/social.js');
       const logs = await captureLog(() => socialCommand(ctx, ['stars']));
       expect(logs.some((l) => l.includes('Starred repos (1)'))).toBe(true);
-      expect(logs.some((l) => l.includes('did:jwk:repoowner123'))).toBe(true);
+      expect(logs.some((l) => l.includes(ctx.did))).toBe(true);
+      expect(logs.some((l) => l.includes('my-test-repo'))).toBe(true);
     });
 
     it('should unstar a repo', async () => {
       const { socialCommand } = await import('../src/cli/commands/social.js');
-      const logs = await captureLog(() => socialCommand(ctx, ['unstar', 'did:jwk:repoowner123']));
-      expect(logs.some((l) => l.includes('Unstarred did:jwk:repoowner123'))).toBe(true);
+      const logs = await captureLog(() => socialCommand(ctx, ['unstar', ctx.did]));
+      expect(logs.some((l) => l.includes(`Unstarred ${ctx.did}`))).toBe(true);
     });
 
     it('should fail unstar for non-starred repo', async () => {
