@@ -206,17 +206,19 @@ function printUsage(): void {
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
   console.log('Environment:');
-  console.log('  GITD_PASSWORD  vault password (prompted if not set)');
-  console.log('  GITD_PORT      server port for `serve` (default: 9418)');
-  console.log('  GITD_WEB_PORT  web UI port for `web` (default: 8080)');
-  console.log('  GITD_REPOS     base path for bare repos (default: ./repos)');
+  console.log('  GITD_PASSWORD      vault password (prompted if not set)');
+  console.log('  GITD_PORT          server port for `serve` (default: 9418)');
+  console.log('  GITD_WEB_PORT      web UI port for `web` (default: 8080)');
+  console.log('  GITD_REPOS         base path for bare repos (default: ./repos)');
+  console.log('  GITD_SYNC          DWN sync interval: off|5s|30s|1m (default: 30s for serve, off otherwise)');
+  console.log('  GITD_DWN_ENDPOINT  DWN endpoint URL for repo records');
   console.log('  GITD_INDEXER_PORT      indexer API port (default: 8090)');
   console.log('  GITD_INDEXER_INTERVAL  crawl interval in seconds (default: 60)');
   console.log('  GITD_GITHUB_API_PORT   GitHub API shim port (default: 8181)');
   console.log('  GITD_NPM_SHIM_PORT    npm shim port (default: 4873)');
   console.log('  GITD_GO_SHIM_PORT     Go proxy shim port (default: 4874)');
   console.log('  GITD_OCI_SHIM_PORT    OCI registry shim port (default: 5555)');
-  console.log('  GITHUB_TOKEN      GitHub API token for migration (auto-detected from gh CLI)');
+  console.log('  GITHUB_TOKEN       GitHub API token for migration (auto-detected from gh CLI)');
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +338,17 @@ async function main(): Promise<void> {
   const profileFlag = flagValue(rest, '--profile');
   const profileName = resolveProfile(profileFlag);
   const dataPath = profileName ? profileDataPath(profileName) : undefined;
-  const ctx = await connectAgent({ password, dataPath });
+
+  // Resolve DWN sync interval.
+  // Long-running commands default to '30s'; one-shot commands default to 'off'.
+  const longRunning = ['serve', 'web', 'daemon', 'indexer', 'github-api', 'shim'].includes(command);
+  const syncDefault = longRunning ? '30s' : 'off';
+  const noSync = rest.includes('--no-sync');
+  const syncEnv = process.env.GITD_SYNC;
+  const syncFlag = flagValue(rest, '--sync');
+  const sync = noSync ? 'off' : (syncFlag ?? syncEnv ?? syncDefault);
+
+  const ctx = await connectAgent({ password, dataPath, sync: sync as any });
 
   switch (command) {
     case 'init':

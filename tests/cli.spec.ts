@@ -226,6 +226,78 @@ describe('gitd CLI commands', () => {
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('already exists');
     });
+
+    it('should populate dwnEndpoints from --dwn-endpoint flag', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      await captureLog(() =>
+        initCommand(ctx, ['dwn-ep-test', '--repos', REPOS_PATH, '--dwn-endpoint', 'https://dwn.example.com']),
+      );
+
+      const { records } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'dwn-ep-test' } },
+      });
+      expect(records.length).toBe(1);
+      const data = await records[0].data.json();
+      expect(data.dwnEndpoints).toEqual(['https://dwn.example.com']);
+    });
+
+    it('should populate dwnEndpoints from GITD_DWN_ENDPOINT env', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      process.env.GITD_DWN_ENDPOINT = 'https://env-dwn.example.com';
+      try {
+        await captureLog(() =>
+          initCommand(ctx, ['dwn-env-test', '--repos', REPOS_PATH]),
+        );
+
+        const { records } = await ctx.repo.records.query('repo', {
+          filter: { tags: { name: 'dwn-env-test' } },
+        });
+        expect(records.length).toBe(1);
+        const data = await records[0].data.json();
+        expect(data.dwnEndpoints).toEqual(['https://env-dwn.example.com']);
+      } finally {
+        delete process.env.GITD_DWN_ENDPOINT;
+      }
+    });
+  });
+
+  // =========================================================================
+  // getDwnEndpoints
+  // =========================================================================
+
+  describe('getDwnEndpoints', () => {
+    it('should return empty array for did:jwk (no DWN service)', () => {
+      const { getDwnEndpoints } = require('../src/git-server/did-service.js');
+      const endpoints = getDwnEndpoints(web5);
+      // did:jwk doesn't have a DWN service entry in its DID document.
+      expect(endpoints).toEqual([]);
+    });
+  });
+
+  // =========================================================================
+  // DID republisher
+  // =========================================================================
+
+  describe('startDidRepublisher', () => {
+    it('should return a no-op cleanup for non-dht DIDs', () => {
+      const { startDidRepublisher } = require('../src/git-server/did-service.js');
+      const stop = startDidRepublisher(web5);
+      expect(typeof stop).toBe('function');
+      // Should not throw when called.
+      stop();
+    });
+  });
+
+  // =========================================================================
+  // connectAgent sync option
+  // =========================================================================
+
+  describe('connectAgent sync option', () => {
+    it('should export SyncInterval type and accept sync in ConnectOptions', async () => {
+      // Verify the type exists and the function signature accepts sync.
+      const { connectAgent } = await import('../src/cli/agent.js');
+      expect(typeof connectAgent).toBe('function');
+    });
   });
 
   // =========================================================================

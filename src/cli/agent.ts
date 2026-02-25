@@ -62,6 +62,9 @@ export type AgentContext = {
   web5 : Web5;
 };
 
+/** Valid sync interval values accepted by `Web5.connect()`. */
+export type SyncInterval = 'off' | '1s' | '5s' | '15s' | '30s' | '1m' | '5m';
+
 /** Options for connecting to the agent. */
 export type ConnectOptions = {
   /** Vault password. */
@@ -78,6 +81,19 @@ export type ConnectOptions = {
    * a new vault.  When omitted, a new phrase is generated automatically.
    */
   recoveryPhrase? : string;
+  /**
+   * DWN sync interval.  When set to anything other than `'off'`, the
+   * agent automatically replicates local DWN records to the remote
+   * DWN endpoint registered in the DID document.
+   *
+   * - `'off'`  — no sync (default for one-shot CLI commands)
+   * - `'5s'`   — aggressive sync (good for `serve`)
+   * - `'30s'`  — moderate sync
+   * - `'1m'`   — lazy sync
+   *
+   * @default 'off'
+   */
+  sync? : SyncInterval;
 };
 
 // ---------------------------------------------------------------------------
@@ -90,10 +106,11 @@ export type ConnectOptions = {
  * When `dataPath` is provided, the agent's persistent data lives there.
  * Otherwise, it falls back to `DATA/AGENT` relative to CWD (legacy).
  *
- * Sync is disabled — the CLI operates against the local DWN only.
+ * Sync defaults to `'off'` for one-shot commands.  Long-running
+ * commands like `serve` should pass an explicit interval.
  */
 export async function connectAgent(options: ConnectOptions): Promise<AgentContext & { recoveryPhrase?: string }> {
-  const { password, dataPath, recoveryPhrase: inputPhrase } = options;
+  const { password, dataPath, recoveryPhrase: inputPhrase, sync = 'off' } = options;
 
   let agent: Web5UserAgent;
   let recoveryPhrase: string | undefined;
@@ -136,15 +153,15 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 
     const result = await Web5.connect({
       agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
+      connectedDid: identity.did.uri,
+      sync,
     });
 
     return bindProtocols(result.web5, result.did, recoveryPhrase);
   }
 
   // Legacy: let Web5.connect() manage the agent (uses CWD-relative path).
-  const result = await Web5.connect({ password, sync: 'off' });
+  const result = await Web5.connect({ password, sync });
 
   if (result.recoveryPhrase) {
     console.log('');
