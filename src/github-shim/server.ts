@@ -1,24 +1,32 @@
 /**
  * GitHub API compatibility shim — HTTP server and router.
  *
- * Translates GitHub REST API v3 requests into DWN queries and returns
- * GitHub-compatible JSON responses.  This allows existing tools that
- * speak the GitHub API (VS Code extensions, `gh` CLI, CI/CD systems)
- * to read data from any DWN-enabled git forge.
+ * Translates GitHub REST API v3 requests into DWN queries / writes and
+ * returns GitHub-compatible JSON responses.  This allows existing tools
+ * that speak the GitHub API (VS Code extensions, `gh` CLI, CI/CD
+ * systems) to interact with any DWN-enabled git forge.
  *
- * Phase 1 is read-only — only GET endpoints are supported.
+ * Read endpoints (GET):
+ *   GET  /repos/:did/:repo                          Repository info
+ *   GET  /repos/:did/:repo/issues                   List issues
+ *   GET  /repos/:did/:repo/issues/:number           Issue detail
+ *   GET  /repos/:did/:repo/issues/:number/comments  Issue comments
+ *   GET  /repos/:did/:repo/pulls                    List pull requests
+ *   GET  /repos/:did/:repo/pulls/:number            Pull request detail
+ *   GET  /repos/:did/:repo/pulls/:number/reviews    Pull request reviews
+ *   GET  /repos/:did/:repo/releases                 List releases
+ *   GET  /repos/:did/:repo/releases/tags/:tag       Release by tag
+ *   GET  /users/:did                                User profile
  *
- * URL scheme:
- *   GET /repos/:did/:repo                          Repository info
- *   GET /repos/:did/:repo/issues                   List issues
- *   GET /repos/:did/:repo/issues/:number           Issue detail
- *   GET /repos/:did/:repo/issues/:number/comments  Issue comments
- *   GET /repos/:did/:repo/pulls                    List pull requests
- *   GET /repos/:did/:repo/pulls/:number            Pull request detail
- *   GET /repos/:did/:repo/pulls/:number/reviews    Pull request reviews
- *   GET /repos/:did/:repo/releases                 List releases
- *   GET /repos/:did/:repo/releases/tags/:tag       Release by tag
- *   GET /users/:did                                User profile
+ * Write endpoints (POST/PATCH/PUT):
+ *   POST  /repos/:did/:repo/issues                    Create issue
+ *   PATCH /repos/:did/:repo/issues/:number            Update issue
+ *   POST  /repos/:did/:repo/issues/:number/comments   Create issue comment
+ *   POST  /repos/:did/:repo/pulls                     Create pull request
+ *   PATCH /repos/:did/:repo/pulls/:number             Update pull request
+ *   PUT   /repos/:did/:repo/pulls/:number/merge       Merge pull request
+ *   POST  /repos/:did/:repo/pulls/:number/reviews     Create pull review
+ *   POST  /repos/:did/:repo/releases                  Create release
  *
  * @module
  */
@@ -33,10 +41,10 @@ import { createServer } from 'node:http';
 import { handleGetRepo } from './repos.js';
 import { handleGetUser } from './users.js';
 
-import { baseHeaders, jsonNotFound } from './helpers.js';
-import { handleGetIssue, handleListIssueComments, handleListIssues } from './issues.js';
-import { handleGetPull, handleListPullReviews, handleListPulls } from './pulls.js';
-import { handleGetReleaseByTag, handleListReleases } from './releases.js';
+import { baseHeaders, jsonMethodNotAllowed, jsonNotFound } from './helpers.js';
+import { handleCreateIssue, handleCreateIssueComment, handleGetIssue, handleListIssueComments, handleListIssues, handleUpdateIssue } from './issues.js';
+import { handleCreatePull, handleCreatePullReview, handleGetPull, handleListPullReviews, handleListPulls, handleMergePull, handleUpdatePull } from './pulls.js';
+import { handleCreateRelease, handleGetReleaseByTag, handleListReleases } from './releases.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +54,12 @@ export type ShimServerOptions = {
   ctx : AgentContext;
   port : number;
 };
+
+// ---------------------------------------------------------------------------
+// Supported HTTP methods
+// ---------------------------------------------------------------------------
+
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS']);
 
 // ---------------------------------------------------------------------------
 // DID extraction regex
@@ -67,10 +81,15 @@ const USERS_RE = /^\/users\/(did:[a-z0-9]+:[a-zA-Z0-9._:%-]+)$/;
  *
  * This function is exported for testing — tests can call it directly
  * with a constructed URL without starting an HTTP server.
+ *
+ * @param method  HTTP method (defaults to `'GET'` for backward compat).
+ * @param reqBody Parsed JSON body for POST/PATCH/PUT requests.
  */
 export async function handleShimRequest(
   ctx: AgentContext,
   url: URL,
+  method: string = 'GET',
+  reqBody: Record<string, unknown> = {},
 ): Promise<JsonResponse> {
   const path = url.pathname;
 
@@ -79,11 +98,14 @@ export async function handleShimRequest(
   // -------------------------------------------------------------------------
   const userMatch = path.match(USERS_RE);
   if (userMatch) {
+    if (method !== 'GET') {
+      return jsonMethodNotAllowed(`${method} is not allowed on /users endpoints.`);
+    }
     return handleGetUser(userMatch[1], url);
   }
 
   // -------------------------------------------------------------------------
-  // GET /repos/:did/:repo/...
+  // /repos/:did/:repo/...
   // -------------------------------------------------------------------------
   const repoMatch = path.match(REPOS_RE);
   if (!repoMatch) {
@@ -96,7 +118,7 @@ export async function handleShimRequest(
 
   // Try/catch — DID resolution failures should return 502.
   try {
-    return await dispatchRepoRoute(ctx, targetDid, repoName, rest, url);
+    return await dispatchRepoRoute(ctx, targetDid, repoName, rest, url, method, reqBody);
   } catch (err) {
     const msg = (err as Error).message ?? 'Unknown error';
     return {
@@ -109,59 +131,83 @@ export async function handleShimRequest(
 
 /**
  * Dispatch to the correct handler within the `/repos/:did/:repo/...`
- * namespace.
+ * namespace.  Considers both the URL path and the HTTP method.
  */
 async function dispatchRepoRoute(
-  ctx: AgentContext, targetDid: string, repoName: string, rest: string, url: URL,
+  ctx: AgentContext, targetDid: string, repoName: string,
+  rest: string, url: URL, method: string, reqBody: Record<string, unknown>,
 ): Promise<JsonResponse> {
   // GET /repos/:did/:repo
   if (rest === '' || rest === '/') {
+    if (method !== 'GET') { return jsonMethodNotAllowed(`${method} not allowed on /repos/:did/:repo.`); }
     return handleGetRepo(ctx, targetDid, repoName, url);
   }
 
-  // GET /repos/:did/:repo/issues
+  // /repos/:did/:repo/issues[/...]
   if (rest === '/issues') {
-    return handleListIssues(ctx, targetDid, repoName, url);
+    if (method === 'POST') { return handleCreateIssue(ctx, targetDid, repoName, reqBody, url); }
+    if (method === 'GET') { return handleListIssues(ctx, targetDid, repoName, url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /issues.`);
   }
 
-  // GET /repos/:did/:repo/pulls
+  // /repos/:did/:repo/pulls[/...]
   if (rest === '/pulls') {
-    return handleListPulls(ctx, targetDid, repoName, url);
+    if (method === 'POST') { return handleCreatePull(ctx, targetDid, repoName, reqBody, url); }
+    if (method === 'GET') { return handleListPulls(ctx, targetDid, repoName, url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /pulls.`);
   }
 
-  // GET /repos/:did/:repo/releases
+  // /repos/:did/:repo/releases
   if (rest === '/releases') {
-    return handleListReleases(ctx, targetDid, repoName, url);
+    if (method === 'POST') { return handleCreateRelease(ctx, targetDid, repoName, reqBody, url); }
+    if (method === 'GET') { return handleListReleases(ctx, targetDid, repoName, url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /releases.`);
   }
 
   // GET /repos/:did/:repo/releases/tags/:tag
   const releaseTagMatch = rest.match(/^\/releases\/tags\/(.+)$/);
   if (releaseTagMatch) {
+    if (method !== 'GET') { return jsonMethodNotAllowed(`${method} not allowed on /releases/tags/:tag.`); }
     return handleGetReleaseByTag(ctx, targetDid, repoName, releaseTagMatch[1], url);
   }
 
-  // GET /repos/:did/:repo/issues/:number/comments
+  // /repos/:did/:repo/issues/:number/comments
   const issueCommentsMatch = rest.match(/^\/issues\/(\d+)\/comments$/);
   if (issueCommentsMatch) {
-    return handleListIssueComments(ctx, targetDid, repoName, issueCommentsMatch[1], url);
+    if (method === 'POST') { return handleCreateIssueComment(ctx, targetDid, repoName, issueCommentsMatch[1], reqBody, url); }
+    if (method === 'GET') { return handleListIssueComments(ctx, targetDid, repoName, issueCommentsMatch[1], url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /issues/:number/comments.`);
   }
 
-  // GET /repos/:did/:repo/issues/:number
+  // /repos/:did/:repo/issues/:number
   const issueMatch = rest.match(/^\/issues\/(\d+)$/);
   if (issueMatch) {
-    return handleGetIssue(ctx, targetDid, repoName, issueMatch[1], url);
+    if (method === 'PATCH') { return handleUpdateIssue(ctx, targetDid, repoName, issueMatch[1], reqBody, url); }
+    if (method === 'GET') { return handleGetIssue(ctx, targetDid, repoName, issueMatch[1], url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /issues/:number.`);
   }
 
-  // GET /repos/:did/:repo/pulls/:number/reviews
+  // /repos/:did/:repo/pulls/:number/merge
+  const pullMergeMatch = rest.match(/^\/pulls\/(\d+)\/merge$/);
+  if (pullMergeMatch) {
+    if (method === 'PUT') { return handleMergePull(ctx, targetDid, repoName, pullMergeMatch[1], reqBody, url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /pulls/:number/merge.`);
+  }
+
+  // /repos/:did/:repo/pulls/:number/reviews
   const pullReviewsMatch = rest.match(/^\/pulls\/(\d+)\/reviews$/);
   if (pullReviewsMatch) {
-    return handleListPullReviews(ctx, targetDid, repoName, pullReviewsMatch[1], url);
+    if (method === 'POST') { return handleCreatePullReview(ctx, targetDid, repoName, pullReviewsMatch[1], reqBody, url); }
+    if (method === 'GET') { return handleListPullReviews(ctx, targetDid, repoName, pullReviewsMatch[1], url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /pulls/:number/reviews.`);
   }
 
-  // GET /repos/:did/:repo/pulls/:number
+  // /repos/:did/:repo/pulls/:number
   const pullMatch = rest.match(/^\/pulls\/(\d+)$/);
   if (pullMatch) {
-    return handleGetPull(ctx, targetDid, repoName, pullMatch[1], url);
+    if (method === 'PATCH') { return handleUpdatePull(ctx, targetDid, repoName, pullMatch[1], reqBody, url); }
+    if (method === 'GET') { return handleGetPull(ctx, targetDid, repoName, pullMatch[1], url); }
+    return jsonMethodNotAllowed(`${method} not allowed on /pulls/:number.`);
   }
 
   return jsonNotFound('Not found');
@@ -176,11 +222,13 @@ export function startShimServer(options: ShimServerOptions): Server {
   const { ctx, port } = options;
 
   const server = createServer(async (req, res) => {
+    const method = req.method ?? 'GET';
+
     // Handle CORS preflight.
-    if (req.method === 'OPTIONS') {
+    if (method === 'OPTIONS') {
       res.writeHead(204, {
         'Access-Control-Allow-Origin'  : '*',
-        'Access-Control-Allow-Methods' : 'GET, OPTIONS',
+        'Access-Control-Allow-Methods' : 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers' : 'Authorization, Accept, Content-Type',
         'Access-Control-Max-Age'       : '86400',
       });
@@ -188,16 +236,36 @@ export function startShimServer(options: ShimServerOptions): Server {
       return;
     }
 
-    // Only support GET.
-    if (req.method !== 'GET') {
+    // Reject unsupported methods.
+    if (!ALLOWED_METHODS.has(method)) {
       res.writeHead(405, baseHeaders());
-      res.end(JSON.stringify({ message: 'Method not allowed. This shim is read-only (Phase 1).' }));
+      res.end(JSON.stringify({ message: `Method ${method} is not supported.` }));
       return;
     }
 
     try {
       const url = new URL(req.url ?? '/', `http://localhost:${port}`);
-      const result = await handleShimRequest(ctx, url);
+
+      // Parse request body for mutating methods.
+      let reqBody: Record<string, unknown> = {};
+      if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        }
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        if (raw.length > 0) {
+          try {
+            reqBody = JSON.parse(raw);
+          } catch {
+            res.writeHead(400, baseHeaders());
+            res.end(JSON.stringify({ message: 'Invalid JSON in request body.' }));
+            return;
+          }
+        }
+      }
+
+      const result = await handleShimRequest(ctx, url, method, reqBody);
 
       res.writeHead(result.status, result.headers);
       res.end(result.body);
@@ -210,18 +278,26 @@ export function startShimServer(options: ShimServerOptions): Server {
 
   server.listen(port, () => {
     console.log(`[github-shim] GitHub API compatibility shim running at http://localhost:${port}`);
-    console.log('[github-shim] Phase 1: read-only endpoints');
-    console.log('[github-shim] Endpoints:');
-    console.log('  GET /repos/:did/:repo                  Repository info');
-    console.log('  GET /repos/:did/:repo/issues           List issues');
-    console.log('  GET /repos/:did/:repo/issues/:number   Issue detail');
-    console.log('  GET /repos/:did/:repo/issues/:n/comments  Issue comments');
-    console.log('  GET /repos/:did/:repo/pulls            List pull requests');
-    console.log('  GET /repos/:did/:repo/pulls/:number    Pull request detail');
-    console.log('  GET /repos/:did/:repo/pulls/:n/reviews Pull request reviews');
-    console.log('  GET /repos/:did/:repo/releases         List releases');
-    console.log('  GET /repos/:did/:repo/releases/tags/:t Release by tag');
-    console.log('  GET /users/:did                        User profile');
+    console.log('[github-shim] Read endpoints (GET):');
+    console.log('  GET  /repos/:did/:repo                  Repository info');
+    console.log('  GET  /repos/:did/:repo/issues           List issues');
+    console.log('  GET  /repos/:did/:repo/issues/:number   Issue detail');
+    console.log('  GET  /repos/:did/:repo/issues/:n/comments  Issue comments');
+    console.log('  GET  /repos/:did/:repo/pulls            List pull requests');
+    console.log('  GET  /repos/:did/:repo/pulls/:number    Pull request detail');
+    console.log('  GET  /repos/:did/:repo/pulls/:n/reviews Pull request reviews');
+    console.log('  GET  /repos/:did/:repo/releases         List releases');
+    console.log('  GET  /repos/:did/:repo/releases/tags/:t Release by tag');
+    console.log('  GET  /users/:did                        User profile');
+    console.log('[github-shim] Write endpoints (POST/PATCH/PUT):');
+    console.log('  POST  /repos/:did/:repo/issues            Create issue');
+    console.log('  PATCH /repos/:did/:repo/issues/:number    Update issue');
+    console.log('  POST  /repos/:did/:repo/issues/:n/comments  Create comment');
+    console.log('  POST  /repos/:did/:repo/pulls             Create pull request');
+    console.log('  PATCH /repos/:did/:repo/pulls/:number     Update pull request');
+    console.log('  PUT   /repos/:did/:repo/pulls/:n/merge    Merge pull request');
+    console.log('  POST  /repos/:did/:repo/pulls/:n/reviews  Create review');
+    console.log('  POST  /repos/:did/:repo/releases          Create release');
     console.log('');
   });
 

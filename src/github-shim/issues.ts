@@ -4,9 +4,12 @@
  * Maps DWN issue records to GitHub REST API v3 issue responses.
  *
  * Endpoints:
- *   GET /repos/:did/:repo/issues              List issues
- *   GET /repos/:did/:repo/issues/:number      Issue detail
- *   GET /repos/:did/:repo/issues/:number/comments  Issue comments
+ *   GET  /repos/:did/:repo/issues                    List issues
+ *   GET  /repos/:did/:repo/issues/:number            Issue detail
+ *   GET  /repos/:did/:repo/issues/:number/comments   Issue comments
+ *   POST /repos/:did/:repo/issues                    Create issue
+ *   PATCH /repos/:did/:repo/issues/:number           Update issue
+ *   POST /repos/:did/:repo/issues/:number/comments   Create comment
  *
  * @module
  */
@@ -21,9 +24,12 @@ import {
   buildLinkHeader,
   buildOwner,
   fromOpt,
+  getNextIssueNumber,
   getRepoRecord,
+  jsonCreated,
   jsonNotFound,
   jsonOk,
+  jsonValidationError,
   numericId,
   paginate,
   parsePagination,
@@ -232,4 +238,152 @@ export async function handleListIssueComments(
   if (linkHeader) { extraHeaders['Link'] = linkHeader; }
 
   return jsonOk(items, extraHeaders);
+}
+
+// ---------------------------------------------------------------------------
+// POST /repos/:did/:repo/issues — create issue
+// ---------------------------------------------------------------------------
+
+export async function handleCreateIssue(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const title = reqBody.title as string | undefined;
+  if (!title) {
+    return jsonValidationError('Validation Failed: title is required.');
+  }
+
+  const body = (reqBody.body as string) ?? '';
+  const baseUrl = buildApiUrl(url);
+  const number = await getNextIssueNumber(ctx, repo.contextId);
+
+  const { status, record } = await ctx.issues.records.create('repo/issue', {
+    data            : { title, body, number },
+    tags            : { status: 'open', number: String(number) },
+    parentContextId : repo.contextId,
+  });
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to create issue: ${status.detail}`);
+  }
+
+  const tags = (record.tags as Record<string, string> | undefined) ?? {};
+  const data = await record.data.json();
+  const issue = buildIssueResponse(record, data, tags, targetDid, repoName, baseUrl);
+
+  return jsonCreated(issue);
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /repos/:did/:repo/issues/:number — update issue
+// ---------------------------------------------------------------------------
+
+export async function handleUpdateIssue(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  number: string, reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const baseUrl = buildApiUrl(url);
+
+  const { records } = await ctx.issues.records.query('repo/issue', {
+    filter: { contextId: repo.contextId, tags: { number } },
+  });
+
+  if (records.length === 0) {
+    return jsonNotFound(`Issue #${number} not found.`);
+  }
+
+  const rec = records[0];
+  const data = await rec.data.json();
+  const tags = (rec.tags as Record<string, string> | undefined) ?? {};
+
+  // Apply updates.
+  const newTitle = (reqBody.title as string | undefined) ?? data.title;
+  const newBody = (reqBody.body as string | undefined) ?? data.body;
+
+  // GitHub API uses "state" (open/closed), DWN uses "status" tag.
+  let newStatus = tags.status ?? 'open';
+  if (reqBody.state === 'closed') { newStatus = 'closed'; }
+  if (reqBody.state === 'open') { newStatus = 'open'; }
+
+  const { status } = await rec.update({
+    data : { title: newTitle, body: newBody, number: data.number },
+    tags : { ...tags, status: newStatus },
+  });
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to update issue: ${status.detail}`);
+  }
+
+  const updatedTags = { ...tags, status: newStatus };
+  const updatedData = { title: newTitle, body: newBody, number: data.number };
+  const issue = buildIssueResponse(rec, updatedData, updatedTags, targetDid, repoName, baseUrl);
+
+  return jsonOk(issue);
+}
+
+// ---------------------------------------------------------------------------
+// POST /repos/:did/:repo/issues/:number/comments — create comment
+// ---------------------------------------------------------------------------
+
+export async function handleCreateIssueComment(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  number: string, reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const body = reqBody.body as string | undefined;
+  if (!body) {
+    return jsonValidationError('Validation Failed: body is required.');
+  }
+
+  const baseUrl = buildApiUrl(url);
+
+  // Find the issue.
+  const { records: issues } = await ctx.issues.records.query('repo/issue', {
+    filter: { contextId: repo.contextId, tags: { number } },
+  });
+
+  if (issues.length === 0) {
+    return jsonNotFound(`Issue #${number} not found.`);
+  }
+
+  const issueRec = issues[0];
+
+  const { status, record: commentRec } = await ctx.issues.records.create('repo/issue/comment' as any, {
+    data            : { body },
+    parentContextId : issueRec.contextId,
+  } as any);
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to create comment: ${status.detail}`);
+  }
+
+  const owner = buildOwner(targetDid, baseUrl);
+
+  return jsonCreated({
+    id                 : numericId(commentRec.id ?? ''),
+    node_id            : commentRec.id ?? '',
+    url                : `${baseUrl}/repos/${targetDid}/${repoName}/issues/comments/${numericId(commentRec.id ?? '')}`,
+    html_url           : `${baseUrl}/repos/${targetDid}/${repoName}/issues/${number}#issuecomment-${numericId(commentRec.id ?? '')}`,
+    issue_url          : `${baseUrl}/repos/${targetDid}/${repoName}/issues/${number}`,
+    body,
+    created_at         : toISODate(commentRec.dateCreated),
+    updated_at         : toISODate(commentRec.dateCreated),
+    user               : owner,
+    author_association : 'OWNER',
+    reactions          : { url: '', total_count: 0 },
+  });
 }

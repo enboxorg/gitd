@@ -8,9 +8,9 @@ export { handleShimRequest, startShimServer } from './server.js';
 export type { ShimServerOptions } from './server.js';
 
 export { handleGetRepo, buildRepoResponse } from './repos.js';
-export { handleGetIssue, handleListIssueComments, handleListIssues } from './issues.js';
-export { handleGetPull, handleListPullReviews, handleListPulls } from './pulls.js';
-export { handleGetReleaseByTag, handleListReleases } from './releases.js';
+export { handleCreateIssue, handleCreateIssueComment, handleGetIssue, handleListIssueComments, handleListIssues, handleUpdateIssue } from './issues.js';
+export { handleCreatePull, handleCreatePullReview, handleGetPull, handleListPullReviews, handleListPulls, handleMergePull, handleUpdatePull } from './pulls.js';
+export { handleCreateRelease, handleGetReleaseByTag, handleListReleases } from './releases.js';
 export { handleGetUser } from './users.js';
 
 export {
@@ -18,6 +18,8 @@ export {
   buildLinkHeader,
   buildOwner,
   fromOpt,
+  getNextIssueNumber,
+  getNextPatchNumber,
   getRepoRecord,
   numericId,
   paginate,

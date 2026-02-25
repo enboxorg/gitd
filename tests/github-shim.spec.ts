@@ -724,4 +724,408 @@ describe('GitHub API compatibility shim', () => {
       expect(data.pulls_url).toContain('{/number}');
     });
   });
+
+  // =========================================================================
+  // POST /repos/:did/:repo/issues — create issue
+  // =========================================================================
+
+  describe('POST /repos/:did/:repo/issues', () => {
+    it('should create an issue and return 201', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'), 'POST', {
+        title : 'New shim issue',
+        body  : 'Created via API shim.',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.title).toBe('New shim issue');
+      expect(data.body).toBe('Created via API shim.');
+      expect(data.state).toBe('open');
+      expect(data.number).toBeGreaterThanOrEqual(3);
+      expect(data.user.login).toBe(testDid);
+    });
+
+    it('should auto-assign the next sequential number', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'), 'POST', {
+        title: 'Another shim issue',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      // Should be at least 4 since we already created 2 seeded + 1 in prev test.
+      expect(data.number).toBeGreaterThanOrEqual(4);
+    });
+
+    it('should return 422 when title is missing', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'), 'POST', {
+        body: 'Missing title.',
+      });
+      expect(res.status).toBe(422);
+      const data = parse(res);
+      expect(data.message).toContain('title');
+    });
+
+    it('should return 404 for non-existent repo DID', async () => {
+      const res = await handleShimRequest(ctx, url('/repos/did:jwk:nonexistent/missing-repo/issues'), 'POST', {
+        title: 'Should fail',
+      });
+      expect([404, 502]).toContain(res.status);
+    });
+  });
+
+  // =========================================================================
+  // PATCH /repos/:did/:repo/issues/:number — update issue
+  // =========================================================================
+
+  describe('PATCH /repos/:did/:repo/issues/:number', () => {
+    it('should update the title of an issue', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+        title: 'Fix the widget (updated)',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.title).toBe('Fix the widget (updated)');
+      expect(data.number).toBe(1);
+    });
+
+    it('should close an issue by setting state=closed', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+        state: 'closed',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.state).toBe('closed');
+    });
+
+    it('should reopen an issue by setting state=open', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+        state: 'open',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.state).toBe('open');
+    });
+
+    it('should return 404 for non-existent issue number', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/999'), 'PATCH', {
+        title: 'Nope',
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // POST /repos/:did/:repo/issues/:number/comments — create comment
+  // =========================================================================
+
+  describe('POST /repos/:did/:repo/issues/:number/comments', () => {
+    it('should create a comment and return 201', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'), 'POST', {
+        body: 'New comment via shim.',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.body).toBe('New comment via shim.');
+      expect(data.user.login).toBe(testDid);
+      expect(data.issue_url).toContain('/issues/1');
+      expect(data.author_association).toBe('OWNER');
+    });
+
+    it('should return 422 when body is missing', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'), 'POST', {});
+      expect(res.status).toBe(422);
+      const data = parse(res);
+      expect(data.message).toContain('body');
+    });
+
+    it('should return 404 for non-existent issue', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues/999/comments'), 'POST', {
+        body: 'Should fail.',
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // POST /repos/:did/:repo/pulls — create pull request
+  // =========================================================================
+
+  describe('POST /repos/:did/:repo/pulls', () => {
+    it('should create a pull request and return 201', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        title : 'New feature PR',
+        body  : 'Adds a new feature.',
+        base  : 'main',
+        head  : 'feat-new',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.title).toBe('New feature PR');
+      expect(data.body).toBe('Adds a new feature.');
+      expect(data.state).toBe('open');
+      expect(data.merged).toBe(false);
+      expect(data.base.ref).toBe('main');
+      expect(data.head.ref).toBe('feat-new');
+      expect(data.number).toBeGreaterThanOrEqual(3);
+    });
+
+    it('should default base to main when not specified', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        title: 'Default base PR',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.base.ref).toBe('main');
+    });
+
+    it('should return 422 when title is missing', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        body: 'Missing title.',
+      });
+      expect(res.status).toBe(422);
+      const data = parse(res);
+      expect(data.message).toContain('title');
+    });
+  });
+
+  // =========================================================================
+  // PATCH /repos/:did/:repo/pulls/:number — update pull request
+  // =========================================================================
+
+  describe('PATCH /repos/:did/:repo/pulls/:number', () => {
+    it('should update the title of a pull request', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+        title: 'Add feature X (updated)',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.title).toBe('Add feature X (updated)');
+      expect(data.number).toBe(1);
+    });
+
+    it('should close a pull request by setting state=closed', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+        state: 'closed',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.state).toBe('closed');
+      expect(data.merged).toBe(false);
+    });
+
+    it('should reopen a pull request by setting state=open', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+        state: 'open',
+      });
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.state).toBe('open');
+    });
+
+    it('should return 404 for non-existent pull number', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/999'), 'PATCH', {
+        title: 'Nope',
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // PUT /repos/:did/:repo/pulls/:number/merge — merge pull request
+  // =========================================================================
+
+  describe('PUT /repos/:did/:repo/pulls/:number/merge', () => {
+    it('should merge an open pull request', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'PUT', {});
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.merged).toBe(true);
+      expect(data.message).toContain('merged');
+    });
+
+    it('should return 405 when trying to merge an already merged pull', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'PUT', {});
+      expect(res.status).toBe(405);
+      const data = parse(res);
+      expect(data.message).toContain('already merged');
+    });
+
+    it('should verify the pull is now merged via GET', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      expect(data.state).toBe('closed');
+      expect(data.merged).toBe(true);
+      expect(data.merged_at).not.toBeNull();
+    });
+
+    it('should return 404 for non-existent pull', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/999/merge'), 'PUT', {});
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // POST /repos/:did/:repo/pulls/:number/reviews — create review
+  // =========================================================================
+
+  describe('POST /repos/:did/:repo/pulls/:number/reviews', () => {
+    // Use a pull that was created in the POST /pulls tests (number >= 3).
+    // We query to find a valid open pull number first.
+    it('should create a review with APPROVE event', async () => {
+      // Create a fresh PR to review.
+      const createRes = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        title : 'PR for review test',
+        head  : 'review-branch',
+      });
+      expect(createRes.status).toBe(201);
+      const pr = parse(createRes);
+
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${pr.number}/reviews`), 'POST', {
+        body  : 'Ship it!',
+        event : 'APPROVE',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.body).toBe('Ship it!');
+      expect(data.state).toBe('APPROVED');
+      expect(data.user.login).toBe(testDid);
+    });
+
+    it('should create a review with REQUEST_CHANGES event', async () => {
+      const createRes = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        title : 'PR for changes review',
+        head  : 'changes-branch',
+      });
+      const pr = parse(createRes);
+
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${pr.number}/reviews`), 'POST', {
+        body  : 'Needs work.',
+        event : 'REQUEST_CHANGES',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.state).toBe('CHANGES_REQUESTED');
+    });
+
+    it('should default to COMMENTED when no event is specified', async () => {
+      const createRes = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
+        title : 'PR for comment review',
+        head  : 'comment-branch',
+      });
+      const pr = parse(createRes);
+
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${pr.number}/reviews`), 'POST', {
+        body: 'Just a thought.',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.state).toBe('COMMENTED');
+    });
+
+    it('should return 404 for non-existent pull', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/999/reviews'), 'POST', {
+        body  : 'Should fail.',
+        event : 'COMMENT',
+      });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // =========================================================================
+  // POST /repos/:did/:repo/releases — create release
+  // =========================================================================
+
+  describe('POST /repos/:did/:repo/releases', () => {
+    it('should create a release and return 201', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'), 'POST', {
+        tag_name : 'v3.0.0',
+        name     : 'Version 3.0.0',
+        body     : 'Major release.',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.tag_name).toBe('v3.0.0');
+      expect(data.name).toBe('Version 3.0.0');
+      expect(data.body).toBe('Major release.');
+      expect(data.draft).toBe(false);
+      expect(data.prerelease).toBe(false);
+      expect(data.author.login).toBe(testDid);
+    });
+
+    it('should create a prerelease', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'), 'POST', {
+        tag_name   : 'v4.0.0-alpha',
+        name       : 'Alpha',
+        body       : 'Alpha build.',
+        prerelease : true,
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.tag_name).toBe('v4.0.0-alpha');
+      expect(data.prerelease).toBe(true);
+    });
+
+    it('should create a draft release', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'), 'POST', {
+        tag_name : 'v5.0.0-draft',
+        name     : 'Draft Release',
+        draft    : true,
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.draft).toBe(true);
+    });
+
+    it('should use tag_name as name when name is omitted', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'), 'POST', {
+        tag_name: 'v6.0.0',
+      });
+      expect(res.status).toBe(201);
+      const data = parse(res);
+      expect(data.name).toBe('v6.0.0');
+    });
+
+    it('should return 422 when tag_name is missing', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'), 'POST', {
+        name: 'No tag',
+      });
+      expect(res.status).toBe(422);
+      const data = parse(res);
+      expect(data.message).toContain('tag_name');
+    });
+
+    it('should be visible in the releases list after creation', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/releases'));
+      expect(res.status).toBe(200);
+      const data = parse(res);
+      const v3 = data.find((r: any) => r.tag_name === 'v3.0.0');
+      expect(v3).toBeDefined();
+      expect(v3.name).toBe('Version 3.0.0');
+    });
+  });
+
+  // =========================================================================
+  // Method not allowed
+  // =========================================================================
+
+  describe('method not allowed', () => {
+    it('should return 405 for POST on /repos/:did/:repo', async () => {
+      const res = await handleShimRequest(ctx, repoUrl(''), 'POST', {});
+      expect(res.status).toBe(405);
+    });
+
+    it('should return 405 for DELETE on /repos/:did/:repo/issues', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/issues'), 'DELETE', {});
+      expect(res.status).toBe(405);
+    });
+
+    it('should return 405 for POST on /users/:did', async () => {
+      const res = await handleShimRequest(ctx, url(`/users/${testDid}`), 'POST', {});
+      expect(res.status).toBe(405);
+    });
+
+    it('should return 405 for GET on /pulls/:number/merge', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'GET', {});
+      expect(res.status).toBe(405);
+    });
+  });
 });

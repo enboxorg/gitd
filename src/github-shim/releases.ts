@@ -4,8 +4,9 @@
  * Maps DWN release records to GitHub REST API v3 release responses.
  *
  * Endpoints:
- *   GET /repos/:did/:repo/releases            List releases
- *   GET /repos/:did/:repo/releases/tags/:tag  Release by tag name
+ *   GET  /repos/:did/:repo/releases            List releases
+ *   GET  /repos/:did/:repo/releases/tags/:tag  Release by tag name
+ *   POST /repos/:did/:repo/releases            Create release
  *
  * @module
  */
@@ -21,8 +22,10 @@ import {
   buildOwner,
   fromOpt,
   getRepoRecord,
+  jsonCreated,
   jsonNotFound,
   jsonOk,
+  jsonValidationError,
   numericId,
   paginate,
   parsePagination,
@@ -135,4 +138,48 @@ export async function handleGetReleaseByTag(
   const tags = (rec.tags as Record<string, unknown> | undefined) ?? {};
 
   return jsonOk(buildReleaseResponse(rec, data, tags, targetDid, repoName, baseUrl));
+}
+
+// ---------------------------------------------------------------------------
+// POST /repos/:did/:repo/releases — create release
+// ---------------------------------------------------------------------------
+
+export async function handleCreateRelease(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const tagName = reqBody.tag_name as string | undefined;
+  if (!tagName) {
+    return jsonValidationError('Validation Failed: tag_name is required.');
+  }
+
+  const name = (reqBody.name as string) ?? tagName;
+  const body = (reqBody.body as string) ?? '';
+  const baseUrl = buildApiUrl(url);
+
+  const tags: Record<string, unknown> = { tagName };
+  if (reqBody.target_commitish) { tags.commitSha = reqBody.target_commitish; }
+  if (reqBody.prerelease === true) { tags.prerelease = true; }
+  if (reqBody.draft === true) { tags.draft = true; }
+
+  const { status, record } = await ctx.releases.records.create('repo/release' as any, {
+    data            : { name, body },
+    tags,
+    parentContextId : repo.contextId,
+  } as any);
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to create release: ${status.detail}`);
+  }
+
+  const recTags = (record.tags as Record<string, unknown> | undefined) ?? {};
+  const data = await record.data.json();
+  const release = buildReleaseResponse(record, data, recTags, targetDid, repoName, baseUrl);
+
+  return jsonCreated(release);
 }

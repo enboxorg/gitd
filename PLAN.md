@@ -1368,7 +1368,7 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 - [x] **Web UI**: read-only repo/issue/PR viewer
 - [ ] **VS Code extension**: native IDE integration (separate repo, post-stabilization)
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
-- [x] **GitHub API compatibility shim**: read-only Phase 1 (10 endpoints)
+- [x] **GitHub API compatibility shim**: read + write (18 endpoints — 10 GET, 8 POST/PATCH/PUT)
 - [x] **Package manager shims**: npm registry proxy, Go module proxy, OCI/Docker registry proxy — 56 tests, 122 assertions
 
 ---
@@ -1484,7 +1484,7 @@ dwn-git/
     ├── ref-sync.spec.ts        # Ref sync tests
     ├── verify.spec.ts          # Signature verification tests
     ├── credential-helper.spec.ts # Credential helper tests
-    ├── github-shim.spec.ts     # GitHub API shim tests (56 tests)
+    ├── github-shim.spec.ts     # GitHub API shim tests (92 tests)
     ├── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
     └── shims.spec.ts           # Package manager shim tests (56 tests)
 ```

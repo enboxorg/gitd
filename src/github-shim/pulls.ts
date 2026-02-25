@@ -4,9 +4,13 @@
  * Maps DWN patch records to GitHub REST API v3 pull request responses.
  *
  * Endpoints:
- *   GET /repos/:did/:repo/pulls               List pull requests
- *   GET /repos/:did/:repo/pulls/:number       Pull request detail
- *   GET /repos/:did/:repo/pulls/:number/reviews  Pull request reviews
+ *   GET   /repos/:did/:repo/pulls                    List pull requests
+ *   GET   /repos/:did/:repo/pulls/:number            Pull request detail
+ *   GET   /repos/:did/:repo/pulls/:number/reviews    Pull request reviews
+ *   POST  /repos/:did/:repo/pulls                    Create pull request
+ *   PATCH /repos/:did/:repo/pulls/:number            Update pull request
+ *   PUT   /repos/:did/:repo/pulls/:number/merge      Merge pull request
+ *   POST  /repos/:did/:repo/pulls/:number/reviews    Create review
  *
  * Status mapping:
  *   - `open`   -> state: "open"
@@ -26,9 +30,13 @@ import {
   buildLinkHeader,
   buildOwner,
   fromOpt,
+  getNextPatchNumber,
   getRepoRecord,
+  jsonCreated,
+  jsonMethodNotAllowed,
   jsonNotFound,
   jsonOk,
+  jsonValidationError,
   numericId,
   paginate,
   parsePagination,
@@ -266,4 +274,227 @@ export async function handleListPullReviews(
   if (linkHeader) { extraHeaders['Link'] = linkHeader; }
 
   return jsonOk(items, extraHeaders);
+}
+
+// ---------------------------------------------------------------------------
+// POST /repos/:did/:repo/pulls — create pull request
+// ---------------------------------------------------------------------------
+
+export async function handleCreatePull(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const title = reqBody.title as string | undefined;
+  if (!title) {
+    return jsonValidationError('Validation Failed: title is required.');
+  }
+
+  const body = (reqBody.body as string) ?? '';
+  const baseBranch = (reqBody.base as string) ?? 'main';
+  const headBranch = (reqBody.head as string) ?? '';
+  const baseUrl = buildApiUrl(url);
+  const number = await getNextPatchNumber(ctx, repo.contextId);
+
+  const tags: Record<string, string> = {
+    status : 'open',
+    baseBranch,
+    number : String(number),
+  };
+  if (headBranch) { tags.headBranch = headBranch; }
+
+  const { status, record } = await ctx.patches.records.create('repo/patch', {
+    data            : { title, body, number },
+    tags,
+    parentContextId : repo.contextId,
+  });
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to create pull request: ${status.detail}`);
+  }
+
+  const recTags = (record.tags as Record<string, string> | undefined) ?? {};
+  const data = await record.data.json();
+  const pr = buildPullResponse(record, data, recTags, targetDid, repoName, baseUrl);
+
+  return jsonCreated(pr);
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /repos/:did/:repo/pulls/:number — update pull request
+// ---------------------------------------------------------------------------
+
+export async function handleUpdatePull(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  number: string, reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const baseUrl = buildApiUrl(url);
+
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    filter: { contextId: repo.contextId, tags: { number } },
+  });
+
+  if (records.length === 0) {
+    return jsonNotFound(`Pull request #${number} not found.`);
+  }
+
+  const rec = records[0];
+  const data = await rec.data.json();
+  const tags = (rec.tags as Record<string, string> | undefined) ?? {};
+
+  // Apply updates.
+  const newTitle = (reqBody.title as string | undefined) ?? data.title;
+  const newBody = (reqBody.body as string | undefined) ?? data.body;
+  const newBase = (reqBody.base as string | undefined) ?? tags.baseBranch;
+
+  // GitHub API uses "state" (open/closed), DWN uses "status" tag.
+  let newStatus = tags.status ?? 'open';
+  if (reqBody.state === 'closed') { newStatus = 'closed'; }
+  if (reqBody.state === 'open') { newStatus = 'open'; }
+
+  const newTags: Record<string, string> = { ...tags, status: newStatus };
+  if (newBase) { newTags.baseBranch = newBase; }
+
+  const { status } = await rec.update({
+    data : { title: newTitle, body: newBody, number: data.number },
+    tags : newTags,
+  });
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to update pull request: ${status.detail}`);
+  }
+
+  const updatedData = { title: newTitle, body: newBody, number: data.number };
+  const pr = buildPullResponse(rec, updatedData, newTags, targetDid, repoName, baseUrl);
+
+  return jsonOk(pr);
+}
+
+// ---------------------------------------------------------------------------
+// PUT /repos/:did/:repo/pulls/:number/merge — merge pull request
+// ---------------------------------------------------------------------------
+
+export async function handleMergePull(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  number: string, reqBody: Record<string, unknown>, _url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    filter: { contextId: repo.contextId, tags: { number } },
+  });
+
+  if (records.length === 0) {
+    return jsonNotFound(`Pull request #${number} not found.`);
+  }
+
+  const rec = records[0];
+  const data = await rec.data.json();
+  const tags = (rec.tags as Record<string, string> | undefined) ?? {};
+
+  if (tags.status === 'merged') {
+    return jsonMethodNotAllowed(`Pull request #${number} is already merged.`);
+  }
+
+  if (tags.status === 'closed') {
+    return jsonMethodNotAllowed(`Pull request #${number} is closed. Reopen it before merging.`);
+  }
+
+  // Update the patch status to merged.
+  const mergeStrategy = (reqBody.merge_method as string) ?? 'merge';
+
+  const { status } = await rec.update({
+    data : data,
+    tags : { ...tags, status: 'merged' },
+  });
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to merge pull request: ${status.detail}`);
+  }
+
+  // Create a merge result record.
+  await ctx.patches.records.create('repo/patch/mergeResult' as any, {
+    data            : { mergedBy: ctx.did },
+    tags            : { mergeCommit: 'pending', strategy: mergeStrategy },
+    parentContextId : rec.contextId,
+  } as any);
+
+  // GitHub returns a merge result object.
+  return jsonOk({
+    sha     : '0000000000000000000000000000000000000000',
+    merged  : true,
+    message : `Pull request #${number} merged successfully.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// POST /repos/:did/:repo/pulls/:number/reviews — create review
+// ---------------------------------------------------------------------------
+
+export async function handleCreatePullReview(
+  ctx: AgentContext, targetDid: string, repoName: string,
+  number: string, reqBody: Record<string, unknown>, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const baseUrl = buildApiUrl(url);
+
+  // Find the patch.
+  const { records: patches } = await ctx.patches.records.query('repo/patch', {
+    filter: { contextId: repo.contextId, tags: { number } },
+  });
+
+  if (patches.length === 0) {
+    return jsonNotFound(`Pull request #${number} not found.`);
+  }
+
+  const patchRec = patches[0];
+  const reviewBody = (reqBody.body as string) ?? '';
+
+  // GitHub API uses "event" field: APPROVE, REQUEST_CHANGES, COMMENT.
+  // Map to DWN verdict tags.
+  const event = (reqBody.event as string | undefined)?.toUpperCase() ?? 'COMMENT';
+  let verdict = 'comment';
+  if (event === 'APPROVE') { verdict = 'approve'; }
+  if (event === 'REQUEST_CHANGES') { verdict = 'reject'; }
+
+  const { status, record: reviewRec } = await ctx.patches.records.create('repo/patch/review' as any, {
+    data            : { body: reviewBody },
+    tags            : { verdict },
+    parentContextId : patchRec.contextId,
+  } as any);
+
+  if (status.code >= 300) {
+    return jsonValidationError(`Failed to create review: ${status.detail}`);
+  }
+
+  const owner = buildOwner(targetDid, baseUrl);
+
+  return jsonCreated({
+    id                 : numericId(reviewRec.id ?? ''),
+    node_id            : reviewRec.id ?? '',
+    user               : owner,
+    body               : reviewBody,
+    state              : VERDICT_MAP[verdict] ?? 'COMMENTED',
+    html_url           : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}#pullrequestreview-${numericId(reviewRec.id ?? '')}`,
+    pull_request_url   : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}`,
+    submitted_at       : toISODate(reviewRec.dateCreated),
+    commit_id          : '',
+    author_association : 'OWNER',
+  });
 }
