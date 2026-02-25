@@ -10,6 +10,7 @@
 import type { AgentContext } from '../agent.js';
 
 import { flagValue } from '../flags.js';
+import { getDwnEndpoints } from '../../git-server/did-service.js';
 import { GitBackend } from '../../git-server/git-backend.js';
 
 // ---------------------------------------------------------------------------
@@ -21,9 +22,10 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const description = flagValue(args, '--description') ?? flagValue(args, '-d');
   const branch = flagValue(args, '--branch') ?? flagValue(args, '-b') ?? 'main';
   const reposPath = flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
+  const dwnEndpointFlag = flagValue(args, '--dwn-endpoint') ?? process.env.GITD_DWN_ENDPOINT;
 
   if (!name) {
-    console.error('Usage: gitd init <name> [--description <text>] [--branch <name>] [--repos <path>]');
+    console.error('Usage: gitd init <name> [--description <text>] [--branch <name>] [--repos <path>] [--dwn-endpoint <url>]');
     process.exit(1);
   }
 
@@ -40,13 +42,18 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const backend = new GitBackend({ basePath: reposPath });
   const gitPath = await backend.initRepo(ctx.did, name);
 
+  // Resolve DWN endpoints: explicit flag > env > DID document > empty.
+  const dwnEndpoints = dwnEndpointFlag
+    ? [dwnEndpointFlag]
+    : getDwnEndpoints(ctx.web5);
+
   // Create the DWN repo record.
   const { status, record } = await ctx.repo.records.create('repo', {
     data: {
       name,
       description   : description ?? '',
       defaultBranch : branch,
-      dwnEndpoints  : [],
+      dwnEndpoints,
     },
     tags: {
       name,

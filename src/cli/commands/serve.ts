@@ -30,9 +30,13 @@ import { createGitServer } from '../../git-server/server.js';
 import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
-import { registerGitService } from '../../git-server/did-service.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
 import { flagValue, parsePort } from '../flags.js';
+import {
+  getDwnEndpoints,
+  registerGitService,
+  startDidRepublisher,
+} from '../../git-server/did-service.js';
 
 // ---------------------------------------------------------------------------
 // Command
@@ -124,23 +128,45 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     try {
       await registerGitService(ctx.web5, publicUrl);
       console.log(`Registered GitTransport service: ${publicUrl}`);
-
-      // Update ALL repo records with the git endpoint.
-      const { records } = await ctx.repo.records.query('repo');
-      for (const record of records) {
-        const data = await record.data.json();
-        const gitEndpoints = data.gitEndpoints ?? [];
-        if (!gitEndpoints.includes(publicUrl)) {
-          gitEndpoints.push(publicUrl);
-          await record.update({
-            data: { ...data, gitEndpoints },
-          });
-        }
-      }
     } catch (err) {
       console.warn(`Warning: Could not register git service: ${(err as Error).message}`);
     }
   }
+
+  // Ensure all repo records have up-to-date DWN and git endpoints.
+  const dwnEndpoints = getDwnEndpoints(ctx.web5);
+  const { records: allRepos } = await ctx.repo.records.query('repo');
+  for (const record of allRepos) {
+    const data = await record.data.json();
+    let updated = false;
+
+    // Populate dwnEndpoints from DID document if missing.
+    const currentDwn: string[] = data.dwnEndpoints ?? [];
+    for (const ep of dwnEndpoints) {
+      if (!currentDwn.includes(ep)) {
+        currentDwn.push(ep);
+        updated = true;
+      }
+    }
+
+    // Populate gitEndpoints from --public-url if provided.
+    if (publicUrl) {
+      const currentGit: string[] = data.gitEndpoints ?? [];
+      if (!currentGit.includes(publicUrl)) {
+        currentGit.push(publicUrl);
+        data.gitEndpoints = currentGit;
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      data.dwnEndpoints = currentDwn;
+      await record.update({ data });
+    }
+  }
+
+  // Keep the DID document alive on the DHT network.
+  const stopRepublisher = startDidRepublisher(ctx.web5);
 
   console.log(`gitd server listening on port ${server.port}`);
   console.log(`  DID:     ${ctx.did}`);
@@ -163,6 +189,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   await new Promise<void>(() => {
     process.on('SIGINT', async () => {
       console.log('\nShutting down...');
+      stopRepublisher();
       await server.stop();
       process.exit(0);
     });
