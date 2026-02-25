@@ -17,6 +17,7 @@ import type { ProviderAuthParams, RegistrationTokenData, TypedWeb5 } from '@enbo
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
+import { DwnRegistrar } from '@enbox/dwn-clients';
 import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
 
@@ -183,6 +184,130 @@ async function handleProviderAuth(
 }
 
 // ---------------------------------------------------------------------------
+// DWN registration (profile mode)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the DWN service endpoints from the agent's DID document.
+ * Returns the endpoint URLs or an empty array if none exist.
+ */
+function agentDwnEndpoints(agent: Web5UserAgent): string[] {
+  const services = agent.agentDid.document.service ?? [];
+  for (const svc of services) {
+    if (svc.type === 'DecentralizedWebNode') {
+      if (Array.isArray(svc.serviceEndpoint)) {
+        return svc.serviceEndpoint as string[];
+      }
+      if (typeof svc.serviceEndpoint === 'string') {
+        return [svc.serviceEndpoint];
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Perform DWN tenant registration for the profile path.
+ *
+ * The `@enbox/api` SDK only processes the `registration` option inside
+ * `if (agent === undefined)`.  When an explicit agent is passed (profile
+ * mode), the SDK silently skips registration.  So we handle it ourselves.
+ */
+async function registerWithDwnServers(
+  agent: Web5UserAgent,
+  connectedDid: string,
+  dataPath: string,
+): Promise<void> {
+  const dwnEndpoints = agentDwnEndpoints(agent);
+  if (dwnEndpoints.length === 0) { return; }
+
+  const cachedTokens = loadRegistrationTokens(dataPath);
+  const updatedTokens: Record<string, RegistrationTokenData> = { ...cachedTokens };
+  const didsToRegister = [agent.agentDid.uri, connectedDid]
+    .filter((did, i, arr): did is string => arr.indexOf(did) === i);
+
+  for (const dwnEndpoint of dwnEndpoints) {
+    try {
+      const serverInfo = await agent.rpc.getServerInfo(dwnEndpoint);
+      if (serverInfo.registrationRequirements.length === 0) { continue; }
+
+      const hasProviderAuth = serverInfo.registrationRequirements.includes('provider-auth-v0')
+        && serverInfo.providerAuth !== undefined;
+
+      if (hasProviderAuth) {
+        let tokenData: RegistrationTokenData | undefined = updatedTokens[dwnEndpoint];
+
+        // Refresh expired tokens.
+        if (tokenData?.expiresAt !== undefined && tokenData.expiresAt < Date.now()) {
+          if (tokenData.refreshUrl && tokenData.refreshToken) {
+            const refreshed = await DwnRegistrar.refreshRegistrationToken(
+              tokenData.refreshUrl, tokenData.refreshToken,
+            );
+            tokenData = {
+              registrationToken : refreshed.registrationToken,
+              refreshToken      : refreshed.refreshToken,
+              expiresAt         : refreshed.expiresIn !== undefined
+                ? Date.now() + (refreshed.expiresIn * 1000) : undefined,
+              tokenUrl   : tokenData.tokenUrl,
+              refreshUrl : tokenData.refreshUrl,
+            };
+            updatedTokens[dwnEndpoint] = tokenData;
+          } else {
+            tokenData = undefined;
+          }
+        }
+
+        // Run the auth flow if no valid token exists.
+        if (tokenData === undefined) {
+          const state = crypto.randomUUID();
+          const providerAuth = serverInfo.providerAuth!;
+          const separator = providerAuth.authorizeUrl.includes('?') ? '&' : '?';
+          const authorizeUrl = `${providerAuth.authorizeUrl}${separator}`
+            + `redirect_uri=${encodeURIComponent(dwnEndpoint)}`
+            + `&state=${encodeURIComponent(state)}`;
+
+          const authResult = await handleProviderAuth({ authorizeUrl, dwnEndpoint, state });
+
+          if (authResult.state !== state) {
+            throw new Error('Provider auth state mismatch — possible CSRF attack.');
+          }
+
+          const tokenResponse = await DwnRegistrar.exchangeAuthCode(
+            providerAuth.tokenUrl, authResult.code, dwnEndpoint,
+          );
+
+          tokenData = {
+            registrationToken : tokenResponse.registrationToken,
+            refreshToken      : tokenResponse.refreshToken,
+            expiresAt         : tokenResponse.expiresIn !== undefined
+              ? Date.now() + (tokenResponse.expiresIn * 1000) : undefined,
+            tokenUrl   : providerAuth.tokenUrl,
+            refreshUrl : providerAuth.refreshUrl,
+          };
+          updatedTokens[dwnEndpoint] = tokenData;
+        }
+
+        for (const did of didsToRegister) {
+          await DwnRegistrar.registerTenantWithToken(
+            dwnEndpoint, did, tokenData.registrationToken,
+          );
+        }
+      } else {
+        // PoW registration path.
+        for (const did of didsToRegister) {
+          await DwnRegistrar.registerTenant(dwnEndpoint, did);
+        }
+      }
+    } catch (err) {
+      console.error(`[dwn-registration] ${dwnEndpoint}: ${(err as Error).message}`);
+    }
+  }
+
+  // Persist tokens if anything changed.
+  saveRegistrationTokens(dataPath, updatedTokens);
+}
+
+// ---------------------------------------------------------------------------
 // Agent bootstrap
 // ---------------------------------------------------------------------------
 
@@ -237,60 +362,23 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
       });
     }
 
-    // Build the registration option so the SDK handles both PoW and
-    // provider-auth-v0 servers automatically.  Tokens are cached on disk
-    // so that re-auth only happens when they expire.
-    const cachedTokens = loadRegistrationTokens(dataPath);
-    let registrationOk = false;
+    // The SDK ignores the `registration` option when an explicit agent is
+    // passed — it only runs registration inside `if (agent === undefined)`.
+    // So we handle registration ourselves before calling Web5.connect().
+    await registerWithDwnServers(agent, identity.did.uri, dataPath);
 
     const result = await Web5.connect({
       agent,
-      connectedDid : identity.did.uri,
+      connectedDid: identity.did.uri,
       sync,
-      registration : {
-        registrationTokens     : cachedTokens,
-        onProviderAuthRequired : handleProviderAuth,
-        onRegistrationTokens(tokens): void {
-          saveRegistrationTokens(dataPath, tokens);
-        },
-        onSuccess(): void { registrationOk = true; },
-        onFailure(error): void {
-          // Log but don't throw — the agent can still function locally
-          // even if DWN registration fails (sync will fail later).
-          console.error('[dwn-registration] failed:', error);
-        },
-      },
     });
-
-    if (registrationOk) {
-      // Silently note success — useful when debugging sync issues.
-      // console.log('[dwn-registration] ok');
-    }
 
     return bindProtocols(result.web5, result.did, recoveryPhrase);
   }
 
   // Legacy: let Web5.connect() manage the agent (uses CWD-relative path).
-  // Still wire up provider-auth so legacy setups can register with
-  // provider-auth-v0 DWN servers.
-  const legacyDataPath = join(process.cwd(), 'DATA', 'AGENT');
-  const legacyCachedTokens = loadRegistrationTokens(legacyDataPath);
-
-  const result = await Web5.connect({
-    password,
-    sync,
-    registration: {
-      registrationTokens     : legacyCachedTokens,
-      onProviderAuthRequired : handleProviderAuth,
-      onRegistrationTokens(tokens): void {
-        saveRegistrationTokens(legacyDataPath, tokens);
-      },
-      onSuccess(): void { /* ok */ },
-      onFailure(error): void {
-        console.error('[dwn-registration] failed:', error);
-      },
-    },
-  });
+  // The SDK handles registration internally in this path.
+  const result = await Web5.connect({ password, sync });
 
   if (result.recoveryPhrase) {
     console.log('');
