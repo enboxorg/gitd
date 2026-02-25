@@ -21,7 +21,7 @@ export const ociAdapter: ShimAdapter = {
   id          : 'oci',
   name        : 'OCI/Docker registry',
   defaultPort : 5555,
-  portEnvVar  : 'DWN_GIT_OCI_SHIM_PORT',
+  portEnvVar  : 'GITD_OCI_SHIM_PORT',
   corsMethods : 'GET, HEAD, OPTIONS',
   corsHeaders : 'Authorization, Accept, Docker-Distribution-Api-Version',
   usageHint   : 'docker pull localhost:{port}/did:dht:<id>/<image>:<tag>',

@@ -236,10 +236,10 @@ describe('GitHub shim — Bearer token auth', () => {
     expect(result.status).not.toBe(401);
   });
 
-  it('should reject write requests when DWN_GIT_API_TOKEN is set but no token provided', async () => {
-    const originalToken = process.env.DWN_GIT_API_TOKEN;
+  it('should reject write requests when GITD_API_TOKEN is set but no token provided', async () => {
+    const originalToken = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'test-secret-token';
+      process.env.GITD_API_TOKEN = 'test-secret-token';
       const mockCtx = {} as any;
       const url = new URL('/repos/did:dht:abc/repo/issues', 'http://localhost:8181');
       const result = await handleShimRequest(mockCtx, url, 'POST', { title: 'test' }, null);
@@ -247,114 +247,114 @@ describe('GitHub shim — Bearer token auth', () => {
       expect(result.body).toContain('Bearer token required');
     } finally {
       if (originalToken !== undefined) {
-        process.env.DWN_GIT_API_TOKEN = originalToken;
+        process.env.GITD_API_TOKEN = originalToken;
       } else {
-        delete process.env.DWN_GIT_API_TOKEN;
+        delete process.env.GITD_API_TOKEN;
       }
     }
   });
 
   it('should reject write requests with wrong Bearer token', async () => {
-    const originalToken = process.env.DWN_GIT_API_TOKEN;
+    const originalToken = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'test-secret-token';
+      process.env.GITD_API_TOKEN = 'test-secret-token';
       const mockCtx = {} as any;
       const url = new URL('/repos/did:dht:abc/repo/issues', 'http://localhost:8181');
       const result = await handleShimRequest(mockCtx, url, 'POST', { title: 'test' }, 'Bearer wrong-token');
       expect(result.status).toBe(401);
     } finally {
       if (originalToken !== undefined) {
-        process.env.DWN_GIT_API_TOKEN = originalToken;
+        process.env.GITD_API_TOKEN = originalToken;
       } else {
-        delete process.env.DWN_GIT_API_TOKEN;
+        delete process.env.GITD_API_TOKEN;
       }
     }
   });
 
-  it('should allow write requests when no DWN_GIT_API_TOKEN is configured', async () => {
-    const originalToken = process.env.DWN_GIT_API_TOKEN;
+  it('should allow write requests when no GITD_API_TOKEN is configured', async () => {
+    const originalToken = process.env.GITD_API_TOKEN;
     try {
-      delete process.env.DWN_GIT_API_TOKEN;
+      delete process.env.GITD_API_TOKEN;
       const mockCtx = {} as any;
       const url = new URL('/repos/did:dht:abc/repo/issues', 'http://localhost:8181');
-      // Without DWN_GIT_API_TOKEN, auth passes — but the handler will fail later
+      // Without GITD_API_TOKEN, auth passes — but the handler will fail later
       // (no real agent). We just verify it's NOT 401.
       const result = await handleShimRequest(mockCtx, url, 'POST', { title: 'test' }, null);
       expect(result.status).not.toBe(401);
     } finally {
       if (originalToken !== undefined) {
-        process.env.DWN_GIT_API_TOKEN = originalToken;
+        process.env.GITD_API_TOKEN = originalToken;
       } else {
-        delete process.env.DWN_GIT_API_TOKEN;
+        delete process.env.GITD_API_TOKEN;
       }
     }
   });
 });
 
 describe('validateBearerToken', () => {
-  it('should return true when no DWN_GIT_API_TOKEN is set', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+  it('should return true when no GITD_API_TOKEN is set', () => {
+    const original = process.env.GITD_API_TOKEN;
     try {
-      delete process.env.DWN_GIT_API_TOKEN;
+      delete process.env.GITD_API_TOKEN;
       expect(validateBearerToken(null)).toBe(true);
       expect(validateBearerToken('Bearer anything')).toBe(true);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
     }
   });
 
   it('should reject null header when token is required', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+    const original = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'secret';
+      process.env.GITD_API_TOKEN = 'secret';
       expect(validateBearerToken(null)).toBe(false);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
-      else { delete process.env.DWN_GIT_API_TOKEN; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
+      else { delete process.env.GITD_API_TOKEN; }
     }
   });
 
   it('should reject non-Bearer auth', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+    const original = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'secret';
+      process.env.GITD_API_TOKEN = 'secret';
       expect(validateBearerToken('Basic base64stuff')).toBe(false);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
-      else { delete process.env.DWN_GIT_API_TOKEN; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
+      else { delete process.env.GITD_API_TOKEN; }
     }
   });
 
   it('should accept correct Bearer token', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+    const original = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'my-secret';
+      process.env.GITD_API_TOKEN = 'my-secret';
       expect(validateBearerToken('Bearer my-secret')).toBe(true);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
-      else { delete process.env.DWN_GIT_API_TOKEN; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
+      else { delete process.env.GITD_API_TOKEN; }
     }
   });
 
   it('should reject wrong Bearer token', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+    const original = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'my-secret';
+      process.env.GITD_API_TOKEN = 'my-secret';
       expect(validateBearerToken('Bearer wrong')).toBe(false);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
-      else { delete process.env.DWN_GIT_API_TOKEN; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
+      else { delete process.env.GITD_API_TOKEN; }
     }
   });
 
   it('should reject tokens of different length (timing attack protection)', () => {
-    const original = process.env.DWN_GIT_API_TOKEN;
+    const original = process.env.GITD_API_TOKEN;
     try {
-      process.env.DWN_GIT_API_TOKEN = 'short';
+      process.env.GITD_API_TOKEN = 'short';
       expect(validateBearerToken('Bearer a-much-longer-token-string')).toBe(false);
     } finally {
-      if (original !== undefined) { process.env.DWN_GIT_API_TOKEN = original; }
-      else { delete process.env.DWN_GIT_API_TOKEN; }
+      if (original !== undefined) { process.env.GITD_API_TOKEN = original; }
+      else { delete process.env.GITD_API_TOKEN; }
     }
   });
 });

@@ -1,13 +1,13 @@
 /**
- * `dwn-git setup` — configure git to use DID-based remotes and push auth.
+ * `gitd setup` — configure git to use DID-based remotes and push auth.
  *
  * Creates symlinks for `git-remote-did` and `git-remote-did-credential` in
  * a directory on the user's PATH, and configures the git credential helper
  * for any host using the DID transport.
  *
- * Usage: dwn-git setup [--bin-dir <path>]
+ * Usage: gitd setup [--bin-dir <path>]
  *
- * The default bin directory is `~/.dwn-git/bin`. The command also ensures
+ * The default bin directory is `~/.gitd/bin`. The command also ensures
  * that directory is in the user's PATH (prints instructions if not).
  *
  * @module
@@ -23,7 +23,7 @@ import { flagValue } from '../flags.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_BIN_DIR = join(homedir(), '.dwn-git', 'bin');
+const DEFAULT_BIN_DIR = join(homedir(), '.gitd', 'bin');
 
 /** Binary names that must be on PATH for git DID transport to work. */
 const BINARIES = ['git-remote-did', 'git-remote-did-credential'] as const;
@@ -58,7 +58,7 @@ export async function setupCommand(args: string[]): Promise<void> {
 
     if (!existsSync(target)) {
       console.error(`Warning: source binary not found at ${target}`);
-      console.error('  Run `bun run build` first, or install @enbox/dwn-git globally.');
+      console.error('  Run `bun run build` first, or install @enbox/gitd globally.');
       continue;
     }
 
@@ -91,7 +91,7 @@ export async function setupCommand(args: string[]): Promise<void> {
   console.log('  git clone did::<did>/<repo>');
   console.log('');
   console.log('Or use the convenience wrapper:');
-  console.log('  dwn-git clone <did>/<repo>');
+  console.log('  gitd clone <did>/<repo>');
 }
 
 

@@ -13,10 +13,10 @@
  *
  * Usage in .gitconfig:
  *   [credential "https://git.example.com"]
- *     helper = /path/to/dwn-git-credential-helper
+ *     helper = /path/to/gitd-credential-helper
  *
  * Environment:
- *   DWN_GIT_PASSWORD — vault password for the local agent
+ *   GITD_PASSWORD — vault password for the local agent
  *
  * @module
  */

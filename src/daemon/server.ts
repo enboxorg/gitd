@@ -170,7 +170,7 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonInstanc
   await Promise.all(startPromises);
 
   // Print status summary.
-  console.log('[daemon] dwn-git daemon started');
+  console.log('[daemon] gitd daemon started');
   console.log('');
   for (const r of enabledAdapters) {
     const running = servers.has(r.adapter.id);

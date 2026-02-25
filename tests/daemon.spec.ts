@@ -255,7 +255,7 @@ describe('Unified daemon', () => {
         id          : 'maven',
         name        : 'Maven Central',
         defaultPort : 8082,
-        portEnvVar  : 'DWN_GIT_MAVEN_PORT',
+        portEnvVar  : 'GITD_MAVEN_PORT',
         async handle(): Promise<void> { /* noop */ },
       };
       const resolved = resolveConfig({}, [custom]);

@@ -23,7 +23,7 @@ export function layout(title: string, repoName: string, body: string, basePath: 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)} — ${esc(repoName)} — dwn-git</title>
+  <title>${esc(title)} — ${esc(repoName)} — gitd</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -62,7 +62,7 @@ export function layout(title: string, repoName: string, body: string, basePath: 
   <header>
     <div class="container">
       <a href="${base || '/'}" class="repo-name">${esc(repoName)}</a>
-      <span style="color:#8b949e;margin-left:8px">dwn-git</span>
+      <span style="color:#8b949e;margin-left:8px">gitd</span>
     </div>
   </header>
   <nav>

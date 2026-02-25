@@ -5,7 +5,7 @@
  * packages from DWN records.
  *
  * Usage:
- *   dwn-git shim npm [--port 4873]
+ *   gitd shim npm [--port 4873]
  *
  * Then:
  *   npm install --registry=http://localhost:4873 @did:dht:abc123/my-pkg

@@ -4,7 +4,7 @@
  * Maps the DWN singleton repo record to a GitHub REST API v3
  * repository response.  The `:repo` segment is validated against the
  * stored repo name but is otherwise informational — repos are singletons
- * per DID in dwn-git.
+ * per DID in gitd.
  *
  * @module
  */

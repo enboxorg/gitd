@@ -1,5 +1,5 @@
 /**
- * Integration tests for dwn-git forge protocols against a real in-memory DWN.
+ * Integration tests for gitd forge protocols against a real in-memory DWN.
  *
  * These tests validate that protocol definitions can be installed, records can
  * be written/queried/read/deleted, roles work correctly, and cross-protocol
@@ -111,7 +111,7 @@ async function queryRecords(
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe('dwn-git integration', () => {
+describe('gitd integration', () => {
   let dwn: Dwn;
   let messageStore: MessageStoreLevel;
   let dataStore: DataStoreLevel;

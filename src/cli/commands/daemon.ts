@@ -1,18 +1,18 @@
 /**
- * `dwn-git daemon` — start the unified shim daemon.
+ * `gitd daemon` — start the unified shim daemon.
  *
  * Starts all enabled ecosystem shims in a single process.  Each shim
  * runs on its own port and speaks the native protocol of its ecosystem
  * (GitHub REST API, npm registry, GOPROXY, OCI Distribution, etc.).
  *
  * Usage:
- *   dwn-git daemon                                Start all shims with defaults
- *   dwn-git daemon --config ./daemon.json         Use a config file
- *   dwn-git daemon --only github,npm              Only start specific shims
- *   dwn-git daemon --disable go,oci               Start all except specific shims
- *   dwn-git daemon --list                         List available shims and exit
+ *   gitd daemon                                Start all shims with defaults
+ *   gitd daemon --config ./daemon.json         Use a config file
+ *   gitd daemon --only github,npm              Only start specific shims
+ *   gitd daemon --disable go,oci               Start all except specific shims
+ *   gitd daemon --list                         List available shims and exit
  *
- * Config file format (dwn-git.daemon.json):
+ * Config file format (gitd.daemon.json):
  *   {
  *     "shims": {
  *       "github": { "enabled": true, "port": 8181 },
@@ -40,8 +40,8 @@ import { startDaemon } from '../../daemon/server.js';
 
 /** Default config file name searched in CWD. */
 const DEFAULT_CONFIG_FILES = [
-  'dwn-git.daemon.json',
-  '.dwn-git-daemon.json',
+  'gitd.daemon.json',
+  '.gitd-daemon.json',
 ];
 
 /**

@@ -25,7 +25,7 @@ import {
   ForgeWikiProtocol,
 } from '../src/index.js';
 
-describe('@enbox/dwn-git', () => {
+describe('@enbox/gitd', () => {
 
   // =========================================================================
   // ForgeRepoProtocol

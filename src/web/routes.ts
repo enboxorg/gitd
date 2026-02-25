@@ -51,7 +51,7 @@ async function getRepoRecord(ctx: AgentContext, targetDid: string): Promise<Repo
 }
 
 function repoName(repo: { name: string } | null): string {
-  return repo?.name ?? 'dwn-git';
+  return repo?.name ?? 'gitd';
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ export async function overviewPage(ctx: AgentContext, targetDid: string, basePat
   const repo = await getRepoRecord(ctx, targetDid);
 
   if (!repo) {
-    return layout('Overview', 'dwn-git', '<div class="card"><p class="empty">No repository found for this DID.</p></div>', basePath);
+    return layout('Overview', 'gitd', '<div class="card"><p class="empty">No repository found for this DID.</p></div>', basePath);
   }
 
   // Count issues.
@@ -127,7 +127,7 @@ export async function overviewPage(ctx: AgentContext, targetDid: string, basePat
 export async function issuesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
   const repo = await getRepoRecord(ctx, targetDid);
-  if (!repo) { return layout('Issues', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
+  if (!repo) { return layout('Issues', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
     from,
@@ -228,7 +228,7 @@ export async function issueDetailPage(
 export async function patchesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
   const repo = await getRepoRecord(ctx, targetDid);
-  if (!repo) { return layout('Patches', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
+  if (!repo) { return layout('Patches', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
     from,
@@ -339,7 +339,7 @@ export async function patchDetailPage(
 export async function releasesListPage(ctx: AgentContext, targetDid: string, basePath: string): Promise<string> {
   const from = fromOpt(ctx, targetDid);
   const repo = await getRepoRecord(ctx, targetDid);
-  if (!repo) { return layout('Releases', 'dwn-git', '<p class="empty">No repository found.</p>', basePath); }
+  if (!repo) { return layout('Releases', 'gitd', '<p class="empty">No repository found.</p>', basePath); }
 
   const { records } = await ctx.releases.records.query('repo/release' as any, {
     from,

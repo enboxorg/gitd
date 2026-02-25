@@ -151,7 +151,7 @@ export function createGitHttpHandler(
         if (!authorized) {
           return new Response('Unauthorized', {
             status  : 401,
-            headers : { 'WWW-Authenticate': 'Basic realm="dwn-git"' },
+            headers : { 'WWW-Authenticate': 'Basic realm="gitd"' },
           });
         }
       }
@@ -184,7 +184,7 @@ export function createGitHttpHandler(
         if (!authorized) {
           return new Response('Unauthorized', {
             status  : 401,
-            headers : { 'WWW-Authenticate': 'Basic realm="dwn-git"' },
+            headers : { 'WWW-Authenticate': 'Basic realm="gitd"' },
           });
         }
       }

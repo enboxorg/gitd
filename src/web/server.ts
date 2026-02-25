@@ -1,5 +1,5 @@
 /**
- * Read-only web UI server for dwn-git.
+ * Read-only web UI server for gitd.
  *
  * Serves HTML pages rendered from DWN records.  Supports viewing ANY
  * DWN-enabled git repo — the target DID is extracted from the URL path:
@@ -216,7 +216,7 @@ function landingPage(localDid: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>dwn-git — Decentralized Code Forge</title>
+  <title>gitd — Decentralized Code Forge</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -238,7 +238,7 @@ function landingPage(localDid: string): string {
 <body>
   <div class="container">
     <div class="card">
-      <h1>dwn-git</h1>
+      <h1>gitd</h1>
       <p>Browse any DWN-enabled git repository by entering a DID below.</p>
       <form onsubmit="location.href='/'+document.getElementById('did').value;return false">
         <input type="text" id="did" placeholder="did:dht:..." autocomplete="off">

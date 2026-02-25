@@ -1,5 +1,5 @@
 {
-  "name": "@enbox/dwn-git",
+  "name": "@enbox/gitd",
   "version": "0.0.1",
   "description": "Decentralized forge (GitHub alternative) built on DWN protocols",
   "type": "module",
@@ -7,7 +7,7 @@
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
-    "dwn-git": "./dist/esm/cli/main.js",
+    "gitd": "./dist/esm/cli/main.js",
     "git-remote-did": "./dist/esm/git-remote/main.js",
     "git-remote-did-credential": "./dist/esm/git-remote/credential-main.js"
   },

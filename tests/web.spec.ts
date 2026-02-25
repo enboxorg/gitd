@@ -56,7 +56,7 @@ function didUrl(subPath: string): URL {
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe('dwn-git web UI', () => {
+describe('gitd web UI', () => {
   let ctx: AgentContext;
 
   beforeAll(async () => {
@@ -185,7 +185,7 @@ describe('dwn-git web UI', () => {
     it('should return 200 with landing page', async () => {
       const res = await handleRequest(ctx, url('/'));
       expect(res.status).toBe(200);
-      expect(res.body).toContain('dwn-git');
+      expect(res.body).toContain('gitd');
       expect(res.body).toContain('Browse');
     });
 
@@ -467,7 +467,7 @@ describe('dwn-git web UI', () => {
       const res = await handleRequest(ctx, didUrl('/'));
       expect(res.body).toContain('<title>Overview');
       expect(res.body).toContain('test-repo');
-      expect(res.body).toContain('dwn-git</title>');
+      expect(res.body).toContain('gitd</title>');
     });
   });
 });

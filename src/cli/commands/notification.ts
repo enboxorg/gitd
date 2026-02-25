@@ -1,13 +1,13 @@
 /**
- * `dwn-git notification` — personal notification inbox.
+ * `gitd notification` — personal notification inbox.
  *
  * Notifications are private (`published: false`) and only the DWN owner
  * can read, mark as read, or delete them.
  *
  * Usage:
- *   dwn-git notification list [--unread]       List notifications
- *   dwn-git notification read <id>             Mark a notification as read
- *   dwn-git notification clear                 Delete all read notifications
+ *   gitd notification list [--unread]       List notifications
+ *   gitd notification read <id>             Mark a notification as read
+ *   gitd notification clear                 Delete all read notifications
  *
  * @module
  */
@@ -32,7 +32,7 @@ export async function notificationCommand(ctx: AgentContext, args: string[]): Pr
     case 'read': return notificationRead(ctx, rest);
     case 'clear': return notificationClear(ctx);
     default:
-      console.error('Usage: dwn-git notification <list|read|clear>');
+      console.error('Usage: gitd notification <list|read|clear>');
       process.exit(1);
   }
 }
@@ -89,7 +89,7 @@ async function notificationList(ctx: AgentContext, args: string[]): Promise<void
 async function notificationRead(ctx: AgentContext, args: string[]): Promise<void> {
   const id = args[0];
   if (!id) {
-    console.error('Usage: dwn-git notification read <id>');
+    console.error('Usage: gitd notification read <id>');
     process.exit(1);
   }
 

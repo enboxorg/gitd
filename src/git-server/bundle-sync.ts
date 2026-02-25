@@ -177,7 +177,7 @@ export function createBundleSyncer(options: BundleSyncOptions): OnPushComplete {
  * @returns Bundle metadata and file path
  */
 export async function createFullBundle(repoPath: string): Promise<BundleInfo> {
-  const bundlePath = join(tmpdir(), `dwn-git-bundle-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
+  const bundlePath = join(tmpdir(), `gitd-bundle-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
 
   await spawnChecked('git', ['bundle', 'create', bundlePath, '--all'], repoPath);
 
@@ -208,7 +208,7 @@ export async function createIncrementalBundle(
   repoPath: string,
   baseCommit: string,
 ): Promise<BundleInfo> {
-  const bundlePath = join(tmpdir(), `dwn-git-bundle-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
+  const bundlePath = join(tmpdir(), `gitd-bundle-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
 
   // `--all ^<base>` means: include all refs, exclude objects reachable from base.
   await spawnChecked('git', ['bundle', 'create', bundlePath, '--all', `^${baseCommit}`], repoPath);

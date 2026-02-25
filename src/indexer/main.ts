@@ -3,12 +3,12 @@
  * Indexer entry point — starts the crawler loop and REST API server.
  *
  * Usage:
- *   dwn-git indexer [--port <api-port>] [--interval <seconds>] [--seed <did>]
+ *   gitd indexer [--port <api-port>] [--interval <seconds>] [--seed <did>]
  *
  * Environment:
- *   DWN_GIT_PASSWORD       Vault password (prompted if not set)
- *   DWN_GIT_INDEXER_PORT   API port (default: 8090)
- *   DWN_GIT_INDEXER_INTERVAL  Crawl interval in seconds (default: 60)
+ *   GITD_PASSWORD       Vault password (prompted if not set)
+ *   GITD_INDEXER_PORT   API port (default: 8090)
+ *   GITD_INDEXER_INTERVAL  Crawl interval in seconds (default: 60)
  *
  * The indexer requires a local Web5 agent for signing DWN query
  * messages.  On first run it initializes the agent vault.  Subsequent
@@ -30,10 +30,10 @@ import { flagValue, parsePort } from '../cli/flags.js';
 
 export async function indexerCommand(ctx: AgentContext, args: string[]): Promise<void> {
   const port = parsePort(
-    flagValue(args, '--port') ?? process.env.DWN_GIT_INDEXER_PORT ?? '8090',
+    flagValue(args, '--port') ?? process.env.GITD_INDEXER_PORT ?? '8090',
   );
   const intervalRaw = parseInt(
-    flagValue(args, '--interval') ?? process.env.DWN_GIT_INDEXER_INTERVAL ?? '60', 10,
+    flagValue(args, '--interval') ?? process.env.GITD_INDEXER_INTERVAL ?? '60', 10,
   );
   const intervalSec = Number.isNaN(intervalRaw) || intervalRaw <= 0 ? 60 : intervalRaw;
   const seedDid = flagValue(args, '--seed');

@@ -1,5 +1,5 @@
 /**
- * Web UI module — read-only web interface for dwn-git repositories.
+ * Web UI module — read-only web interface for gitd repositories.
  *
  * @module
  */

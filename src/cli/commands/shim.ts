@@ -1,10 +1,10 @@
 /**
- * `dwn-git shim` — start a package manager / registry compatibility shim.
+ * `gitd shim` — start a package manager / registry compatibility shim.
  *
  * Usage:
- *   dwn-git shim npm [--port 4873]   Start npm registry shim
- *   dwn-git shim go  [--port 4874]   Start Go module proxy shim
- *   dwn-git shim oci [--port 5555]   Start OCI/Docker registry shim
+ *   gitd shim npm [--port 4873]   Start npm registry shim
+ *   gitd shim go  [--port 4874]   Start Go module proxy shim
+ *   gitd shim oci [--port 5555]   Start OCI/Docker registry shim
  *
  * Each shim starts a local HTTP proxy that speaks the native protocol of
  * the ecosystem tool, resolving DID-scoped packages from DWN records.
@@ -38,7 +38,7 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
   switch (sub) {
     case 'npm': {
       const port = parsePort(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_NPM_SHIM_PORT ?? DEFAULT_NPM_PORT,
+        flagValue(rest, '--port') ?? process.env.GITD_NPM_SHIM_PORT ?? DEFAULT_NPM_PORT,
       );
       console.log('Starting npm registry shim...');
       startNpmShim({ ctx, port });
@@ -48,7 +48,7 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
 
     case 'go': {
       const port = parsePort(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_GO_SHIM_PORT ?? DEFAULT_GO_PORT,
+        flagValue(rest, '--port') ?? process.env.GITD_GO_SHIM_PORT ?? DEFAULT_GO_PORT,
       );
       console.log('Starting Go module proxy shim...');
       startGoShim({ ctx, port });
@@ -59,7 +59,7 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
     case 'oci':
     case 'docker': {
       const port = parsePort(
-        flagValue(rest, '--port') ?? process.env.DWN_GIT_OCI_SHIM_PORT ?? DEFAULT_OCI_PORT,
+        flagValue(rest, '--port') ?? process.env.GITD_OCI_SHIM_PORT ?? DEFAULT_OCI_PORT,
       );
       console.log('Starting OCI/Docker registry shim...');
       startOciShim({ ctx, port });
@@ -68,7 +68,7 @@ export async function shimCommand(ctx: AgentContext, args: string[]): Promise<vo
     }
 
     default:
-      console.error('Usage: dwn-git shim <npm|go|oci> [--port <port>]');
+      console.error('Usage: gitd shim <npm|go|oci> [--port <port>]');
       console.error('');
       console.error('Shims:');
       console.error(`  npm     npm registry proxy (default port: ${DEFAULT_NPM_PORT})`);

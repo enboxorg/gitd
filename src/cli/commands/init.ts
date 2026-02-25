@@ -1,8 +1,8 @@
 /**
- * `dwn-git init` — create a forge repository record on the local DWN
+ * `gitd init` — create a forge repository record on the local DWN
  * and initialize a bare git repository on the filesystem.
  *
- * Usage: dwn-git init <name> [--description <text>] [--branch <name>] [--repos <path>]
+ * Usage: gitd init <name> [--description <text>] [--branch <name>] [--repos <path>]
  *
  * @module
  */
@@ -20,10 +20,10 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const name = args[0];
   const description = flagValue(args, '--description') ?? flagValue(args, '-d');
   const branch = flagValue(args, '--branch') ?? flagValue(args, '-b') ?? 'main';
-  const reposPath = flagValue(args, '--repos') ?? process.env.DWN_GIT_REPOS ?? './repos';
+  const reposPath = flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? './repos';
 
   if (!name) {
-    console.error('Usage: dwn-git init <name> [--description <text>] [--branch <name>] [--repos <path>]');
+    console.error('Usage: gitd init <name> [--description <text>] [--branch <name>] [--repos <path>]');
     process.exit(1);
   }
 

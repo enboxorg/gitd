@@ -1,11 +1,11 @@
 /**
- * `dwn-git wiki` — collaborative documentation pages.
+ * `gitd wiki` — collaborative documentation pages.
  *
  * Usage:
- *   dwn-git wiki create <slug> <title> [--body <markdown>]
- *   dwn-git wiki show <slug>
- *   dwn-git wiki edit <slug> --body <markdown> [--summary <text>]
- *   dwn-git wiki list
+ *   gitd wiki create <slug> <title> [--body <markdown>]
+ *   gitd wiki show <slug>
+ *   gitd wiki edit <slug> --body <markdown> [--summary <text>]
+ *   gitd wiki list
  *
  * @module
  */
@@ -30,7 +30,7 @@ export async function wikiCommand(ctx: AgentContext, args: string[]): Promise<vo
     case 'list':
     case 'ls': return wikiList(ctx, rest);
     default:
-      console.error('Usage: dwn-git wiki <create|show|edit|list>');
+      console.error('Usage: gitd wiki <create|show|edit|list>');
       process.exit(1);
   }
 }
@@ -45,7 +45,7 @@ async function wikiCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const body = flagValue(args, '--body') ?? '';
 
   if (!slug || !title) {
-    console.error('Usage: dwn-git wiki create <slug> <title> [--body <markdown>]');
+    console.error('Usage: gitd wiki create <slug> <title> [--body <markdown>]');
     process.exit(1);
   }
 
@@ -54,7 +54,7 @@ async function wikiCreate(ctx: AgentContext, args: string[]): Promise<void> {
   // Check for duplicate slug.
   const existing = await findPageBySlug(ctx, repoContextId, slug);
   if (existing) {
-    console.error(`Wiki page "${slug}" already exists. Use \`dwn-git wiki edit ${slug}\` to update it.`);
+    console.error(`Wiki page "${slug}" already exists. Use \`gitd wiki edit ${slug}\` to update it.`);
     process.exit(1);
   }
 
@@ -81,7 +81,7 @@ async function wikiCreate(ctx: AgentContext, args: string[]): Promise<void> {
 async function wikiShow(ctx: AgentContext, args: string[]): Promise<void> {
   const slug = args[0];
   if (!slug) {
-    console.error('Usage: dwn-git wiki show <slug>');
+    console.error('Usage: gitd wiki show <slug>');
     process.exit(1);
   }
 
@@ -121,14 +121,14 @@ async function wikiEdit(ctx: AgentContext, args: string[]): Promise<void> {
   const summary = flagValue(args, '--summary');
 
   if (!slug || !body) {
-    console.error('Usage: dwn-git wiki edit <slug> --body <markdown> [--summary <text>]');
+    console.error('Usage: gitd wiki edit <slug> --body <markdown> [--summary <text>]');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx);
   const page = await findPageBySlug(ctx, repoContextId, slug);
   if (!page) {
-    console.error(`Wiki page "${slug}" not found. Use \`dwn-git wiki create\` first.`);
+    console.error(`Wiki page "${slug}" not found. Use \`gitd wiki create\` first.`);
     process.exit(1);
   }
 

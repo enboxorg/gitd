@@ -1,22 +1,22 @@
 /**
- * `dwn-git registry` — DID-scoped package publishing and management.
+ * `gitd registry` — DID-scoped package publishing and management.
  *
  * Packages are scoped to the publisher's DID. Versions and tarballs are
  * immutable — once published, content cannot be silently replaced.
  *
  * Usage:
- *   dwn-git registry publish <name> <version> <tarball-path>
+ *   gitd registry publish <name> <version> <tarball-path>
  *       [--ecosystem <npm|cargo|pip|go>] [--description <text>]
- *   dwn-git registry info <name>
- *   dwn-git registry versions <name>
- *   dwn-git registry list [--ecosystem <npm|cargo|pip|go>]
- *   dwn-git registry yank <name> <version>
- *   dwn-git registry attest <name> <version> --claim <claim>
+ *   gitd registry info <name>
+ *   gitd registry versions <name>
+ *   gitd registry list [--ecosystem <npm|cargo|pip|go>]
+ *   gitd registry yank <name> <version>
+ *   gitd registry attest <name> <version> --claim <claim>
  *       [--source-commit <sha>] [--source-repo <did/id>]
- *   dwn-git registry attestations <name> <version>
- *   dwn-git registry verify <name> <version> [--trusted <did>,...]
- *   dwn-git registry resolve <did>/<name>@<version>
- *   dwn-git registry verify-deps <did>/<name>@<version> [--trusted <did>,...]
+ *   gitd registry attestations <name> <version>
+ *   gitd registry verify <name> <version> [--trusted <did>,...]
+ *   gitd registry resolve <did>/<name>@<version>
+ *   gitd registry verify-deps <did>/<name>@<version> [--trusted <did>,...]
  *
  * @module
  */
@@ -52,7 +52,7 @@ export async function registryCommand(ctx: AgentContext, args: string[]): Promis
     case 'resolve': return registryResolve(ctx, rest);
     case 'verify-deps': return registryVerifyDeps(ctx, rest);
     default:
-      console.error('Usage: dwn-git registry <publish|info|versions|list|yank|attest|attestations|verify|resolve|verify-deps>');
+      console.error('Usage: gitd registry <publish|info|versions|list|yank|attest|attestations|verify|resolve|verify-deps>');
       process.exit(1);
   }
 }
@@ -69,7 +69,7 @@ async function registryPublish(ctx: AgentContext, args: string[]): Promise<void>
   const description = flagValue(args, '--description');
 
   if (!name || !version || !tarballPath) {
-    console.error('Usage: dwn-git registry publish <name> <version> <tarball-path> [--ecosystem <npm|cargo|pip|go>]');
+    console.error('Usage: gitd registry publish <name> <version> <tarball-path> [--ecosystem <npm|cargo|pip|go>]');
     process.exit(1);
   }
 
@@ -152,7 +152,7 @@ async function registryPublish(ctx: AgentContext, args: string[]): Promise<void>
 async function registryInfo(ctx: AgentContext, args: string[]): Promise<void> {
   const name = args[0];
   if (!name) {
-    console.error('Usage: dwn-git registry info <name>');
+    console.error('Usage: gitd registry info <name>');
     process.exit(1);
   }
 
@@ -193,7 +193,7 @@ async function registryInfo(ctx: AgentContext, args: string[]): Promise<void> {
 async function registryVersions(ctx: AgentContext, args: string[]): Promise<void> {
   const name = args[0];
   if (!name) {
-    console.error('Usage: dwn-git registry versions <name>');
+    console.error('Usage: gitd registry versions <name>');
     process.exit(1);
   }
 
@@ -267,7 +267,7 @@ async function registryYank(ctx: AgentContext, args: string[]): Promise<void> {
   const version = args[1];
 
   if (!name || !version) {
-    console.error('Usage: dwn-git registry yank <name> <version>');
+    console.error('Usage: gitd registry yank <name> <version>');
     process.exit(1);
   }
 
@@ -308,7 +308,7 @@ async function registryAttest(ctx: AgentContext, args: string[]): Promise<void> 
   const sourceRepo = flagValue(args, '--source-repo');
 
   if (!name || !version || !claim) {
-    console.error('Usage: dwn-git registry attest <name> <version> --claim <claim> [--source-commit <sha>] [--source-repo <did/id>]');
+    console.error('Usage: gitd registry attest <name> <version> --claim <claim> [--source-commit <sha>] [--source-repo <did/id>]');
     process.exit(1);
   }
 
@@ -359,7 +359,7 @@ async function registryAttestations(ctx: AgentContext, args: string[]): Promise<
   const version = args[1];
 
   if (!name || !version) {
-    console.error('Usage: dwn-git registry attestations <name> <version>');
+    console.error('Usage: gitd registry attestations <name> <version>');
     process.exit(1);
   }
 
@@ -404,7 +404,7 @@ async function registryVerify(ctx: AgentContext, args: string[]): Promise<void> 
   const trustedAttestors = trustedArg ? trustedArg.split(',') : [];
 
   if (!name || !version) {
-    console.error('Usage: dwn-git registry verify <name> <version> [--trusted <did>,...]');
+    console.error('Usage: gitd registry verify <name> <version> [--trusted <did>,...]');
     process.exit(1);
   }
 
@@ -437,7 +437,7 @@ async function registryResolve(ctx: AgentContext, args: string[]): Promise<void>
   const ecosystem = flagValue(args, '--ecosystem') ?? 'npm';
 
   if (!specifier) {
-    console.error('Usage: dwn-git registry resolve <did>/<name>@<version> [--ecosystem <eco>]');
+    console.error('Usage: gitd registry resolve <did>/<name>@<version> [--ecosystem <eco>]');
     process.exit(1);
   }
 
@@ -488,7 +488,7 @@ async function registryVerifyDeps(ctx: AgentContext, args: string[]): Promise<vo
   const ecosystem = flagValue(args, '--ecosystem') ?? 'npm';
 
   if (!specifier) {
-    console.error('Usage: dwn-git registry verify-deps <did>/<name>@<version> [--trusted <did>,...] [--ecosystem <eco>]');
+    console.error('Usage: gitd registry verify-deps <did>/<name>@<version> [--trusted <did>,...] [--ecosystem <eco>]');
     process.exit(1);
   }
 

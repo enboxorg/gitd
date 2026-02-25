@@ -1,16 +1,16 @@
 /**
- * `dwn-git org` — organization and team management.
+ * `gitd org` — organization and team management.
  *
  * Usage:
- *   dwn-git org create <name> [--description <text>]
- *   dwn-git org info
- *   dwn-git org add-member <did> [--alias <name>]
- *   dwn-git org remove-member <did>
- *   dwn-git org list-members
- *   dwn-git org add-owner <did> [--alias <name>]
- *   dwn-git org team create <name> [--description <text>] [--privacy <visible|secret>]
- *   dwn-git org team list
- *   dwn-git org team add-member <team-name> <did>
+ *   gitd org create <name> [--description <text>]
+ *   gitd org info
+ *   gitd org add-member <did> [--alias <name>]
+ *   gitd org remove-member <did>
+ *   gitd org list-members
+ *   gitd org add-owner <did> [--alias <name>]
+ *   gitd org team create <name> [--description <text>] [--privacy <visible|secret>]
+ *   gitd org team list
+ *   gitd org team add-member <team-name> <did>
  *
  * @module
  */
@@ -36,7 +36,7 @@ export async function orgCommand(ctx: AgentContext, args: string[]): Promise<voi
     case 'add-owner': return orgAddOwner(ctx, rest);
     case 'team': return orgTeam(ctx, rest);
     default:
-      console.error('Usage: dwn-git org <create|info|add-member|remove-member|list-members|add-owner|team>');
+      console.error('Usage: gitd org <create|info|add-member|remove-member|list-members|add-owner|team>');
       process.exit(1);
   }
 }
@@ -48,7 +48,7 @@ export async function orgCommand(ctx: AgentContext, args: string[]): Promise<voi
 async function getOrgRecord(ctx: AgentContext): Promise<any> {
   const { records } = await ctx.org.records.query('org');
   if (records.length === 0) {
-    console.error('No organization found. Run `dwn-git org create <name>` first.');
+    console.error('No organization found. Run `gitd org create <name>` first.');
     process.exit(1);
   }
   return records[0];
@@ -63,7 +63,7 @@ async function orgCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const description = flagValue(args, '--description') ?? '';
 
   if (!name) {
-    console.error('Usage: dwn-git org create <name> [--description <text>]');
+    console.error('Usage: gitd org create <name> [--description <text>]');
     process.exit(1);
   }
 
@@ -151,7 +151,7 @@ async function orgAddMember(ctx: AgentContext, args: string[]): Promise<void> {
   const alias = flagValue(args, '--alias');
 
   if (!did) {
-    console.error('Usage: dwn-git org add-member <did> [--alias <name>]');
+    console.error('Usage: gitd org add-member <did> [--alias <name>]');
     process.exit(1);
   }
 
@@ -179,7 +179,7 @@ async function orgAddMember(ctx: AgentContext, args: string[]): Promise<void> {
 async function orgRemoveMember(ctx: AgentContext, args: string[]): Promise<void> {
   const did = args[0];
   if (!did) {
-    console.error('Usage: dwn-git org remove-member <did>');
+    console.error('Usage: gitd org remove-member <did>');
     process.exit(1);
   }
 
@@ -252,7 +252,7 @@ async function orgAddOwner(ctx: AgentContext, args: string[]): Promise<void> {
   const alias = flagValue(args, '--alias');
 
   if (!did) {
-    console.error('Usage: dwn-git org add-owner <did> [--alias <name>]');
+    console.error('Usage: gitd org add-owner <did> [--alias <name>]');
     process.exit(1);
   }
 
@@ -287,7 +287,7 @@ async function orgTeam(ctx: AgentContext, args: string[]): Promise<void> {
     case 'ls': return teamList(ctx, rest);
     case 'add-member': return teamAddMember(ctx, rest);
     default:
-      console.error('Usage: dwn-git org team <create|list|add-member>');
+      console.error('Usage: gitd org team <create|list|add-member>');
       process.exit(1);
   }
 }
@@ -298,7 +298,7 @@ async function teamCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const privacy = flagValue(args, '--privacy') ?? 'visible';
 
   if (!name) {
-    console.error('Usage: dwn-git org team create <name> [--description <text>] [--privacy <visible|secret>]');
+    console.error('Usage: gitd org team create <name> [--description <text>] [--privacy <visible|secret>]');
     process.exit(1);
   }
 
@@ -343,7 +343,7 @@ async function teamAddMember(ctx: AgentContext, args: string[]): Promise<void> {
   const did = args[1];
 
   if (!teamName || !did) {
-    console.error('Usage: dwn-git org team add-member <team-name> <did>');
+    console.error('Usage: gitd org team add-member <team-name> <did>');
     process.exit(1);
   }
 

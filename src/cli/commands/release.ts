@@ -1,10 +1,10 @@
 /**
- * `dwn-git release` — create, list, and show releases with immutable assets.
+ * `gitd release` — create, list, and show releases with immutable assets.
  *
  * Usage:
- *   dwn-git release create <tag> [--name <name>] [--body <text>] [--commit <sha>] [--prerelease] [--draft]
- *   dwn-git release show <tag>
- *   dwn-git release list [--limit <n>]
+ *   gitd release create <tag> [--name <name>] [--body <text>] [--commit <sha>] [--prerelease] [--draft]
+ *   gitd release show <tag>
+ *   gitd release list [--limit <n>]
  *
  * @module
  */
@@ -30,7 +30,7 @@ export async function releaseCommand(ctx: AgentContext, args: string[]): Promise
     case 'list':
     case 'ls': return releaseList(ctx, rest);
     default:
-      console.error('Usage: dwn-git release <create|show|list>');
+      console.error('Usage: gitd release <create|show|list>');
       process.exit(1);
   }
 }
@@ -48,7 +48,7 @@ async function releaseCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const draft = args.includes('--draft');
 
   if (!tagName) {
-    console.error('Usage: dwn-git release create <tag> [--name <name>] [--body <text>] [--commit <sha>] [--prerelease] [--draft]');
+    console.error('Usage: gitd release create <tag> [--name <name>] [--body <text>] [--commit <sha>] [--prerelease] [--draft]');
     process.exit(1);
   }
 
@@ -83,7 +83,7 @@ async function releaseCreate(ctx: AgentContext, args: string[]): Promise<void> {
 async function releaseShow(ctx: AgentContext, args: string[]): Promise<void> {
   const tagName = args[0];
   if (!tagName) {
-    console.error('Usage: dwn-git release show <tag>');
+    console.error('Usage: gitd release show <tag>');
     process.exit(1);
   }
 

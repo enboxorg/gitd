@@ -1,10 +1,10 @@
 /**
- * `dwn-git log` — show recent forge activity.
+ * `gitd log` — show recent forge activity.
  *
  * Displays recent issues, patches, and ref updates in reverse chronological
  * order, giving a unified activity feed for the repository.
  *
- * Usage: dwn-git log [--limit <n>]
+ * Usage: gitd log [--limit <n>]
  *
  * @module
  */

@@ -26,7 +26,7 @@ export async function getRepoContext(ctx: AgentContext): Promise<RepoContext> {
   const { records } = await ctx.repo.records.query('repo');
 
   if (records.length === 0) {
-    console.error('No repository found. Run `dwn-git init <name>` first.');
+    console.error('No repository found. Run `gitd init <name>` first.');
     process.exit(1);
   }
 

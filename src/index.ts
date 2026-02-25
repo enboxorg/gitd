@@ -1,5 +1,5 @@
 /**
- * @enbox/dwn-git — Decentralized forge protocols for DWN.
+ * @enbox/gitd — Decentralized forge protocols for DWN.
  *
  * Protocol definitions for a decentralized GitHub alternative.
  * See PLAN.md for full architecture documentation.

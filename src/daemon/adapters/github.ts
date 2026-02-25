@@ -25,7 +25,7 @@ export const githubAdapter: ShimAdapter = {
   id          : 'github',
   name        : 'GitHub API',
   defaultPort : 8181,
-  portEnvVar  : 'DWN_GIT_GITHUB_API_PORT',
+  portEnvVar  : 'GITD_GITHUB_API_PORT',
   corsMethods : 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
   corsHeaders : 'Authorization, Accept, Content-Type',
   usageHint   : 'GitHub REST API v3 compatible — point tools at http://localhost:{port}',
