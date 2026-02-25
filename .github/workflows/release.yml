@@ -3,6 +3,11 @@ name: Release Artifacts
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.0.2)'
+        required: true
 
 permissions:
   contents: write
@@ -39,6 +44,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -73,4 +80,5 @@ jobs:
       - name: Upload artifact to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag || github.event.release.tag_name }}
           files: ${{ env.artifact }}
