@@ -1,5 +1,21 @@
 # @enbox/gitd
 
+## 0.2.0
+
+### Minor Changes
+
+- [#61](https://github.com/enboxorg/gitd/pull/61) [`e385606`](https://github.com/enboxorg/gitd/commit/e385606b3865cc53c704dc6b46c667a66c841322) Thanks [@LiranCohen](https://github.com/LiranCohen)! - feat: migrate git content (clone, bundle, refs) from GitHub
+
+  The `gitd migrate repo` and `gitd migrate all` commands now support
+  migrating actual git content — not just metadata. When `--repos <path>`
+  or `GITD_REPOS` is provided, migration will:
+
+  1. Clone the GitHub repo as a bare repository on disk
+  2. Create a full git bundle and upload it to DWN
+  3. Sync all git refs (branches + tags) to DWN records
+
+  This enables the full e2e flow: migrate → serve → clone-via-DID.
+
 ## 0.1.1
 
 ### Patch Changes
