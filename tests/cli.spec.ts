@@ -5,7 +5,7 @@
  * then tests each command function directly.  The agent's data directory
  * (`__TESTDATA__/cli`) is cleaned before and after the suite.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import { gzipSync } from 'node:zlib';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
@@ -1233,6 +1233,7 @@ describe('gitd CLI commands', () => {
 
   describe('migrate', () => {
     const origFetch = globalThis.fetch;
+    const origGhToken = process.env.GITHUB_TOKEN;
 
     /** Create a mock fetch that returns canned GitHub API responses. */
     function mockGitHubApi(routes: Record<string, unknown>): void {
@@ -1256,8 +1257,20 @@ describe('gitd CLI commands', () => {
       }) as typeof fetch;
     }
 
+    beforeEach(async () => {
+      // Set a dummy token so tests don't invoke `gh auth token`.
+      process.env.GITHUB_TOKEN = 'test-token';
+      const { resetTokenCache } = await import('../src/cli/commands/migrate.js');
+      resetTokenCache();
+    });
+
     afterAll(() => {
       globalThis.fetch = origFetch;
+      if (origGhToken !== undefined) {
+        process.env.GITHUB_TOKEN = origGhToken;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
     });
 
     it('should fail with no subcommand', async () => {
@@ -1267,18 +1280,81 @@ describe('gitd CLI commands', () => {
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should fail without owner/repo argument', async () => {
+    it('should auto-detect owner/repo from git remote', async () => {
+      // When no owner/repo arg is given, resolveGhRepo falls back to
+      // the current directory's git remotes.  We're inside the gitd repo
+      // so this should succeed (and the repo record already exists).
+      mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const { errors, exitCode } = await captureError(() => migrateCommand(ctx, ['repo']));
-      expect(exitCode).toBe(1);
-      expect(errors[0]).toContain('Usage');
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo']));
+      expect(logs.some((l) => l.includes('Detected GitHub repo'))).toBe(true);
+      expect(logs.some((l) => l.includes('already exists'))).toBe(true);
     });
 
-    it('should fail with invalid owner/repo format', async () => {
+    it('should auto-detect when arg has no slash', async () => {
+      // An arg without a slash is not a valid owner/repo, so resolveGhRepo
+      // falls through to auto-detection from git remotes.
+      mockGitHubApi({});
       const { migrateCommand } = await import('../src/cli/commands/migrate.js');
-      const { errors, exitCode } = await captureError(() => migrateCommand(ctx, ['repo', 'noslash']));
-      expect(exitCode).toBe(1);
-      expect(errors[0]).toContain('Usage');
+      const logs = await captureLog(() => migrateCommand(ctx, ['repo', 'noslash']));
+      expect(logs.some((l) => l.includes('Detected GitHub repo'))).toBe(true);
+    });
+
+    it('should parse SSH GitHub remote URLs', async () => {
+      const { parseGitHubRemote } = await import('../src/cli/commands/migrate.js');
+      expect(parseGitHubRemote('git@github.com:owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' });
+      expect(parseGitHubRemote('git@github.com:owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should parse HTTPS GitHub remote URLs', async () => {
+      const { parseGitHubRemote } = await import('../src/cli/commands/migrate.js');
+      expect(parseGitHubRemote('https://github.com/owner/repo.git')).toEqual({ owner: 'owner', repo: 'repo' });
+      expect(parseGitHubRemote('https://github.com/owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+      expect(parseGitHubRemote('http://github.com/owner/repo')).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should return null for non-GitHub remotes', async () => {
+      const { parseGitHubRemote } = await import('../src/cli/commands/migrate.js');
+      expect(parseGitHubRemote('git@gitlab.com:owner/repo.git')).toBeNull();
+      expect(parseGitHubRemote('https://bitbucket.org/owner/repo')).toBeNull();
+      expect(parseGitHubRemote('not-a-url')).toBeNull();
+    });
+
+    it('should resolve GITHUB_TOKEN from env', async () => {
+      const { resolveGitHubToken, resetTokenCache } = await import('../src/cli/commands/migrate.js');
+      resetTokenCache();
+      process.env.GITHUB_TOKEN = 'my-test-token';
+      expect(resolveGitHubToken()).toBe('my-test-token');
+    });
+
+    it('should include auth hint on 404 without token', async () => {
+      const { resolveGitHubToken, resetTokenCache } = await import('../src/cli/commands/migrate.js');
+      resetTokenCache();
+      delete process.env.GITHUB_TOKEN;
+
+      // Check if the test environment has `gh` installed (which provides a
+      // fallback token).  If it does, skip the hint-specific assertions —
+      // the 404 will still be reported, but without the auth hint.
+      const hasGhToken = !!resolveGitHubToken();
+      resetTokenCache();
+      delete process.env.GITHUB_TOKEN;
+
+      globalThis.fetch = (async (): Promise<Response> => {
+        return new Response('{"message":"Not Found"}', { status: 404 });
+      }) as typeof fetch;
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const { errors } = await captureError(() => migrateCommand(ctx, ['issues', 'private/repo']));
+      expect(errors.some((e) => e.includes('GitHub API 404'))).toBe(true);
+
+      if (!hasGhToken) {
+        expect(errors.some((e) => e.includes('private repo'))).toBe(true);
+        expect(errors.some((e) => e.includes('gh auth login'))).toBe(true);
+      }
+
+      // Restore token for remaining tests.
+      process.env.GITHUB_TOKEN = 'test-token';
+      resetTokenCache();
     });
 
     it('should skip repo import when repo already exists', async () => {

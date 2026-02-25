@@ -2,15 +2,21 @@
  * `gitd migrate` — import repository data from GitHub.
  *
  * Fetches repo metadata, issues, pull requests, and releases from the
- * GitHub REST API and creates corresponding DWN records.  A `GITHUB_TOKEN`
- * env var is recommended for authenticated requests (higher rate limits).
+ * GitHub REST API and creates corresponding DWN records.
+ *
+ * Authentication is resolved automatically:
+ *   1. `GITHUB_TOKEN` env var (if set)
+ *   2. `gh auth token` (GitHub CLI, if installed and authenticated)
+ *
+ * The `<owner/repo>` argument is optional — if omitted, it is detected
+ * from the `origin` (or `github`) remote of the current git repository.
  *
  * Usage:
- *   gitd migrate all <owner/repo>            Import everything
- *   gitd migrate repo <owner/repo>           Import repo metadata only
- *   gitd migrate issues <owner/repo>         Import issues + comments
- *   gitd migrate pulls <owner/repo>          Import PRs as patches + reviews
- *   gitd migrate releases <owner/repo>       Import releases
+ *   gitd migrate all [owner/repo]            Import everything
+ *   gitd migrate repo [owner/repo]           Import repo metadata only
+ *   gitd migrate issues [owner/repo]         Import issues + comments
+ *   gitd migrate pulls [owner/repo]          Import PRs as patches + reviews
+ *   gitd migrate releases [owner/repo]       Import releases
  *
  * @module
  */
@@ -18,12 +24,63 @@
 import type { AgentContext } from '../agent.js';
 
 import { getRepoContextId } from '../repo-context.js';
+import { spawnSync } from 'node:child_process';
+
+// ---------------------------------------------------------------------------
+// GitHub auth — resolve a token from env or the gh CLI
+// ---------------------------------------------------------------------------
+
+const GITHUB_API = 'https://api.github.com';
+
+/** Cached token so we only resolve once per process. */
+let cachedToken: string | undefined;
+
+/** Reset the cached token (for testing). */
+export function resetTokenCache(): void {
+  cachedToken = undefined;
+}
+
+/**
+ * Resolve a GitHub API token.
+ *
+ * Priority:
+ *   1. `GITHUB_TOKEN` environment variable
+ *   2. `gh auth token` (GitHub CLI)
+ *
+ * Returns `undefined` when no token is available.
+ */
+export function resolveGitHubToken(): string | undefined {
+  if (cachedToken !== undefined) { return cachedToken; }
+
+  // 1. Env var takes precedence.
+  const envToken = process.env.GITHUB_TOKEN;
+  if (envToken) {
+    cachedToken = envToken;
+    return cachedToken;
+  }
+
+  // 2. Try the GitHub CLI.
+  try {
+    const result = spawnSync('gh', ['auth', 'token'], {
+      stdio   : ['pipe', 'pipe', 'pipe'],
+      timeout : 5_000,
+    });
+    const token = result.stdout?.toString().trim();
+    if (result.status === 0 && token) {
+      cachedToken = token;
+      return cachedToken;
+    }
+  } catch {
+    // gh not installed or not on PATH — fall through.
+  }
+
+  cachedToken = ''; // empty string = resolved, nothing found
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // GitHub API helpers
 // ---------------------------------------------------------------------------
-
-const GITHUB_API = 'https://api.github.com';
 
 /** Headers for GitHub API requests. */
 function githubHeaders(): Record<string, string> {
@@ -31,9 +88,35 @@ function githubHeaders(): Record<string, string> {
     'Accept'     : 'application/vnd.github+json',
     'User-Agent' : 'gitd-migrate/0.1',
   };
-  const token = process.env.GITHUB_TOKEN;
+  const token = resolveGitHubToken();
   if (token) { headers['Authorization'] = `Bearer ${token}`; }
   return headers;
+}
+
+/**
+ * Build a user-friendly error message for GitHub API failures.
+ * For 404s without a token, hint at authentication.
+ */
+function ghErrorMessage(status: number, body: string): string {
+  const base = `GitHub API ${status}: ${body.slice(0, 200)}`;
+
+  if (status === 404 && !resolveGitHubToken()) {
+    return (
+      `${base}\n\n` +
+      `  Hint: this may be a private repo.  Authenticate with one of:\n` +
+      `    - gh auth login          (GitHub CLI — recommended)\n` +
+      `    - export GITHUB_TOKEN=ghp_...\n`
+    );
+  }
+
+  if (status === 401 || status === 403) {
+    return (
+      `${base}\n\n` +
+      `  Hint: your token may lack the required scopes.  Ensure it has "repo" access.\n`
+    );
+  }
+
+  return base;
 }
 
 /** Fetch a single page from the GitHub API.  Throws on non-2xx. */
@@ -42,7 +125,7 @@ async function ghFetch<T>(path: string): Promise<T> {
   const res = await fetch(url, { headers: githubHeaders() });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`GitHub API ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(ghErrorMessage(res.status, body));
   }
   return res.json() as Promise<T>;
 }
@@ -59,7 +142,7 @@ async function ghFetchAll<T>(path: string, perPage = 100): Promise<T[]> {
     const res: Response = await fetch(url, { headers: githubHeaders() });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`GitHub API ${res.status}: ${body.slice(0, 200)}`);
+      throw new Error(ghErrorMessage(res.status, body));
     }
 
     const items = await res.json() as T[];
@@ -153,25 +236,82 @@ export async function migrateCommand(ctx: AgentContext, args: string[]): Promise
 }
 
 // ---------------------------------------------------------------------------
-// Parse <owner/repo> argument
+// Resolve <owner/repo> — from argument or local git remote
 // ---------------------------------------------------------------------------
 
-function parseGhRepo(args: string[]): { owner: string; repo: string } {
+/** Well-known GitHub remote URL patterns. */
+const GH_SSH_RE = /^git@github\.com:(.+?)\/(.+?)(?:\.git)?$/;
+const GH_HTTPS_RE = /^https?:\/\/github\.com\/(.+?)\/(.+?)(?:\.git)?$/;
+
+/**
+ * Extract `owner/repo` from a GitHub remote URL.
+ * Supports both SSH (`git@github.com:owner/repo.git`) and
+ * HTTPS (`https://github.com/owner/repo.git`) forms.
+ */
+export function parseGitHubRemote(url: string): { owner: string; repo: string } | null {
+  const ssh = GH_SSH_RE.exec(url);
+  if (ssh) { return { owner: ssh[1], repo: ssh[2] }; }
+
+  const https = GH_HTTPS_RE.exec(url);
+  if (https) { return { owner: https[1], repo: https[2] }; }
+
+  return null;
+}
+
+/**
+ * Detect the GitHub `owner/repo` from the current directory's git remotes.
+ * Checks `origin` first, then `github`.
+ */
+function detectGhRepoFromRemotes(): { owner: string; repo: string } | null {
+  for (const remoteName of ['origin', 'github']) {
+    try {
+      const result = spawnSync('git', ['remote', 'get-url', remoteName], {
+        stdio   : ['pipe', 'pipe', 'pipe'],
+        timeout : 5_000,
+      });
+      const url = result.stdout?.toString().trim();
+      if (result.status === 0 && url) {
+        const parsed = parseGitHubRemote(url);
+        if (parsed) { return parsed; }
+      }
+    } catch {
+      // git not available or not a repo — continue.
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve the GitHub `owner/repo` to migrate.
+ *
+ * 1. If `args[0]` contains a `/`, treat it as an explicit `owner/repo`.
+ * 2. Otherwise, detect from the current directory's git remotes.
+ * 3. If neither works, print an error and exit.
+ */
+export function resolveGhRepo(args: string[]): { owner: string; repo: string } {
   const target = args[0];
-  if (!target || !target.includes('/')) {
-    console.error('Usage: gitd migrate <subcommand> <owner/repo>');
-    process.exit(1);
+
+  // Explicit argument.
+  if (target && target.includes('/')) {
+    const [owner, ...repoParts] = target.split('/');
+    const repo = repoParts.join('/');
+    if (owner && repo) { return { owner, repo }; }
   }
 
-  const [owner, ...repoParts] = target.split('/');
-  const repo = repoParts.join('/');
-
-  if (!owner || !repo) {
-    console.error('Invalid repository format. Use: owner/repo');
-    process.exit(1);
+  // Auto-detect from git remotes.
+  const detected = detectGhRepoFromRemotes();
+  if (detected) {
+    console.log(`Detected GitHub repo: ${detected.owner}/${detected.repo}`);
+    return detected;
   }
 
-  return { owner, repo };
+  console.error(
+    'Could not determine GitHub repository.\n' +
+    '  Either pass owner/repo explicitly:\n' +
+    '    gitd migrate <subcommand> <owner/repo>\n' +
+    '  Or run from inside a git repo with a GitHub remote.\n',
+  );
+  process.exit(1);
 }
 
 /**
@@ -188,8 +328,14 @@ function prependAuthor(body: string, ghLogin: string): string {
 // ---------------------------------------------------------------------------
 
 async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
-  const { owner, repo } = parseGhRepo(args);
+  const { owner, repo } = resolveGhRepo(args);
   const slug = `${owner}/${repo}`;
+
+  const token = resolveGitHubToken();
+  if (!token) {
+    console.log(`Warning: no GitHub token found. Private repos will fail.`);
+    console.log(`  Run "gh auth login" or set GITHUB_TOKEN to authenticate.\n`);
+  }
 
   console.log(`Migrating ${slug} from GitHub...\n`);
 
@@ -221,7 +367,7 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function migrateRepo(ctx: AgentContext, args: string[]): Promise<void> {
-  const { owner, repo } = parseGhRepo(args);
+  const { owner, repo } = resolveGhRepo(args);
   try {
     await migrateRepoInner(ctx, owner, repo);
   } catch (err) {
@@ -272,7 +418,7 @@ async function migrateRepoInner(ctx: AgentContext, owner: string, repo: string):
 // ---------------------------------------------------------------------------
 
 async function migrateIssues(ctx: AgentContext, args: string[]): Promise<void> {
-  const { owner, repo } = parseGhRepo(args);
+  const { owner, repo } = resolveGhRepo(args);
   try {
     const count = await migrateIssuesInner(ctx, owner, repo);
     console.log(`\nImported ${count} issue${count !== 1 ? 's' : ''}.`);
@@ -356,7 +502,7 @@ async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string
 // ---------------------------------------------------------------------------
 
 async function migratePulls(ctx: AgentContext, args: string[]): Promise<void> {
-  const { owner, repo } = parseGhRepo(args);
+  const { owner, repo } = resolveGhRepo(args);
   try {
     const count = await migratePullsInner(ctx, owner, repo);
     console.log(`\nImported ${count} patch${count !== 1 ? 'es' : ''}.`);
@@ -467,7 +613,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
 // ---------------------------------------------------------------------------
 
 async function migrateReleases(ctx: AgentContext, args: string[]): Promise<void> {
-  const { owner, repo } = parseGhRepo(args);
+  const { owner, repo } = resolveGhRepo(args);
   try {
     const count = await migrateReleasesInner(ctx, owner, repo);
     console.log(`\nImported ${count} release${count !== 1 ? 's' : ''}.`);
