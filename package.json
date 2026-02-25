@@ -84,6 +84,9 @@
     "forge",
     "protocols"
   ],
+  "trustedDependencies": [
+    "classic-level"
+  ],
   "engines": {
     "bun": ">=1.0.0"
   },

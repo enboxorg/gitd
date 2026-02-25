@@ -24,6 +24,9 @@
       },
     },
   },
+  "trustedDependencies": [
+    "classic-level",
+  ],
   "packages": {
     "@assemblyscript/loader": ["@assemblyscript/loader@0.9.4", "", {}, "sha512-HazVq9zwTVwGmqdwYzu7WyQ6FQVZ7SwET0KKQuKm55jD0IfUpZgN0OPIiZG3zV1iSrVYcN0bdwLRXI/VNCYsUA=="],
 
