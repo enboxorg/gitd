@@ -66,11 +66,13 @@
  * @module
  */
 
+import { authCommand } from './commands/auth.js';
 import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
 import { createRequire } from 'node:module';
 import { daemonCommand } from './commands/daemon.js';
+import { flagValue } from './flags.js';
 import { githubApiCommand } from './commands/github-api.js';
 import { indexerCommand } from '../indexer/main.js';
 import { initCommand } from './commands/init.js';
@@ -89,6 +91,7 @@ import { shimCommand } from './commands/shim.js';
 import { socialCommand } from './commands/social.js';
 import { webCommand } from './commands/web.js';
 import { wikiCommand } from './commands/wiki.js';
+import { profileDataPath, resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -105,6 +108,11 @@ const rest = args.slice(1);
 function printUsage(): void {
   console.log('gitd — decentralized forge powered by DWN protocols\n');
   console.log('Commands:');
+  console.log('  auth                                        Show current identity info');
+  console.log('  auth login                                  Create or import an identity');
+  console.log('  auth list                                   List all profiles');
+  console.log('  auth use <profile> [--global]               Set active profile');
+  console.log('');
   console.log('  setup                                       Configure git for DID-based remotes');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
@@ -302,11 +310,19 @@ async function main(): Promise<void> {
     case 'clone':
       await cloneCommand(rest);
       return;
+
+    case 'auth':
+      // Auth can run without a pre-existing profile (for `login`).
+      await authCommand(null, rest);
+      return;
   }
 
   // Commands that require the Web5 agent.
   const password = await getPassword();
-  const ctx = await connectAgent(password);
+  const profileFlag = flagValue(rest, '--profile');
+  const profileName = resolveProfile(profileFlag);
+  const dataPath = profileName ? profileDataPath(profileName) : undefined;
+  const ctx = await connectAgent({ password, dataPath });
 
   switch (command) {
     case 'init':

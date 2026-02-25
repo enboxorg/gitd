@@ -6,12 +6,16 @@
  * the existing vault and return a ready-to-use `TypedWeb5` instance for
  * each protocol.
  *
+ * Agent data is stored under the resolved profile path:
+ *   `~/.enbox/profiles/<profile>/DATA/AGENT/`
+ *
  * @module
  */
 
 import type { TypedWeb5 } from '@enbox/api';
 
 import { Web5 } from '@enbox/api';
+import { Web5UserAgent } from '@enbox/agent';
 
 import type { ForgeCiSchemaMap } from '../ci.js';
 import type { ForgeIssuesSchemaMap } from '../issues.js';
@@ -58,6 +62,24 @@ export type AgentContext = {
   web5 : Web5;
 };
 
+/** Options for connecting to the agent. */
+export type ConnectOptions = {
+  /** Vault password. */
+  password : string;
+  /**
+   * Agent data path.  When provided, the agent stores all data under
+   * this directory instead of the default `DATA/AGENT` relative to CWD.
+   *
+   * The profile system sets this to `~/.enbox/profiles/<name>/DATA/AGENT`.
+   */
+  dataPath? : string;
+  /**
+   * Optional recovery phrase (12-word BIP-39 mnemonic) for initializing
+   * a new vault.  When omitted, a new phrase is generated automatically.
+   */
+  recoveryPhrase? : string;
+};
+
 // ---------------------------------------------------------------------------
 // Agent bootstrap
 // ---------------------------------------------------------------------------
@@ -65,24 +87,85 @@ export type AgentContext = {
 /**
  * Connect to the local Web5 agent, initializing on first launch.
  *
- * The agent's persistent data lives under `dataPath` (default:
- * `~/.gitd/agent`).  Sync is disabled — the CLI operates against
- * the local DWN only.
+ * When `dataPath` is provided, the agent's persistent data lives there.
+ * Otherwise, it falls back to `DATA/AGENT` relative to CWD (legacy).
+ *
+ * Sync is disabled — the CLI operates against the local DWN only.
  */
-export async function connectAgent(password: string): Promise<AgentContext> {
-  const { web5, did, recoveryPhrase } = await Web5.connect({
-    password,
-    sync: 'off',
-  });
+export async function connectAgent(options: ConnectOptions): Promise<AgentContext & { recoveryPhrase?: string }> {
+  const { password, dataPath, recoveryPhrase: inputPhrase } = options;
 
-  if (recoveryPhrase) {
+  let agent: Web5UserAgent;
+  let recoveryPhrase: string | undefined;
+
+  if (dataPath) {
+    // Profile-based: create agent with explicit data path.
+    agent = await Web5UserAgent.create({ dataPath });
+
+    if (await agent.firstLaunch()) {
+      recoveryPhrase = await agent.initialize({
+        password,
+        recoveryPhrase : inputPhrase,
+        dwnEndpoints   : ['https://enbox-dwn.fly.dev'],
+      });
+    }
+    await agent.start({ password });
+
+    // Ensure at least one identity exists.
+    const identities = await agent.identity.list();
+    let identity = identities[0];
+    if (!identity) {
+      identity = await agent.identity.create({
+        didMethod  : 'dht',
+        metadata   : { name: 'Default' },
+        didOptions : {
+          services: [{
+            id              : 'dwn',
+            type            : 'DecentralizedWebNode',
+            serviceEndpoint : ['https://enbox-dwn.fly.dev'],
+            enc             : '#enc',
+            sig             : '#sig',
+          }],
+          verificationMethods: [
+            { algorithm: 'Ed25519', id: 'sig', purposes: ['assertionMethod', 'authentication'] },
+            { algorithm: 'X25519', id: 'enc', purposes: ['keyAgreement'] },
+          ],
+        },
+      });
+    }
+
+    const result = await Web5.connect({
+      agent,
+      connectedDid : identity.did.uri,
+      sync         : 'off',
+    });
+
+    return bindProtocols(result.web5, result.did, recoveryPhrase);
+  }
+
+  // Legacy: let Web5.connect() manage the agent (uses CWD-relative path).
+  const result = await Web5.connect({ password, sync: 'off' });
+
+  if (result.recoveryPhrase) {
     console.log('');
     console.log('  Recovery phrase (save this — it cannot be shown again):');
-    console.log(`  ${recoveryPhrase}`);
+    console.log(`  ${result.recoveryPhrase}`);
     console.log('');
   }
 
-  // Bind typed protocol handles.
+  return bindProtocols(result.web5, result.did, result.recoveryPhrase);
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/** Bind typed protocol handles and configure all protocols. */
+async function bindProtocols(
+  web5: Web5,
+  did: string,
+  recoveryPhrase?: string,
+): Promise<AgentContext & { recoveryPhrase?: string }> {
   const repo = web5.using(ForgeRepoProtocol);
   const refs = web5.using(ForgeRefsProtocol);
   const issues = web5.using(ForgeIssuesProtocol);
@@ -113,5 +196,6 @@ export async function connectAgent(password: string): Promise<AgentContext> {
   return {
     did, repo, refs, issues, patches, ci, releases,
     registry, social, notifications, wiki, org, web5,
+    recoveryPhrase,
   };
 }

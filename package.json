@@ -91,6 +91,7 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "@enbox/api": "0.3.0",
     "@enbox/crypto": "0.0.6",
     "@enbox/dids": "0.0.7",
