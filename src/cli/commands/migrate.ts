@@ -23,8 +23,14 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { createFullBundle } from '../../git-server/bundle-sync.js';
+import { flagValue } from '../flags.js';
+import { getRepoContext } from '../repo-context.js';
 import { getRepoContextId } from '../repo-context.js';
-import { spawnSync } from 'node:child_process';
+import { GitBackend } from '../../git-server/git-backend.js';
+import { readGitRefs } from '../../git-server/ref-sync.js';
+import { readFile, unlink } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
 // GitHub auth — resolve a token from env or the gh CLI
@@ -230,7 +236,7 @@ export async function migrateCommand(ctx: AgentContext, args: string[]): Promise
     case 'pulls': return migratePulls(ctx, rest);
     case 'releases': return migrateReleases(ctx, rest);
     default:
-      console.error('Usage: gitd migrate <all|repo|issues|pulls|releases> <owner/repo>');
+      console.error('Usage: gitd migrate <all|repo|issues|pulls|releases> [owner/repo] [--repos <path>]');
       process.exit(1);
   }
 }
@@ -327,8 +333,18 @@ function prependAuthor(body: string, ghLogin: string): string {
 // migrate all
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve the repos base path from CLI flags or environment.
+ * Returns `null` when no explicit path was provided, so callers can
+ * decide whether to skip git content migration.
+ */
+function resolveReposPath(args: string[]): string | null {
+  return flagValue(args, '--repos') ?? process.env.GITD_REPOS ?? null;
+}
+
 async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
+  const reposPath = resolveReposPath(args);
   const slug = `${owner}/${repo}`;
 
   const token = resolveGitHubToken();
@@ -343,13 +359,26 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
     // Step 1: repo metadata.
     await migrateRepoInner(ctx, owner, repo);
 
-    // Step 2: issues + comments.
+    // Step 2: git content (clone, bundle, refs).
+    if (reposPath) {
+      try {
+        await migrateGitContent(ctx, owner, repo, reposPath);
+      } catch (err) {
+        console.error(`  Warning: git content migration failed: ${(err as Error).message}`);
+        console.error('  Metadata, issues, PRs, and releases will still be imported.');
+        console.error('  Re-run with a valid --repos path to retry git content migration.\n');
+      }
+    } else {
+      console.log('  Skipping git content — pass --repos <path> or set GITD_REPOS to include git data.');
+    }
+
+    // Step 3: issues + comments.
     const issueCount = await migrateIssuesInner(ctx, owner, repo);
 
-    // Step 3: pull requests + reviews.
+    // Step 4: pull requests + reviews.
     const pullCount = await migratePullsInner(ctx, owner, repo);
 
-    // Step 4: releases.
+    // Step 5: releases.
     const releaseCount = await migrateReleasesInner(ctx, owner, repo);
 
     console.log(`\nMigration complete: ${slug}`);
@@ -368,8 +397,14 @@ async function migrateAll(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function migrateRepo(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
+  const reposPath = resolveReposPath(args);
   try {
     await migrateRepoInner(ctx, owner, repo);
+    if (reposPath) {
+      await migrateGitContent(ctx, owner, repo, reposPath);
+    } else {
+      console.log('  Skipping git content — pass --repos <path> or set GITD_REPOS to include git data.');
+    }
   } catch (err) {
     console.error(`Failed to migrate repo: ${(err as Error).message}`);
     process.exit(1);
@@ -411,6 +446,131 @@ async function migrateRepoInner(ctx: AgentContext, owner: string, repo: string):
   console.log(`  Created repo "${gh.name}" (${gh.private ? 'private' : 'public'})`);
   console.log(`  Record ID: ${record.id}`);
   console.log(`  Source:    ${gh.html_url}`);
+}
+
+// ---------------------------------------------------------------------------
+// migrate git content (clone + bundle + refs)
+// ---------------------------------------------------------------------------
+
+/**
+ * Clone the GitHub repository as a bare repo, create a full git bundle,
+ * upload it to DWN, and sync all refs to DWN records.
+ *
+ * This is the "git content" migration step that turns the metadata-only
+ * repo record into a fully cloneable repo.
+ */
+async function migrateGitContent(
+  ctx: AgentContext,
+  owner: string,
+  repo: string,
+  reposPath: string,
+): Promise<void> {
+  const slug = `${owner}/${repo}`;
+  console.log(`Importing git content from ${slug}...`);
+
+  const backend = new GitBackend({ basePath: reposPath });
+  const repoPath = backend.repoPath(ctx.did, repo);
+
+  // Step 1: Clone bare repo from GitHub (or skip if already on disk).
+  if (backend.exists(ctx.did, repo)) {
+    console.log(`  Bare repo already exists at ${repoPath} — skipping clone.`);
+  } else {
+    const cloneUrl = buildCloneUrl(owner, repo);
+    console.log(`  Cloning ${cloneUrl} → ${repoPath}`);
+    await cloneBare(cloneUrl, repoPath);
+    console.log('  Clone complete.');
+  }
+
+  // Step 2: Create full git bundle.
+  console.log('  Creating git bundle...');
+  const bundleInfo = await createFullBundle(repoPath);
+  console.log(`  Bundle: ${bundleInfo.size} bytes, ${bundleInfo.refCount} ref(s), tip: ${bundleInfo.tipCommit.slice(0, 8)}`);
+
+  // Step 3: Upload bundle to DWN.
+  const { contextId: repoContextId, visibility } = await getRepoContext(ctx);
+  const encrypt = visibility === 'private';
+
+  try {
+    const bundleData = new Uint8Array(await readFile(bundleInfo.path));
+
+    const { status } = await ctx.repo.records.create('repo/bundle', {
+      data       : bundleData,
+      dataFormat : 'application/x-git-bundle',
+      tags       : {
+        tipCommit : bundleInfo.tipCommit,
+        isFull    : true,
+        refCount  : bundleInfo.refCount,
+        size      : bundleInfo.size,
+      },
+      parentContextId : repoContextId,
+      encryption      : encrypt,
+    } as any);
+
+    if (status.code >= 300) {
+      throw new Error(`Failed to create bundle record: ${status.code} ${status.detail}`);
+    }
+    console.log('  Bundle uploaded to DWN.');
+  } finally {
+    await unlink(bundleInfo.path).catch(() => {});
+  }
+
+  // Step 4: Sync git refs to DWN.
+  console.log('  Syncing refs to DWN...');
+  const gitRefs = await readGitRefs(repoPath);
+
+  let refCount = 0;
+  for (const ref of gitRefs) {
+    const { status } = await ctx.refs.records.create('repo/ref', {
+      data            : { name: ref.name, target: ref.target, type: ref.type },
+      tags            : { name: ref.name, type: ref.type, target: ref.target },
+      parentContextId : repoContextId,
+    });
+
+    if (status.code >= 300) {
+      console.error(`  Failed to sync ref ${ref.name}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    refCount++;
+  }
+
+  console.log(`  Synced ${refCount} ref(s) to DWN.`);
+  console.log(`  Git content migration complete.`);
+}
+
+/**
+ * Build the clone URL for a GitHub repository.
+ * Uses the token (if available) for authenticated HTTPS clone.
+ */
+function buildCloneUrl(owner: string, repo: string): string {
+  const token = resolveGitHubToken();
+  if (token) {
+    return `https://${token}@github.com/${owner}/${repo}.git`;
+  }
+  return `https://github.com/${owner}/${repo}.git`;
+}
+
+/**
+ * Clone a git repository as a bare repo using `git clone --bare`.
+ */
+function cloneBare(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['clone', '--bare', url, destPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const stderrChunks: Buffer[] = [];
+    child.stderr!.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+    child.on('error', reject);
+    child.on('exit', (code: number | null) => {
+      if (code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+        reject(new Error(`git clone --bare failed (exit ${code}): ${stderr}`));
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
