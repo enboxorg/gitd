@@ -49,6 +49,22 @@
     "./resolver": {
       "types": "./dist/types/resolver/index.d.ts",
       "import": "./dist/esm/resolver/index.js"
+    },
+    "./shims": {
+      "types": "./dist/types/shims/index.d.ts",
+      "import": "./dist/esm/shims/index.js"
+    },
+    "./shims/npm": {
+      "types": "./dist/types/shims/npm/index.d.ts",
+      "import": "./dist/esm/shims/npm/index.js"
+    },
+    "./shims/go": {
+      "types": "./dist/types/shims/go/index.d.ts",
+      "import": "./dist/esm/shims/go/index.js"
+    },
+    "./shims/oci": {
+      "types": "./dist/types/shims/oci/index.d.ts",
+      "import": "./dist/esm/shims/oci/index.js"
     }
   },
   "keywords": [

@@ -83,7 +83,7 @@ export const ForgeRegistryDefinition = {
         $requiredTags       : ['name', 'ecosystem'],
         $allowUndefinedTags : false,
         name                : { type: 'string', maxLength: 214 },
-        ecosystem           : { type: 'string', enum: ['npm', 'cargo', 'pip', 'go'] },
+        ecosystem           : { type: 'string', enum: ['npm', 'cargo', 'pip', 'go', 'oci'] },
         description         : { type: 'string' },
       },
 

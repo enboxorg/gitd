@@ -1070,6 +1070,52 @@ For additional verification, `attestation` records allow third-party co-signing:
 
 The resolver builds a trust chain: resolve each DID, verify tarball signatures match the DID, check attestation records for build reproducibility. The entire chain is verifiable without any central authority.
 
+### Package Manager Shims
+
+To enable native tooling (npm, go, docker) to consume DID-scoped packages without custom plugins, `dwn-git` provides local proxy shims that speak the native protocol of each tool:
+
+**npm registry shim** — Implements the npm registry HTTP API. npm/bun/yarn/pnpm see a standard registry and install DID-scoped packages:
+
+```bash
+dwn-git shim npm --port 4873
+npm install --registry=http://localhost:4873 @did:dht:abc123/my-pkg@1.0.0
+```
+
+The DID is embedded in the npm scope: `@did:dht:abc123` → DID `did:dht:abc123`. The shim maps npm API calls to DWN queries:
+- `GET /@scope/name` → packument (all versions, dist-tags, tarball URLs)
+- `GET /@scope/name/version` → version-specific metadata
+- `GET /-/@scope/name/-/name-version.tgz` → tarball download from DWN
+
+**Go module proxy shim** — Implements the GOPROXY protocol. Go tools use standard `go get`:
+
+```bash
+dwn-git shim go --port 4874
+GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0
+```
+
+Module paths use `did.enbox.org/` as a virtual domain prefix. The shim generates `go.mod` files with DID-scoped dependencies mapped to `did.enbox.org/` paths:
+- `GET /{module}/@v/list` → version listing
+- `GET /{module}/@v/{ver}.info` → version JSON (Version + Time)
+- `GET /{module}/@v/{ver}.mod` → generated go.mod
+- `GET /{module}/@v/{ver}.zip` → module archive from DWN
+- `GET /{module}/@latest` → latest version info
+
+**OCI/Docker registry shim** — Implements the OCI Distribution Spec v2. Docker/Podman pull images:
+
+```bash
+dwn-git shim oci --port 5555
+docker pull localhost:5555/did:dht:abc123/my-image:v1.0.0
+```
+
+Container images use the registry protocol with `ecosystem: 'oci'`. OCI manifests are stored as tarball records. The shim serves:
+- `GET /v2/` → API version check
+- `GET /v2/{name}/tags/list` → tag listing
+- `GET /v2/{name}/manifests/{ref}` → manifest by tag or digest (with SHA-256 content digest)
+- `HEAD /v2/{name}/manifests/{ref}` → existence check
+- `GET /v2/{name}/blobs/{digest}` → blob download
+
+All shims are read-only proxy servers that translate from their ecosystem's native protocol to DWN queries using the resolver module. They inherit all DWN guarantees: cryptographic provenance, immutability, and decentralized hosting.
+
 ---
 
 ## 8. Namespace-Based Contribution Model
@@ -1323,6 +1369,7 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 - [ ] **VS Code extension**: native IDE integration (separate repo, post-stabilization)
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
 - [x] **GitHub API compatibility shim**: read-only Phase 1 (10 endpoints)
+- [x] **Package manager shims**: npm registry proxy, Go module proxy, OCI/Docker registry proxy — 56 tests, 122 assertions
 
 ---
 
@@ -1396,6 +1443,20 @@ dwn-git/
 │       ├── resolve.ts          # DID-scoped package/version/tarball resolution
 │       ├── verify.ts           # Package integrity + attestation verification
 │       └── trust-chain.ts      # Recursive dependency trust chain validator
+│   └── shims/                  # Package manager shims
+│       ├── index.ts            # Barrel re-export (all shims)
+│       ├── npm/                # npm registry shim
+│       │   ├── index.ts
+│       │   ├── registry.ts     # npm API handlers, packument builder
+│       │   └── server.ts       # HTTP server
+│       ├── go/                 # Go module proxy shim
+│       │   ├── index.ts
+│       │   ├── proxy.ts        # GOPROXY handlers, go.mod generator
+│       │   └── server.ts       # HTTP server
+│       └── oci/                # OCI/Docker registry shim
+│           ├── index.ts
+│           ├── registry.ts     # OCI Distribution API handlers
+│           └── server.ts       # HTTP server
 ├── schemas/                    # JSON Schema files (34 files)
 │   ├── repo/
 │   ├── refs/
@@ -1424,5 +1485,6 @@ dwn-git/
     ├── verify.spec.ts          # Signature verification tests
     ├── credential-helper.spec.ts # Credential helper tests
     ├── github-shim.spec.ts     # GitHub API shim tests (56 tests)
-    └── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
+    ├── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
+    └── shims.spec.ts           # Package manager shim tests (56 tests)
 ```
