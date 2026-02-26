@@ -155,11 +155,31 @@ const PRIVATE_IPV6_PATTERNS: RegExp[] = [
   /^fe80:/i, // fe80::/10 link-local
 ];
 
+/** Track whether the dev-mode warning has been emitted. */
+let allowPrivateWarned = false;
+
 /**
  * Assert that a URL does not resolve to a private/loopback address.
- * @throws If the URL hostname is a private or loopback IP
+ *
+ * When `GITD_ALLOW_PRIVATE=1` is set, the check is skipped and a
+ * warning is printed to stderr on first use.  This is intended solely
+ * for local development and testing with `did:web:localhost` or other
+ * local DID methods.
+ *
+ * @throws If the URL hostname is a private or loopback IP (unless bypassed)
  */
-function assertNotPrivateUrl(urlString: string): void {
+export function assertNotPrivateUrl(urlString: string): void {
+  if (process.env.GITD_ALLOW_PRIVATE === '1') {
+    if (!allowPrivateWarned) {
+      console.error(
+        '[git-remote-did] WARNING: SSRF protection disabled '
+        + '(GITD_ALLOW_PRIVATE=1) — do not use in production',
+      );
+      allowPrivateWarned = true;
+    }
+    return;
+  }
+
   let parsed: URL;
   try {
     parsed = new URL(urlString);
