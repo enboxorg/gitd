@@ -213,6 +213,7 @@ describe('connectAgent with profile dataPath', () => {
     rmSync(TEST_DATA, { recursive: true, force: true });
   });
 
+  // SQLite migration + Dwn.create() takes longer than the default 5 s timeout.
   it('should create agent at specified dataPath', async () => {
     rmSync(TEST_DATA, { recursive: true, force: true });
 
@@ -227,7 +228,9 @@ describe('connectAgent with profile dataPath', () => {
     expect(typeof result.recoveryPhrase).toBe('string');
     // Verify data was created on disk.
     expect(existsSync(TEST_DATA)).toBe(true);
-  });
+    // Verify the DWN uses SQLite instead of LevelDB.
+    expect(existsSync(`${TEST_DATA}/dwn.sqlite`)).toBe(true);
+  }, 15_000);
 
   // Note: reconnect test cannot run in the same process because LevelDB
   // holds exclusive file locks.  Reconnect is exercised by the CLI itself
