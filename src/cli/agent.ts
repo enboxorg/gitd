@@ -21,6 +21,8 @@ import { DwnRegistrar } from '@enbox/dwn-clients';
 import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
 
+import { createSqliteDwnApi } from './dwn-sqlite.js';
+
 import type { ForgeCiSchemaMap } from '../ci.js';
 import type { ForgeIssuesSchemaMap } from '../issues.js';
 import type { ForgeNotificationsSchemaMap } from '../notifications.js';
@@ -328,7 +330,10 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 
   if (dataPath) {
     // Profile-based: create agent with explicit data path.
-    agent = await Web5UserAgent.create({ dataPath });
+    // Pre-construct a SQLite-backed DWN so that Web5UserAgent.create()
+    // skips the default LevelDB stores for the four core DWN interfaces.
+    const dwnApi = await createSqliteDwnApi(dataPath);
+    agent = await Web5UserAgent.create({ dataPath, dwnApi });
 
     if (await agent.firstLaunch()) {
       recoveryPhrase = await agent.initialize({
