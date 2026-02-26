@@ -741,13 +741,28 @@ describe('gitd CLI commands', () => {
   // =========================================================================
 
   describe('setup', () => {
-    it('should print setup instructions', async () => {
+    it('should print next steps on install', async () => {
       const { setupCommand } = await import('../src/cli/commands/setup.js');
       // Use a test-specific bin dir to avoid modifying the user's system.
       const logs = await captureLog(() => setupCommand(['--bin-dir', '__TESTDATA__/cli-bin']));
-      // Even if sources don't exist (not built at test time), setup should print messages.
       const allOutput = logs.join('\n');
-      expect(allOutput).toContain('clone repos via DID');
+      expect(allOutput).toContain('Next steps');
+      expect(allOutput).toContain('credential.helper');
+    });
+
+    it('--check should report status of binaries and credential helper', async () => {
+      const { setupCommand } = await import('../src/cli/commands/setup.js');
+      const logs = await captureLog(() => setupCommand(['--check', '--bin-dir', '__TESTDATA__/cli-bin']));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Checking gitd setup');
+      expect(allOutput).toContain('git-remote-did');
+    });
+
+    it('--uninstall should remove symlinks', async () => {
+      const { setupCommand } = await import('../src/cli/commands/setup.js');
+      const logs = await captureLog(() => setupCommand(['--uninstall', '--bin-dir', '__TESTDATA__/cli-bin']));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Removing gitd setup');
     });
   });
 

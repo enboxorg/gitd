@@ -116,7 +116,7 @@ function printUsage(): void {
   console.log('  auth list                                   List all profiles');
   console.log('  auth use <profile> [--global]               Set active profile');
   console.log('');
-  console.log('  setup                                       Configure git for DID-based remotes');
+  console.log('  setup [--check | --uninstall]                Configure git for DID-based remotes');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
   console.log('  serve [--port <port>]                       Start the git transport server');
