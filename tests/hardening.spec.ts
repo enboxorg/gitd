@@ -363,27 +363,108 @@ describe('validateBearerToken', () => {
 // Fix 4: SSRF protection
 // ---------------------------------------------------------------------------
 
-describe('SSRF protection — resolveGitEndpoint', () => {
-  // We test the internal `assertNotPrivateUrl` indirectly by importing
-  // `resolveGitEndpoint` and verifying it throws for private service endpoints.
-  // Since we can't easily mock DID resolution here, we test the URL extraction
-  // path via the resolve module's extractEndpointUrl → assertNotPrivateUrl chain.
-  // The simplest approach: import and test the helper directly.
+describe('SSRF protection — assertNotPrivateUrl', () => {
+  const { assertNotPrivateUrl } = require('../src/git-remote/resolve.js');
 
-  // The SSRF protection lives in extractEndpointUrl, which is internal.
-  // We verify through the public API — but since DID resolution requires
-  // network, we test the validateBearerToken approach is correct and
-  // trust the unit tests cover the internal helpers.
+  // Save and restore env between tests.
+  const origAllow = process.env.GITD_ALLOW_PRIVATE;
+  afterAll(() => {
+    if (origAllow !== undefined) { process.env.GITD_ALLOW_PRIVATE = origAllow; }
+    else { delete process.env.GITD_ALLOW_PRIVATE; }
+  });
 
-  // Note: The actual SSRF validation is tested structurally here via the
-  // resolveGitEndpoint function, but we need a mock DID resolver for
-  // comprehensive testing. For now, test the URL patterns we block.
+  beforeEach(() => {
+    delete process.env.GITD_ALLOW_PRIVATE;
+  });
 
-  it('should be covered by resolver tests (SSRF patterns block private IPs)', () => {
-    // This is a marker test — the actual SSRF protection is tested
-    // through the build system (the code compiles with the protection in place)
-    // and through integration with the resolver spec.
-    expect(true).toBe(true);
+  it('blocks localhost', () => {
+    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks subdomain of localhost', () => {
+    expect(() => assertNotPrivateUrl('http://foo.localhost:8080/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 127.x.x.x loopback', () => {
+    expect(() => assertNotPrivateUrl('http://127.0.0.1:9418/git'))
+      .toThrow('SSRF blocked');
+    expect(() => assertNotPrivateUrl('http://127.255.255.255/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 10.x.x.x private range', () => {
+    expect(() => assertNotPrivateUrl('http://10.0.0.1/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 172.16-31.x.x private range', () => {
+    expect(() => assertNotPrivateUrl('http://172.16.0.1/git'))
+      .toThrow('SSRF blocked');
+    expect(() => assertNotPrivateUrl('http://172.31.255.255/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 192.168.x.x private range', () => {
+    expect(() => assertNotPrivateUrl('http://192.168.1.1/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 169.254.x.x link-local', () => {
+    expect(() => assertNotPrivateUrl('http://169.254.0.1/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks 0.x.x.x', () => {
+    expect(() => assertNotPrivateUrl('http://0.0.0.0/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks IPv6 loopback', () => {
+    expect(() => assertNotPrivateUrl('http://[::1]:8080/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks IPv6 unique-local (fc/fd)', () => {
+    expect(() => assertNotPrivateUrl('http://[fc00::1]/git'))
+      .toThrow('SSRF blocked');
+    expect(() => assertNotPrivateUrl('http://[fd12::1]/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('blocks IPv6 link-local (fe80)', () => {
+    expect(() => assertNotPrivateUrl('http://[fe80::1]/git'))
+      .toThrow('SSRF blocked');
+  });
+
+  it('allows public URLs', () => {
+    expect(() => assertNotPrivateUrl('https://enbox-dwn.fly.dev/git')).not.toThrow();
+    expect(() => assertNotPrivateUrl('https://example.com/git')).not.toThrow();
+    expect(() => assertNotPrivateUrl('https://8.8.8.8/git')).not.toThrow();
+  });
+
+  it('throws on invalid URL', () => {
+    expect(() => assertNotPrivateUrl('not-a-url'))
+      .toThrow('Invalid URL');
+  });
+
+  it('bypasses SSRF check when GITD_ALLOW_PRIVATE=1', () => {
+    process.env.GITD_ALLOW_PRIVATE = '1';
+    expect(() => assertNotPrivateUrl('http://localhost:8080/git')).not.toThrow();
+    expect(() => assertNotPrivateUrl('http://127.0.0.1/git')).not.toThrow();
+    expect(() => assertNotPrivateUrl('http://10.0.0.1/git')).not.toThrow();
+    expect(() => assertNotPrivateUrl('http://[::1]:8080/git')).not.toThrow();
+  });
+
+  it('does not bypass when GITD_ALLOW_PRIVATE is not "1"', () => {
+    process.env.GITD_ALLOW_PRIVATE = 'true';
+    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
+      .toThrow('SSRF blocked');
+
+    process.env.GITD_ALLOW_PRIVATE = '0';
+    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
+      .toThrow('SSRF blocked');
   });
 });
 
