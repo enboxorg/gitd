@@ -1,5 +1,11 @@
 # @enbox/gitd
 
+## 0.6.1
+
+### Patch Changes
+
+- [#88](https://github.com/enboxorg/gitd/pull/88) [`5b0f58d`](https://github.com/enboxorg/gitd/commit/5b0f58dcd9edfcb1420b7cebeeb3aff5871df29f) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix `did:` prefix doubling when remote URL contains the full DID (`did::did:dht:.../repo`). The URL parser now accepts both short (`dht:id/repo`) and full (`did:dht:id/repo`) forms.
+
 ## 0.6.0
 
 ### Minor Changes
