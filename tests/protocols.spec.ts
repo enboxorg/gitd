@@ -371,11 +371,11 @@ describe('@enbox/gitd', () => {
       expect(authorAction!.can).toContain('create');
     });
 
-    it('should allow contributors to read revisionBundle', () => {
+    it('should allow anyone to read revisionBundle', () => {
       const actions = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$actions!;
-      const contribAction = actions.find((a: { role?: string }) => a.role === 'repo:repo/contributor');
-      expect(contribAction).toBeDefined();
-      expect(contribAction!.can).toContain('read');
+      const anyoneAction = actions.find((a: { who?: string }) => a.who === 'anyone');
+      expect(anyoneAction).toBeDefined();
+      expect(anyoneAction!.can).toContain('read');
     });
 
     it('should nest reviewComment under review (3-level nesting)', () => {
@@ -401,6 +401,42 @@ describe('@enbox/gitd', () => {
     it('should restrict mergeResult strategy to merge, squash, rebase', () => {
       const strategy = ForgePatchesDefinition.structure.repo.patch.mergeResult.$tags?.strategy as { enum: string[] };
       expect(strategy.enum).toEqual(['merge', 'squash', 'rebase']);
+    });
+
+    it('should allow anyone to create and read patches (open submissions)', () => {
+      const actions = ForgePatchesDefinition.structure.repo.patch.$actions!;
+      const anyoneAction = actions.find((a) => a.who === 'anyone');
+      expect(anyoneAction).toBeDefined();
+      expect(anyoneAction!.can).toContain('create');
+      expect(anyoneAction!.can).toContain('read');
+    });
+
+    it('should allow anyone to read revisions, reviews, statusChanges, and mergeResults', () => {
+      const revisionActions = ForgePatchesDefinition.structure.repo.patch.revision.$actions!;
+      expect(revisionActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const bundleActions = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$actions!;
+      expect(bundleActions.find((a: { who?: string }) => a.who === 'anyone')!.can).toContain('read');
+
+      const reviewActions = ForgePatchesDefinition.structure.repo.patch.review.$actions!;
+      expect(reviewActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const commentActions = ForgePatchesDefinition.structure.repo.patch.review.reviewComment.$actions!;
+      expect(commentActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const statusActions = ForgePatchesDefinition.structure.repo.patch.statusChange.$actions!;
+      expect(statusActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const mergeActions = ForgePatchesDefinition.structure.repo.patch.mergeResult.$actions!;
+      expect(mergeActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+    });
+
+    it('should allow anyone to create reviews and review comments', () => {
+      const reviewActions = ForgePatchesDefinition.structure.repo.patch.review.$actions!;
+      expect(reviewActions.find((a) => a.who === 'anyone')!.can).toContain('create');
+
+      const commentActions = ForgePatchesDefinition.structure.repo.patch.review.reviewComment.$actions!;
+      expect(commentActions.find((a) => a.who === 'anyone')!.can).toContain('create');
     });
 
     it('should allow patch author to create revisions and status changes', () => {

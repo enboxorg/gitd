@@ -120,7 +120,7 @@ export const ForgePatchesDefinition = {
 
       patch: {
         $actions: [
-          { role: 'repo:repo/contributor', can: ['create', 'read'] },
+          { who: 'anyone', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
           { who: 'author', of: 'repo/patch', can: ['create', 'update'] },
         ],
@@ -137,7 +137,7 @@ export const ForgePatchesDefinition = {
         revision: {
           $immutable : true,
           $actions   : [
-            { role: 'repo:repo/contributor', can: ['read'] },
+            { who: 'anyone', can: ['read'] },
             { who: 'author', of: 'repo/patch', can: ['create'] },
           ],
           $tags: {
@@ -152,7 +152,7 @@ export const ForgePatchesDefinition = {
             $immutable   : true,
             $recordLimit : { max: 1, strategy: 'reject' },
             $actions     : [
-              { role: 'repo:repo/contributor', can: ['read'] },
+              { who: 'anyone', can: ['read'] },
               { who: 'author', of: 'repo/patch', can: ['create'] },
             ],
             $tags: {
@@ -169,7 +169,7 @@ export const ForgePatchesDefinition = {
         review: {
           $immutable : true,
           $actions   : [
-            { role: 'repo:repo/contributor', can: ['create', 'read'] },
+            { who: 'anyone', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read'] },
           ],
           $tags: {
@@ -181,7 +181,7 @@ export const ForgePatchesDefinition = {
 
           reviewComment: {
             $actions: [
-              { role: 'repo:repo/contributor', can: ['create', 'read'] },
+              { who: 'anyone', can: ['create', 'read'] },
               { role: 'repo:repo/maintainer', can: ['create', 'read'] },
             ],
             $tags: {
@@ -196,7 +196,7 @@ export const ForgePatchesDefinition = {
         statusChange: {
           $immutable : true,
           $actions   : [
-            { role: 'repo:repo/contributor', can: ['read'] },
+            { who: 'anyone', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create'] },
             { who: 'author', of: 'repo/patch', can: ['create'] },
           ],
@@ -206,7 +206,7 @@ export const ForgePatchesDefinition = {
           $immutable   : true,
           $recordLimit : { max: 1, strategy: 'reject' },
           $actions     : [
-            { role: 'repo:repo/contributor', can: ['read'] },
+            { who: 'anyone', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create'] },
           ],
           $tags: {
