@@ -35,10 +35,12 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Parsed credential request from git. */
-type CredentialRequest = {
+export type CredentialRequest = {
   protocol?: string;
   host?: string;
   path?: string;
+  username?: string;
+  password?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,8 @@ export function parseCredentialRequest(input: string): CredentialRequest {
     if (key === 'protocol') { result.protocol = value; }
     if (key === 'host') { result.host = value; }
     if (key === 'path') { result.path = value; }
+    if (key === 'username') { result.username = value; }
+    if (key === 'password') { result.password = value; }
   }
   return result;
 }

@@ -3,8 +3,16 @@
  * Git credential helper entry point for DID-based push authentication.
  *
  * Git invokes this binary with a single argument: `get`, `store`, or `erase`.
- * For `get`, the helper reads the request from stdin (key=value lines) and
- * writes credentials to stdout.
+ *
+ * - **get**   — returns cached credentials if still valid, otherwise connects
+ *               to the local Web5 agent and generates a fresh DID-signed
+ *               push token.
+ * - **store** — caches the credential so repeated operations within the
+ *               token's TTL skip the expensive agent-connect + sign step.
+ * - **erase** — removes the cached credential when git reports it was
+ *               rejected (e.g. expired or revoked token).
+ *
+ * Credentials are cached at `~/.enbox/credential-cache.json` (mode 0o600).
  *
  * This helper creates a DID-signed push token using the local Web5 agent's
  * identity, formatted as HTTP Basic auth credentials:
@@ -28,10 +36,17 @@ import { Web5UserAgent } from '@enbox/agent';
 
 import {
   createPushTokenPayload,
+  decodePushToken,
   DID_AUTH_USERNAME,
   encodePushToken,
   formatAuthPassword,
+  parseAuthPassword,
 } from '../git-server/auth.js';
+import {
+  eraseCachedCredential,
+  getCachedCredential,
+  storeCachedCredential,
+} from './credential-cache.js';
 import {
   formatCredentialResponse,
   parseCredentialRequest,
@@ -45,17 +60,49 @@ import { profileDataPath, resolveProfile } from '../profiles/config.js';
 async function main(): Promise<void> {
   const action = process.argv[2];
 
-  // Only handle `get` requests — `store` and `erase` are no-ops.
-  if (action !== 'get') {
-    return;
-  }
-
-  // Read the credential request from stdin.
+  // Read the credential request from stdin (all actions receive it).
   const input = await readStdin();
   const request = parseCredentialRequest(input);
 
   // We only handle HTTP/HTTPS requests.
   if (request.protocol && request.protocol !== 'https' && request.protocol !== 'http') {
+    return;
+  }
+
+  switch (action) {
+    case 'get':
+      await handleGet(request);
+      break;
+
+    case 'store':
+      handleStore(request);
+      break;
+
+    case 'erase':
+      handleErase(request);
+      break;
+
+    default:
+      // Unknown action — silently ignore.
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Action handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle `get` — return cached credentials or generate fresh ones.
+ */
+async function handleGet(request: { protocol?: string; host?: string; path?: string }): Promise<void> {
+  // Check the cache first — avoids expensive agent connection.
+  const cached = getCachedCredential(request.host, request.path);
+  if (cached) {
+    process.stdout.write(formatCredentialResponse({
+      username : cached.username,
+      password : cached.password,
+    }));
     return;
   }
 
@@ -94,7 +141,50 @@ async function main(): Promise<void> {
     password : formatAuthPassword({ signature: signatureBase64url, token }),
   };
 
+  // Cache for subsequent requests within the TTL.
+  storeCachedCredential(
+    request.host,
+    request.path,
+    creds.username,
+    creds.password,
+    payload.exp,
+  );
+
   process.stdout.write(formatCredentialResponse(creds));
+}
+
+/**
+ * Handle `store` — cache a credential that git confirmed as valid.
+ *
+ * Git sends `store` after a successful authentication. The stdin
+ * includes `username` and `password` fields alongside the usual
+ * `protocol`, `host`, and `path`.
+ */
+function handleStore(request: { protocol?: string; host?: string; path?: string; username?: string; password?: string }): void {
+  const { username, password } = request;
+  if (!username || !password) { return; }
+
+  // Only cache our own DID-auth credentials.
+  if (username !== DID_AUTH_USERNAME) { return; }
+
+  // Extract the token expiry from the password payload.
+  try {
+    const signed = parseAuthPassword(password);
+    const payload = decodePushToken(signed.token);
+    storeCachedCredential(request.host, request.path, username, password, payload.exp);
+  } catch {
+    // Malformed token — don't cache.
+  }
+}
+
+/**
+ * Handle `erase` — remove a cached credential that was rejected.
+ *
+ * Git sends `erase` when the server rejected the credential (e.g.
+ * HTTP 401). Removing the entry forces a fresh token on next attempt.
+ */
+function handleErase(request: { protocol?: string; host?: string; path?: string }): void {
+  eraseCachedCredential(request.host, request.path);
 }
 
 // ---------------------------------------------------------------------------
