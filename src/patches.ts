@@ -31,6 +31,14 @@ export type RevisionData = {
   diffStat : { additions: number; deletions: number; filesChanged: number };
 };
 
+/**
+ * Data shape for a revision bundle record.
+ *
+ * The record payload is the raw git bundle binary (`application/x-git-bundle`).
+ * Queryable metadata (tipCommit, baseCommit, etc.) is stored in record tags.
+ */
+export type RevisionBundleData = Uint8Array;
+
 /** Data shape for a code review. */
 export type ReviewData = {
   body?: string;
@@ -60,6 +68,7 @@ export type MergeResultData = {
 export type ForgePatchesSchemaMap = {
   patch : PatchData;
   revision : RevisionData;
+  revisionBundle : RevisionBundleData;
   review : ReviewData;
   reviewComment : ReviewCommentData;
   statusChange : PatchStatusChangeData;
@@ -84,6 +93,9 @@ export const ForgePatchesDefinition = {
     revision: {
       schema      : 'https://enbox.org/schemas/forge/revision',
       dataFormats : ['application/json'],
+    },
+    revisionBundle: {
+      dataFormats: ['application/x-git-bundle'],
     },
     review: {
       schema      : 'https://enbox.org/schemas/forge/review',
@@ -134,6 +146,23 @@ export const ForgePatchesDefinition = {
             headCommit          : { type: 'string' },
             baseCommit          : { type: 'string' },
             commitCount         : { type: 'integer', minimum: 1 },
+          },
+
+          revisionBundle: {
+            $immutable   : true,
+            $recordLimit : { max: 1, strategy: 'reject' },
+            $actions     : [
+              { role: 'repo:repo/contributor', can: ['read'] },
+              { who: 'author', of: 'repo/patch', can: ['create'] },
+            ],
+            $tags: {
+              $requiredTags       : ['tipCommit', 'baseCommit'],
+              $allowUndefinedTags : false,
+              tipCommit           : { type: 'string' },
+              baseCommit          : { type: 'string' },
+              refCount            : { type: 'integer' },
+              size                : { type: 'integer' },
+            },
           },
         },
 
