@@ -9,9 +9,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
@@ -410,10 +411,9 @@ describe('gitd CLI commands', () => {
         initCommand(ctx, ['post-init-test', '--repos', REPOS_PATH]),
       );
       expect(logs.some((l) => l.includes('Next steps'))).toBe(true);
-      expect(logs.some((l) => l.includes('git remote add origin'))).toBe(true);
       expect(logs.some((l) => l.includes('git push'))).toBe(true);
       expect(logs.some((l) => l.includes('gitd serve'))).toBe(true);
-      // Should include the DID in the remote URL.
+      // Should include the DID somewhere in the output.
       expect(logs.some((l) => l.includes(ctx.did))).toBe(true);
     });
 
@@ -424,6 +424,56 @@ describe('gitd CLI commands', () => {
       );
       expect(logs.some((l) => l.includes('--public-url'))).toBe(true);
       expect(logs.some((l) => l.includes('DEPLOY.md'))).toBe(true);
+    });
+
+    it('should report origin already exists when run inside a repo with origin', async () => {
+      // Tests run inside the gitd project which already has an origin remote.
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const logs = await captureLog(() =>
+        initCommand(ctx, ['origin-exists-test', '--repos', REPOS_PATH]),
+      );
+      expect(logs.some((l) => l.includes('origin'))).toBe(true);
+      expect(logs.some((l) => l.includes('already exists'))).toBe(true);
+    });
+
+    it('should print git remote add when --no-local is used', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const logs = await captureLog(() =>
+        initCommand(ctx, ['no-local-test', '--repos', REPOS_PATH, '--no-local']),
+      );
+      expect(logs.some((l) => l.includes('git remote add origin'))).toBe(true);
+      // Should NOT report local repo setup.
+      expect(logs.some((l) => l.includes('Initialized local git repo'))).toBe(false);
+    });
+  });
+
+  describe('init local repo setup', () => {
+    it('should initialize git repo and add remote in a fresh directory', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const absReposPath = resolve(REPOS_PATH);
+      const tmpDir = join(absReposPath, '__local-test');
+      mkdirSync(tmpDir, { recursive: true });
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpDir);
+        const logs = await captureLog(() =>
+          initCommand(ctx, ['local-init-test', '--repos', absReposPath]),
+        );
+        expect(logs.some((l) => l.includes('Initialized local git repo'))).toBe(true);
+        expect(logs.some((l) => l.includes('Remote "origin" set to'))).toBe(true);
+        // Verify .git directory was created.
+        expect(existsSync(join(tmpDir, '.git'))).toBe(true);
+        // Verify the remote was added.
+        const remoteCheck = spawnSync('git', ['remote', 'get-url', 'origin'], {
+          cwd   : tmpDir,
+          stdio : 'pipe',
+        });
+        expect(remoteCheck.status).toBe(0);
+        expect(remoteCheck.stdout.toString().trim()).toContain(ctx.did);
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 
