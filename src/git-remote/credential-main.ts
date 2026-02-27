@@ -196,18 +196,17 @@ function handleErase(request: { protocol?: string; host?: string; path?: string 
  *
  * Resolves the active profile (env, git config, global default, or single
  * fallback) and connects using the profile's agent data path.  Falls back
- * to the legacy CWD-relative `DATA/AGENT` path when no profile exists.
+ * to `~/.enbox/profiles/default/DATA/AGENT` when no profile exists.
  */
 async function connectForCredentials(
   password: string,
 ): Promise<{ did: string; bearerDid: BearerDid }> {
   // Resolve profile (env, git config, global default, single fallback).
-  // When a profile exists, the agent lives at ~/.enbox/profiles/<name>/DATA/AGENT.
-  // Otherwise, fall back to the CWD-relative default path (legacy).
+  // Always use an absolute path — never fall back to CWD.
   const profileName = resolveProfile();
-  const dataPath = profileName ? profileDataPath(profileName) : undefined;
+  const dataPath = profileDataPath(profileName ?? 'default');
 
-  const agent = await Web5UserAgent.create(dataPath ? { dataPath } : undefined);
+  const agent = await Web5UserAgent.create({ dataPath });
   await agent.start({ password });
 
   const identities = await agent.identity.list();

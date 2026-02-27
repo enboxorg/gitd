@@ -380,10 +380,13 @@ describe('gitd CLI commands', () => {
       }
     });
 
-    it('should fall back to ./repos when no profile', () => {
+    it('should fall back to ~/.enbox/profiles/default/repos without a profile', () => {
       const { resolveReposPath } = require('../src/cli/flags.js');
       const result = resolveReposPath([]);
-      expect(result).toBe('./repos');
+      expect(result).toContain('profiles');
+      expect(result).toContain('default');
+      expect(result).toContain('repos');
+      expect(result).not.toBe('./repos');
     });
   });
 
