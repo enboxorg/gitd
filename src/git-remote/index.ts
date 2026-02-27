@@ -4,6 +4,7 @@
  * @module git-remote
  */
 
+export * from './credential-cache.js';
 export * from './credential-helper.js';
 export * from './parse-url.js';
 export * from './resolve.js';
