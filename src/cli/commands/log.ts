@@ -1,7 +1,7 @@
 /**
  * `gitd log` — show recent forge activity.
  *
- * Displays recent issues, patches, and ref updates in reverse chronological
+ * Displays recent issues, PRs, and ref updates in reverse chronological
  * order, giving a unified activity feed for the repository.
  *
  * Usage: gitd log [--limit <n>]
@@ -19,7 +19,7 @@ import { flagValue, resolveRepoName } from '../flags.js';
 // ---------------------------------------------------------------------------
 
 type ActivityEntry = {
-  type : 'issue' | 'patch' | 'ref';
+  type : 'issue' | 'pr' | 'ref';
   date : string;
   line : string;
 };
@@ -53,7 +53,7 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
     });
   }
 
-  // Fetch recent patches.
+  // Fetch recent PRs.
   const { records: patches } = await ctx.patches.records.query('repo/patch', {
     filter: { contextId: repoContextId },
   });
@@ -64,9 +64,9 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
     const st = tags?.status ?? '?';
     const num = data.number ?? tags?.number ?? '?';
     entries.push({
-      type : 'patch',
+      type : 'pr',
       date : rec.dateCreated ?? '',
-      line : `patch  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
+      line : `pr     #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
     });
   }
 

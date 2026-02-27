@@ -1327,7 +1327,7 @@ The smallest useful forge — repos, issues, patches.
 - [x] **forge-patches**: PR CRUD, revisions, reviews, merge results — protocol definition complete, integration-tested (cross-protocol roles via `$ref`)
 - [x] Integration tests against a real DWN instance — 15 tests covering repo, issues, patches, CI, and role revocation (242 total tests, 738 assertions)
 - [x] **`$ref` wrapping**: all 5 composing protocols updated with `repo: { $ref: 'repo:repo' }` for cross-protocol role composition
-- [x] CLI prototype: `gitd init`, `gitd issue create/list`, `gitd patch create/list`, `gitd whoami` — 12 CLI tests (254 total, 762 assertions)
+- [x] CLI prototype: `gitd init`, `gitd issue create/list`, `gitd pr create/list`, `gitd whoami` — 12 CLI tests (254 total, 762 assertions)
 
 ### Phase 2: Git Transport (complete)
 

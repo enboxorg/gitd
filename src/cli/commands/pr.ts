@@ -1,14 +1,16 @@
 /**
- * `gitd patch` — create, list, show, comment on, and merge patches (pull requests).
+ * `gitd pr` — create, list, show, comment on, and merge pull requests.
  *
  * Usage:
- *   gitd patch create <title> [--body <text>] [--base <branch>] [--head <branch>]
- *   gitd patch show <number>
- *   gitd patch comment <number> <body>
- *   gitd patch merge <number> [--strategy <merge|squash|rebase>]
- *   gitd patch close <number>
- *   gitd patch reopen <number>
- *   gitd patch list [--status <draft|open|closed|merged>]
+ *   gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]
+ *   gitd pr show <number>
+ *   gitd pr comment <number> <body>
+ *   gitd pr merge <number> [--strategy <merge|squash|rebase>]
+ *   gitd pr close <number>
+ *   gitd pr reopen <number>
+ *   gitd pr list [--status <draft|open|closed|merged>]
+ *
+ * `gitd patch` is accepted as an alias for `gitd pr`.
  *
  * @module
  */
@@ -22,37 +24,37 @@ import { flagValue, resolveRepoName } from '../flags.js';
 // Sub-command dispatch
 // ---------------------------------------------------------------------------
 
-export async function patchCommand(ctx: AgentContext, args: string[]): Promise<void> {
+export async function prCommand(ctx: AgentContext, args: string[]): Promise<void> {
   const sub = args[0];
   const rest = args.slice(1);
 
   switch (sub) {
-    case 'create': return patchCreate(ctx, rest);
-    case 'show': return patchShow(ctx, rest);
-    case 'comment': return patchComment(ctx, rest);
-    case 'merge': return patchMerge(ctx, rest);
-    case 'close': return patchClose(ctx, rest);
-    case 'reopen': return patchReopen(ctx, rest);
+    case 'create': return prCreate(ctx, rest);
+    case 'show': return prShow(ctx, rest);
+    case 'comment': return prComment(ctx, rest);
+    case 'merge': return prMerge(ctx, rest);
+    case 'close': return prClose(ctx, rest);
+    case 'reopen': return prReopen(ctx, rest);
     case 'list':
-    case 'ls': return patchList(ctx, rest);
+    case 'ls': return prList(ctx, rest);
     default:
-      console.error('Usage: gitd patch <create|show|comment|merge|close|reopen|list>');
+      console.error('Usage: gitd pr <create|show|comment|merge|close|reopen|list>');
       process.exit(1);
   }
 }
 
 // ---------------------------------------------------------------------------
-// patch create
+// pr create
 // ---------------------------------------------------------------------------
 
-async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
+async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const title = args[0];
   const body = flagValue(args, '--body') ?? flagValue(args, '-m') ?? '';
   const base = flagValue(args, '--base') ?? 'main';
   const head = flagValue(args, '--head');
 
   if (!title) {
-    console.error('Usage: gitd patch create <title> [--body <text>] [--base <branch>] [--head <branch>]');
+    console.error('Usage: gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]');
     process.exit(1);
   }
 
@@ -75,29 +77,29 @@ async function patchCreate(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (status.code >= 300) {
-    console.error(`Failed to create patch: ${status.code} ${status.detail}`);
+    console.error(`Failed to create PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
-  console.log(`Created patch #${number}: "${title}" (${base}${head ? ` <- ${head}` : ''})`);
+  console.log(`Created PR #${number}: "${title}" (${base}${head ? ` <- ${head}` : ''})`);
   console.log(`  Record ID: ${record.id}`);
 }
 
 // ---------------------------------------------------------------------------
-// patch show
+// pr show
 // ---------------------------------------------------------------------------
 
-async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
+async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: gitd patch show <number>');
+    console.error('Usage: gitd pr show <number>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const record = await findPatchByNumber(ctx, repoContextId, numberStr);
+  const record = await findPrByNumber(ctx, repoContextId, numberStr);
   if (!record) {
-    console.error(`Patch #${numberStr} not found.`);
+    console.error(`PR #${numberStr} not found.`);
     process.exit(1);
   }
 
@@ -109,7 +111,7 @@ async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
   const base = tags?.baseBranch ?? '?';
   const head = tags?.headBranch;
 
-  console.log(`Patch #${num}: ${data.title}`);
+  console.log(`PR #${num}: ${data.title}`);
   console.log(`  Status:   ${st.toUpperCase()}`);
   console.log(`  Branches: ${base}${head ? ` <- ${head}` : ''}`);
   console.log(`  Created:  ${date}`);
@@ -145,22 +147,22 @@ async function patchShow(ctx: AgentContext, args: string[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// patch comment
+// pr comment
 // ---------------------------------------------------------------------------
 
-async function patchComment(ctx: AgentContext, args: string[]): Promise<void> {
+async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
 
   if (!numberStr || !body) {
-    console.error('Usage: gitd patch comment <number> <body>');
+    console.error('Usage: gitd pr comment <number> <body>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
-    console.error(`Patch #${numberStr} not found.`);
+    console.error(`PR #${numberStr} not found.`);
     process.exit(1);
   }
 
@@ -176,19 +178,19 @@ async function patchComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Added comment to patch #${numberStr}.`);
+  console.log(`Added comment to PR #${numberStr}.`);
 }
 
 // ---------------------------------------------------------------------------
-// patch merge
+// pr merge
 // ---------------------------------------------------------------------------
 
-async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
+async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   const strategy = flagValue(args, '--strategy') ?? 'merge';
 
   if (!numberStr) {
-    console.error('Usage: gitd patch merge <number> [--strategy <merge|squash|rebase>]');
+    console.error('Usage: gitd pr merge <number> [--strategy <merge|squash|rebase>]');
     process.exit(1);
   }
 
@@ -198,9 +200,9 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
-    console.error(`Patch #${numberStr} not found.`);
+    console.error(`PR #${numberStr} not found.`);
     process.exit(1);
   }
 
@@ -208,12 +210,12 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'merged') {
-    console.log(`Patch #${numberStr} is already merged.`);
+    console.log(`PR #${numberStr} is already merged.`);
     return;
   }
 
   if (tags?.status === 'closed') {
-    console.error(`Patch #${numberStr} is closed. Reopen it before merging.`);
+    console.error(`PR #${numberStr} is closed. Reopen it before merging.`);
     process.exit(1);
   }
 
@@ -224,7 +226,7 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (status.code >= 300) {
-    console.error(`Failed to merge patch: ${status.code} ${status.detail}`);
+    console.error(`Failed to merge PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
@@ -235,24 +237,24 @@ async function patchMerge(ctx: AgentContext, args: string[]): Promise<void> {
     parentContextId : patch.contextId,
   } as any);
 
-  console.log(`Merged patch #${numberStr}: "${data.title}" (strategy: ${strategy})`);
+  console.log(`Merged PR #${numberStr}: "${data.title}" (strategy: ${strategy})`);
 }
 
 // ---------------------------------------------------------------------------
-// patch close
+// pr close
 // ---------------------------------------------------------------------------
 
-async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
+async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: gitd patch close <number>');
+    console.error('Usage: gitd pr close <number>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
-    console.error(`Patch #${numberStr} not found.`);
+    console.error(`PR #${numberStr} not found.`);
     process.exit(1);
   }
 
@@ -260,12 +262,12 @@ async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'closed') {
-    console.log(`Patch #${numberStr} is already closed.`);
+    console.log(`PR #${numberStr} is already closed.`);
     return;
   }
 
   if (tags?.status === 'merged') {
-    console.log(`Patch #${numberStr} is merged and cannot be closed.`);
+    console.log(`PR #${numberStr} is merged and cannot be closed.`);
     return;
   }
 
@@ -275,28 +277,28 @@ async function patchClose(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (status.code >= 300) {
-    console.error(`Failed to close patch: ${status.code} ${status.detail}`);
+    console.error(`Failed to close PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
-  console.log(`Closed patch #${numberStr}: "${data.title}"`);
+  console.log(`Closed PR #${numberStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
-// patch reopen
+// pr reopen
 // ---------------------------------------------------------------------------
 
-async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
+async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
   if (!numberStr) {
-    console.error('Usage: gitd patch reopen <number>');
+    console.error('Usage: gitd pr reopen <number>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPatchByNumber(ctx, repoContextId, numberStr);
+  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
   if (!patch) {
-    console.error(`Patch #${numberStr} not found.`);
+    console.error(`PR #${numberStr} not found.`);
     process.exit(1);
   }
 
@@ -304,12 +306,12 @@ async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'open' || tags?.status === 'draft') {
-    console.log(`Patch #${numberStr} is already open.`);
+    console.log(`PR #${numberStr} is already open.`);
     return;
   }
 
   if (tags?.status === 'merged') {
-    console.log(`Patch #${numberStr} is merged and cannot be reopened.`);
+    console.log(`PR #${numberStr} is merged and cannot be reopened.`);
     return;
   }
 
@@ -319,18 +321,18 @@ async function patchReopen(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (status.code >= 300) {
-    console.error(`Failed to reopen patch: ${status.code} ${status.detail}`);
+    console.error(`Failed to reopen PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
-  console.log(`Reopened patch #${numberStr}: "${data.title}"`);
+  console.log(`Reopened PR #${numberStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
-// patch list
+// pr list
 // ---------------------------------------------------------------------------
 
-async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
+async function prList(ctx: AgentContext, args: string[]): Promise<void> {
   const statusFilter = flagValue(args, '--status') ?? flagValue(args, '-s');
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
@@ -353,11 +355,11 @@ async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (records.length === 0) {
-    console.log('No patches found.');
+    console.log('No PRs found.');
     return;
   }
 
-  console.log(`Patches (${records.length}):\n`);
+  console.log(`PRs (${records.length}):\n`);
   for (const rec of records) {
     const data = await rec.data.json();
     const recTags = rec.tags as Record<string, string> | undefined;
@@ -377,7 +379,7 @@ async function patchList(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Get the next sequential patch number by querying existing patches.
+ * Get the next sequential PR number by querying existing PRs.
  */
 async function getNextNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
   const { records } = await ctx.patches.records.query('repo/patch', {
@@ -395,9 +397,9 @@ async function getNextNumber(ctx: AgentContext, repoContextId: string): Promise<
 }
 
 /**
- * Find a patch record by its sequential number.
+ * Find a PR record by its sequential number.
  */
-async function findPatchByNumber(
+async function findPrByNumber(
   ctx: AgentContext,
   repoContextId: string,
   numberStr: string,
