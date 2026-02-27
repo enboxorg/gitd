@@ -311,6 +311,7 @@ describe('@enbox/gitd', () => {
     it('should define all expected types', () => {
       expect(ForgePatchesDefinition.types.patch).toBeDefined();
       expect(ForgePatchesDefinition.types.revision).toBeDefined();
+      expect(ForgePatchesDefinition.types.revisionBundle).toBeDefined();
       expect(ForgePatchesDefinition.types.review).toBeDefined();
       expect(ForgePatchesDefinition.types.reviewComment).toBeDefined();
       expect(ForgePatchesDefinition.types.statusChange).toBeDefined();
@@ -337,6 +338,44 @@ describe('@enbox/gitd', () => {
       expect(ForgePatchesDefinition.structure.repo.patch.review).toBeDefined();
       expect(ForgePatchesDefinition.structure.repo.patch.statusChange).toBeDefined();
       expect(ForgePatchesDefinition.structure.repo.patch.mergeResult).toBeDefined();
+    });
+
+    it('should nest revisionBundle under revision (3-level nesting)', () => {
+      expect(ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle).toBeDefined();
+    });
+
+    it('should use application/x-git-bundle dataFormat for revisionBundle type', () => {
+      expect(ForgePatchesDefinition.types.revisionBundle.dataFormats).toEqual(['application/x-git-bundle']);
+    });
+
+    it('should mark revisionBundle as $immutable with $recordLimit of 1', () => {
+      const rb = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle;
+      expect(rb.$immutable).toBe(true);
+      expect(rb.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
+    });
+
+    it('should require tipCommit and baseCommit tags on revisionBundle', () => {
+      const tags = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$tags;
+      expect(tags?.$requiredTags).toContain('tipCommit');
+      expect(tags?.$requiredTags).toContain('baseCommit');
+      expect(tags?.tipCommit).toEqual({ type: 'string' });
+      expect(tags?.baseCommit).toEqual({ type: 'string' });
+      expect(tags?.refCount).toEqual({ type: 'integer' });
+      expect(tags?.size).toEqual({ type: 'integer' });
+    });
+
+    it('should allow patch author to create revisionBundle', () => {
+      const actions = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$actions!;
+      const authorAction = actions.find((a: { who?: string; of?: string }) => a.who === 'author' && a.of === 'repo/patch');
+      expect(authorAction).toBeDefined();
+      expect(authorAction!.can).toContain('create');
+    });
+
+    it('should allow contributors to read revisionBundle', () => {
+      const actions = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$actions!;
+      const contribAction = actions.find((a: { role?: string }) => a.role === 'repo:repo/contributor');
+      expect(contribAction).toBeDefined();
+      expect(contribAction!.can).toContain('read');
     });
 
     it('should nest reviewComment under review (3-level nesting)', () => {
