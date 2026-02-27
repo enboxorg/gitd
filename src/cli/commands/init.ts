@@ -85,9 +85,15 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   console.log('  git commit -m "initial commit"');
   console.log(`  git push -u origin ${branch}`);
   console.log('');
-  console.log('To serve this repo:');
+  console.log('To serve this repo locally:');
   console.log('');
   console.log('  gitd serve');
+  console.log('');
+  console.log('To make it publicly accessible (requires a public URL with TLS):');
+  console.log('');
+  console.log('  gitd serve --public-url https://git.example.com');
+  console.log('');
+  console.log('See DEPLOY.md for reverse proxy and deployment guidance.');
 }
 
 
