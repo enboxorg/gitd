@@ -413,6 +413,15 @@ describe('gitd CLI commands', () => {
       // Should include the DID in the remote URL.
       expect(logs.some((l) => l.includes(ctx.did))).toBe(true);
     });
+
+    it('should mention --public-url and DEPLOY.md in post-init output', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const logs = await captureLog(() =>
+        initCommand(ctx, ['post-init-url-test', '--repos', REPOS_PATH]),
+      );
+      expect(logs.some((l) => l.includes('--public-url'))).toBe(true);
+      expect(logs.some((l) => l.includes('DEPLOY.md'))).toBe(true);
+    });
   });
 
   // =========================================================================
@@ -1287,6 +1296,99 @@ describe('gitd CLI commands', () => {
       const { notificationCommand } = await import('../src/cli/commands/notification.js');
       const logs = await captureLog(() => notificationCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('No notifications'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // serve --check
+  // =========================================================================
+
+  describe('serve --check', () => {
+    const origFetch = globalThis.fetch;
+
+    afterAll(() => {
+      globalThis.fetch = origFetch;
+    });
+
+    it('checkPublicUrl should return true when /health returns ok', async () => {
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/health')) {
+          return new Response(JSON.stringify({ status: 'ok', service: 'git-server' }), {
+            status  : 200,
+            headers : { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('Not Found', { status: 404 });
+      }) as typeof fetch;
+
+      const { checkPublicUrl } = await import('../src/cli/commands/serve.js');
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (...args: unknown[]): void => { logs.push(args.map(String).join(' ')); };
+      const result = await checkPublicUrl('https://git.example.com');
+      console.log = orig;
+
+      expect(result).toBe(true);
+      expect(logs.some((l) => l.includes('OK'))).toBe(true);
+    });
+
+    it('checkPublicUrl should return false on non-200 response', async () => {
+      globalThis.fetch = (async (): Promise<Response> => {
+        return new Response('Bad Gateway', { status: 502, statusText: 'Bad Gateway' });
+      }) as typeof fetch;
+
+      const { checkPublicUrl } = await import('../src/cli/commands/serve.js');
+      const errors: string[] = [];
+      const orig = console.error;
+      console.error = (...args: unknown[]): void => { errors.push(args.map(String).join(' ')); };
+      const result = await checkPublicUrl('https://git.example.com');
+      console.error = orig;
+
+      expect(result).toBe(false);
+      expect(errors.some((l) => l.includes('FAIL'))).toBe(true);
+    });
+
+    it('checkPublicUrl should return false on unexpected body', async () => {
+      globalThis.fetch = (async (): Promise<Response> => {
+        return new Response(JSON.stringify({ status: 'error' }), {
+          status  : 200,
+          headers : { 'Content-Type': 'application/json' },
+        });
+      }) as typeof fetch;
+
+      const { checkPublicUrl } = await import('../src/cli/commands/serve.js');
+      const errors: string[] = [];
+      const orig = console.error;
+      console.error = (...args: unknown[]): void => { errors.push(args.map(String).join(' ')); };
+      const result = await checkPublicUrl('https://git.example.com');
+      console.error = orig;
+
+      expect(result).toBe(false);
+      expect(errors.some((l) => l.includes('FAIL'))).toBe(true);
+    });
+
+    it('checkPublicUrl should return false on network error', async () => {
+      globalThis.fetch = (async (): Promise<Response> => {
+        throw new Error('ECONNREFUSED');
+      }) as typeof fetch;
+
+      const { checkPublicUrl } = await import('../src/cli/commands/serve.js');
+      const errors: string[] = [];
+      const orig = console.error;
+      console.error = (...args: unknown[]): void => { errors.push(args.map(String).join(' ')); };
+      const result = await checkPublicUrl('https://unreachable.example.com');
+      console.error = orig;
+
+      expect(result).toBe(false);
+      expect(errors.some((l) => l.includes('ECONNREFUSED'))).toBe(true);
+    });
+
+    it('--check should fail without --public-url', async () => {
+      const { serveCommand } = await import('../src/cli/commands/serve.js');
+      const { errors, exitCode } = await captureError(() => serveCommand(ctx, ['--check']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('--check requires --public-url');
     });
   });
 

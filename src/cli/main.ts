@@ -55,7 +55,7 @@
  *   gitd shim go  [--port 4874]             Start Go module proxy (GOPROXY)
  *   gitd shim oci [--port 5555]             Start OCI/Docker registry proxy
  *   gitd log                                Show recent activity
- *   gitd serve [--port <port>]              Start the git transport server
+ *   gitd serve [--port <port>] [--check]    Start the git transport server
  *   gitd whoami                             Show connected DID
  *
  * Environment:
@@ -119,7 +119,7 @@ function printUsage(): void {
   console.log('  setup [--check | --uninstall]                Configure git for DID-based remotes');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
-  console.log('  serve [--port <port>]                       Start the git transport server');
+  console.log('  serve [--port <port>] [--check]              Start the git transport server');
   console.log('');
   console.log('  repo info                                   Show repo metadata');
   console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|triager|contributor)');
@@ -210,6 +210,7 @@ function printUsage(): void {
   console.log('  GITD_PORT          server port for `serve` (default: 9418)');
   console.log('  GITD_WEB_PORT      web UI port for `web` (default: 8080)');
   console.log('  GITD_REPOS         base path for bare repos (default: ~/.enbox/profiles/<name>/repos/)');
+  console.log('  GITD_PUBLIC_URL    public URL for `serve` (enables DID service registration)');
   console.log('  GITD_SYNC          DWN sync interval: off|5s|30s|1m (default: 30s for serve, off otherwise)');
   console.log('  GITD_DWN_ENDPOINT  DWN endpoint URL for repo records');
   console.log('  GITD_INDEXER_PORT      indexer API port (default: 8090)');

@@ -10,7 +10,7 @@
  * from the push URL. Each repo has its own contextId in the DWN.
  *
  * Usage: gitd serve [--port <port>] [--repos <path>] [--prefix <path>]
- *                       [--public-url <url>]
+ *                       [--public-url <url>] [--check]
  *
  * Environment:
  *   GITD_PORT        — server port (default: 9418)
@@ -31,12 +31,57 @@ import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
-import { flagValue, parsePort, resolveReposPath } from '../flags.js';
+import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
 import {
   getDwnEndpoints,
   registerGitService,
   startDidRepublisher,
 } from '../../git-server/did-service.js';
+
+// ---------------------------------------------------------------------------
+// Public URL check
+// ---------------------------------------------------------------------------
+
+/** Timeout in ms for the `--check` connectivity probe. */
+const CHECK_TIMEOUT_MS = 10_000;
+
+/**
+ * Probe the `--public-url` to verify that it is reachable from the
+ * outside.  Hits the `/health` endpoint and expects a JSON response
+ * with `{ status: 'ok' }`.
+ *
+ * @returns `true` if the probe succeeded, `false` otherwise
+ */
+export async function checkPublicUrl(publicUrl: string): Promise<boolean> {
+  const healthUrl = publicUrl.replace(/\/$/, '') + '/health';
+  console.log(`Checking public URL reachability: ${healthUrl}`);
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+
+    const res = await fetch(healthUrl, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      console.error(`  FAIL: HTTP ${res.status} ${res.statusText}`);
+      return false;
+    }
+
+    const body = await res.json() as { status?: string };
+    if (body.status !== 'ok') {
+      console.error(`  FAIL: unexpected response body: ${JSON.stringify(body)}`);
+      return false;
+    }
+
+    console.log('  OK: /health returned status ok');
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`  FAIL: ${msg}`);
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Command
@@ -47,6 +92,16 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const basePath = resolveReposPath(args, ctx.profileName);
   const pathPrefix = flagValue(args, '--prefix') ?? process.env.GITD_PREFIX;
   const publicUrl = flagValue(args, '--public-url') ?? process.env.GITD_PUBLIC_URL;
+
+  // --check: validate that the public URL is reachable, then exit.
+  if (hasFlag(args, '--check')) {
+    if (!publicUrl) {
+      console.error('--check requires --public-url (or GITD_PUBLIC_URL).');
+      process.exit(1);
+    }
+    const ok = await checkPublicUrl(publicUrl);
+    process.exit(ok ? 0 : 1);
+  }
 
   // DID-based signature verification for push tokens.
   const verifySignature = createDidSignatureVerifier();
