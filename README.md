@@ -50,12 +50,12 @@ gitd issue comment 1 "On it"
 gitd issue close 1
 gitd issue list
 
-# Patches (pull requests)
-gitd patch create "Add feature"
-gitd patch show 1
-gitd patch comment 1 "LGTM"
-gitd patch merge 1
-gitd patch list
+# Pull requests (alias: gitd patch)
+gitd pr create "Add feature"
+gitd pr show 1
+gitd pr comment 1 "LGTM"
+gitd pr merge 1
+gitd pr list
 
 # Releases
 gitd release create v1.0.0

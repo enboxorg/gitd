@@ -20,7 +20,7 @@
  *   gitd migrate all [owner/repo]            Import everything (default: with git content)
  *   gitd migrate repo [owner/repo]           Import repo metadata + git content
  *   gitd migrate issues [owner/repo]         Import issues + comments
- *   gitd migrate pulls [owner/repo]          Import PRs as patches + reviews
+ *   gitd migrate pulls [owner/repo]          Import PRs + reviews
  *   gitd migrate releases [owner/repo]       Import releases
  *
  * Flags:
@@ -668,7 +668,7 @@ async function migratePulls(ctx: AgentContext, args: string[]): Promise<void> {
   const { owner, repo } = resolveGhRepo(args);
   try {
     const count = await migratePullsInner(ctx, owner, repo);
-    console.log(`\nImported ${count} patch${count !== 1 ? 'es' : ''}.`);
+    console.log(`\nImported ${count} PR${count !== 1 ? 's' : ''}.`);
   } catch (err) {
     console.error(`Failed to migrate pull requests: ${(err as Error).message}`);
     process.exit(1);
@@ -695,31 +695,31 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
     const author = ghPull.user?.login ?? 'unknown';
     const body = prependAuthor(ghPull.body ?? '', author);
 
-    // Map GitHub PR state to gitd patch status.
-    let patchStatus: string;
+    // Map GitHub PR state to gitd PR status.
+    let prStatus: string;
     if (ghPull.merged) {
-      patchStatus = 'merged';
+      prStatus = 'merged';
     } else if (ghPull.state === 'closed') {
-      patchStatus = 'closed';
+      prStatus = 'closed';
     } else {
-      patchStatus = 'open';
+      prStatus = 'open';
     }
 
     const tags: Record<string, string> = {
-      status     : patchStatus,
+      status     : prStatus,
       baseBranch : ghPull.base.ref,
       headBranch : ghPull.head.ref,
       number     : String(ghPull.number),
     };
 
-    const { status: patchSt, record: patchRecord } = await ctx.patches.records.create('repo/patch', {
+    const { status: prSt, record: prRecord } = await ctx.patches.records.create('repo/patch', {
       data            : { title: ghPull.title, body, number: ghPull.number },
       tags,
       parentContextId : repoContextId,
     });
 
-    if (patchSt.code >= 300) {
-      console.error(`  Failed to import PR #${ghPull.number}: ${patchSt.code} ${patchSt.detail}`);
+    if (prSt.code >= 300) {
+      console.error(`  Failed to import PR #${ghPull.number}: ${prSt.code} ${prSt.detail}`);
       continue;
     }
 
@@ -748,7 +748,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
         const { status: reviewSt } = await ctx.patches.records.create('repo/patch/review' as any, {
           data            : { body: reviewBody },
           tags            : { verdict },
-          parentContextId : patchRecord.contextId,
+          parentContextId : prRecord.contextId,
         } as any);
 
         if (reviewSt.code >= 300) {
@@ -759,12 +759,12 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
       }
 
       if (reviewCount > 0) {
-        console.log(`  #${ghPull.number} "${ghPull.title}" (${patchStatus}, ${reviewCount} review${reviewCount !== 1 ? 's' : ''})`);
+        console.log(`  #${ghPull.number} "${ghPull.title}" (${prStatus}, ${reviewCount} review${reviewCount !== 1 ? 's' : ''})`);
       } else {
-        console.log(`  #${ghPull.number} "${ghPull.title}" (${patchStatus})`);
+        console.log(`  #${ghPull.number} "${ghPull.title}" (${prStatus})`);
       }
     } else {
-      console.log(`  #${ghPull.number} "${ghPull.title}" (${patchStatus})`);
+      console.log(`  #${ghPull.number} "${ghPull.title}" (${prStatus})`);
     }
   }
 

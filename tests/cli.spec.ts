@@ -646,131 +646,131 @@ describe('gitd CLI commands', () => {
   });
 
   // =========================================================================
-  // patch commands
+  // pr commands
   // =========================================================================
 
-  describe('patch', () => {
+  describe('pr', () => {
     it('should fail create without a title', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['create']));
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['create']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should create patch #1 with sequential numbering', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
+    it('should create PR #1 with sequential numbering', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
       const logs = await captureLog(() =>
-        patchCommand(ctx, ['create', 'Add feature X', '--body', 'This adds X', '--base', 'main', '--head', 'feature-x']),
+        prCommand(ctx, ['create', 'Add feature X', '--body', 'This adds X', '--base', 'main', '--head', 'feature-x']),
       );
-      expect(logs.some((l) => l.includes('Created patch #1'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created PR #1'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
     });
 
-    it('should create patch #2 with next number', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['create', 'Fix typo']));
-      expect(logs.some((l) => l.includes('Created patch #2'))).toBe(true);
+    it('should create PR #2 with next number', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['create', 'Fix typo']));
+      expect(logs.some((l) => l.includes('Created PR #2'))).toBe(true);
     });
 
-    it('should show patch details by number', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['show', '1']));
-      expect(logs.some((l) => l.includes('Patch #1: Add feature X'))).toBe(true);
+    it('should show PR details by number', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['show', '1']));
+      expect(logs.some((l) => l.includes('PR #1: Add feature X'))).toBe(true);
       expect(logs.some((l) => l.includes('Status:   OPEN'))).toBe(true);
       expect(logs.some((l) => l.includes('main <- feature-x'))).toBe(true);
     });
 
-    it('should merge a patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['merge', '1']));
-      expect(logs.some((l) => l.includes('Merged patch #1'))).toBe(true);
+    it('should merge a PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['merge', '1']));
+      expect(logs.some((l) => l.includes('Merged PR #1'))).toBe(true);
       expect(logs.some((l) => l.includes('strategy: merge'))).toBe(true);
     });
 
     it('should show merged status after merging', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['show', '1']));
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['show', '1']));
       expect(logs.some((l) => l.includes('Status:   MERGED'))).toBe(true);
     });
 
-    it('should not re-merge an already merged patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['merge', '1']));
+    it('should not re-merge an already merged PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['merge', '1']));
       expect(logs.some((l) => l.includes('already merged'))).toBe(true);
     });
 
-    it('should add a comment to a patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['comment', '2', 'Looks good to me']));
-      expect(logs.some((l) => l.includes('Added comment to patch #2'))).toBe(true);
+    it('should add a comment to a PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['comment', '2', 'Looks good to me']));
+      expect(logs.some((l) => l.includes('Added comment to PR #2'))).toBe(true);
     });
 
-    it('should show review comments in patch detail', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['show', '2']));
+    it('should show review comments in PR detail', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['show', '2']));
       expect(logs.some((l) => l.includes('Reviews (1)'))).toBe(true);
       expect(logs.some((l) => l.includes('COMMENTED'))).toBe(true);
       expect(logs.some((l) => l.includes('Looks good to me'))).toBe(true);
     });
 
     it('should fail comment without body', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['comment', '2']));
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', '2']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should fail comment for non-existent patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['comment', '99', 'hello']));
+    it('should fail comment for non-existent PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', '99', 'hello']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
 
-    it('should close a patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['close', '2']));
-      expect(logs.some((l) => l.includes('Closed patch #2'))).toBe(true);
+    it('should close a PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['close', '2']));
+      expect(logs.some((l) => l.includes('Closed PR #2'))).toBe(true);
     });
 
-    it('should reopen a closed patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '2']));
-      expect(logs.some((l) => l.includes('Reopened patch #2'))).toBe(true);
+    it('should reopen a closed PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', '2']));
+      expect(logs.some((l) => l.includes('Reopened PR #2'))).toBe(true);
     });
 
-    it('should not reopen an already open patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '2']));
+    it('should not reopen an already open PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', '2']));
       expect(logs.some((l) => l.includes('already open'))).toBe(true);
     });
 
-    it('should not reopen a merged patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['reopen', '1']));
+    it('should not reopen a merged PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', '1']));
       expect(logs.some((l) => l.includes('cannot be reopened'))).toBe(true);
     });
 
-    it('should fail reopen for non-existent patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['reopen', '99']));
+    it('should fail reopen for non-existent PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['reopen', '99']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
 
-    it('should list all patches with numbers', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const logs = await captureLog(() => patchCommand(ctx, ['list']));
-      expect(logs.some((l) => l.includes('Patches (2)'))).toBe(true);
+    it('should list all PRs with numbers', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() => prCommand(ctx, ['list']));
+      expect(logs.some((l) => l.includes('PRs (2)'))).toBe(true);
       expect(logs.some((l) => l.includes('#1'))).toBe(true);
       expect(logs.some((l) => l.includes('#2'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
       expect(logs.some((l) => l.includes('Fix typo'))).toBe(true);
     });
 
-    it('should fail show for non-existent patch', async () => {
-      const { patchCommand } = await import('../src/cli/commands/patch.js');
-      const { errors, exitCode } = await captureError(() => patchCommand(ctx, ['show', '99']));
+    it('should fail show for non-existent PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['show', '99']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
@@ -785,9 +785,9 @@ describe('gitd CLI commands', () => {
       const { logCommand } = await import('../src/cli/commands/log.js');
       const logs = await captureLog(() => logCommand(ctx, []));
       expect(logs.some((l) => l.includes('Recent activity'))).toBe(true);
-      // Should have both issues and patches.
+      // Should have both issues and PRs.
       expect(logs.some((l) => l.includes('issue'))).toBe(true);
-      expect(logs.some((l) => l.includes('patch'))).toBe(true);
+      expect(logs.some((l) => l.includes('pr'))).toBe(true);
     });
 
     it('should respect --limit flag', async () => {
@@ -1816,7 +1816,7 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('1 review'))).toBe(true);
       expect(logs.some((l) => l.includes('#201'))).toBe(true);
       expect(logs.some((l) => l.includes('open'))).toBe(true);
-      expect(logs.some((l) => l.includes('Imported 2 patches'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 2 PRs'))).toBe(true);
     });
 
     it('should handle no pull requests gracefully', async () => {

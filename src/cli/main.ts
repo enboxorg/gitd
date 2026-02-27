@@ -14,11 +14,11 @@
  *   gitd issue comment <number> <body>      Add a comment to an issue
  *   gitd issue close <number>               Close an issue
  *   gitd issue list [--status <open|closed>]
- *   gitd patch create <title>               Open a patch (PR)
- *   gitd patch show <number>                Show patch details + reviews
- *   gitd patch comment <number> <body>      Add a comment/review
- *   gitd patch merge <number>               Merge a patch
- *   gitd patch list [--status <status>]
+ *   gitd pr create <title>                  Open a pull request
+ *   gitd pr show <number>                   Show PR details + reviews
+ *   gitd pr comment <number> <body>         Add a comment/review
+ *   gitd pr merge <number>                  Merge a PR
+ *   gitd pr list [--status <status>]
  *   gitd release create <tag>               Create a release
  *   gitd release show <tag>                 Show release details
  *   gitd release list                       List releases
@@ -84,7 +84,7 @@ import { logCommand } from './commands/log.js';
 import { migrateCommand } from './commands/migrate.js';
 import { notificationCommand } from './commands/notification.js';
 import { orgCommand } from './commands/org.js';
-import { patchCommand } from './commands/patch.js';
+import { prCommand } from './commands/pr.js';
 import { registryCommand } from './commands/registry.js';
 import { releaseCommand } from './commands/release.js';
 import { repoCommand } from './commands/repo.js';
@@ -132,13 +132,13 @@ function printUsage(): void {
   console.log('  issue reopen <number>                       Reopen a closed issue');
   console.log('  issue list [--status <open|closed>]         List issues');
   console.log('');
-  console.log('  patch create <title> [--base ...] [--head ...]  Open a patch (PR)');
-  console.log('  patch show <number>                         Show patch details and reviews');
-  console.log('  patch comment <number> <body>               Add a comment/review');
-  console.log('  patch merge <number>                        Merge a patch');
-  console.log('  patch close <number>                        Close a patch');
-  console.log('  patch reopen <number>                       Reopen a closed patch');
-  console.log('  patch list [--status <status>]              List patches');
+  console.log('  pr create <title> [--base ...] [--head ...]     Open a pull request');
+  console.log('  pr show <number>                               Show PR details and reviews');
+  console.log('  pr comment <number> <body>                     Add a comment/review');
+  console.log('  pr merge <number>                              Merge a PR');
+  console.log('  pr close <number>                              Close a PR');
+  console.log('  pr reopen <number>                             Reopen a closed PR');
+  console.log('  pr list [--status <status>]                    List PRs');
   console.log('');
   console.log('  release create <tag> [--name ...] [--body ...]  Create a release');
   console.log('  release show <tag>                          Show release details + assets');
@@ -185,7 +185,7 @@ function printUsage(): void {
   console.log('  migrate all [owner/repo]                    Import everything from GitHub');
   console.log('  migrate repo [owner/repo]                   Import repo metadata');
   console.log('  migrate issues [owner/repo]                 Import issues + comments');
-  console.log('  migrate pulls [owner/repo]                  Import PRs as patches + reviews');
+  console.log('  migrate pulls [owner/repo]                  Import PRs + reviews');
   console.log('  migrate releases [owner/repo]               Import releases');
   console.log('');
   console.log('  web [--port <port>]                         Start read-only web UI (default: 8080)');
@@ -361,8 +361,9 @@ async function main(): Promise<void> {
       await issueCommand(ctx, rest);
       break;
 
+    case 'pr':
     case 'patch':
-      await patchCommand(ctx, rest);
+      await prCommand(ctx, rest);
       break;
 
     case 'repo':
