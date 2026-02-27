@@ -20,6 +20,7 @@ import { mkdirSync } from 'node:fs';
 
 import { AgentDwnApi } from '@enbox/agent';
 import { Kysely } from 'kysely';
+
 import {
   createBunSqliteDatabase,
   DataStoreSql,
@@ -29,6 +30,14 @@ import {
   SqliteDialect,
   StateIndexSql,
 } from '@enbox/dwn-sql-store';
+import {
+  DidDht,
+  DidJwk,
+  DidKey,
+  DidResolverCacheLevel,
+  DidWeb,
+  UniversalResolver,
+} from '@enbox/dids';
 import { Dwn, EventEmitterEventLog } from '@enbox/dwn-sdk-js';
 
 // ---------------------------------------------------------------------------
@@ -41,13 +50,15 @@ import { Dwn, EventEmitterEventLog } from '@enbox/dwn-sdk-js';
  * The database is placed at `<dataPath>/dwn.sqlite`.  All four DWN core
  * stores share the same connection through a common `SqliteDialect`.
  *
+ * A profile-scoped DID resolver cache is created at
+ * `<dataPath>/DWN_RESOLVERCACHE` to avoid leaking a `RESOLVERCACHE/`
+ * directory into the current working directory.
+ *
  * @param dataPath - Agent data directory (e.g. `~/.enbox/profiles/<name>/DATA/AGENT`).
- * @param didResolver - DID resolver instance, forwarded to `Dwn.create()`.
  * @returns A ready-to-use `AgentDwnApi`.
  */
 export async function createSqliteDwnApi(
   dataPath: string,
-  didResolver?: Parameters<typeof AgentDwnApi.createDwn>[0]['didResolver'],
 ): Promise<AgentDwnApi> {
   mkdirSync(dataPath, { recursive: true });
 
@@ -64,6 +75,14 @@ export async function createSqliteDwnApi(
   const stateIndex = new StateIndexSql(dialect);
   const resumableTaskStore = new ResumableTaskStoreSql(dialect);
   const eventLog = new EventEmitterEventLog();
+
+  // Create a profile-scoped DID resolver with its cache inside the
+  // agent data directory.  Without this, Dwn.create() falls back to a
+  // CWD-relative `RESOLVERCACHE/` directory.
+  const didResolver = new UniversalResolver({
+    didResolvers : [DidDht, DidJwk, DidKey, DidWeb],
+    cache        : new DidResolverCacheLevel({ location: join(dataPath, 'DWN_RESOLVERCACHE') }),
+  });
 
   const dwn = await Dwn.create({
     dataStore,

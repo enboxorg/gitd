@@ -232,7 +232,61 @@ describe('connectAgent with profile dataPath', () => {
     expect(existsSync(`${TEST_DATA}/dwn.sqlite`)).toBe(true);
   }, 15_000);
 
+  it('should not create RESOLVERCACHE in CWD', () => {
+    // The DWN resolver cache should live inside the profile data path,
+    // not as a CWD-relative RESOLVERCACHE/ directory.
+    expect(existsSync('RESOLVERCACHE')).toBe(false);
+  });
+
+  it('should create DWN_RESOLVERCACHE inside dataPath', () => {
+    expect(existsSync(join(TEST_DATA, 'DWN_RESOLVERCACHE'))).toBe(true);
+  });
+
+  it('should not create DATA/AGENT in CWD', () => {
+    expect(existsSync('DATA/AGENT')).toBe(false);
+  });
+
   // Note: reconnect test cannot run in the same process because LevelDB
   // holds exclusive file locks.  Reconnect is exercised by the CLI itself
   // across separate process invocations.
+});
+
+describe('resolveReposPath', () => {
+  it('should fall back to ~/.enbox/profiles/default/repos/ without a profile', async () => {
+    const { resolveReposPath } = await import('../src/cli/flags.js');
+    const result = resolveReposPath([], null);
+    expect(result).toContain('profiles');
+    expect(result).toContain('default');
+    expect(result).toContain('repos');
+    expect(result).not.toBe('./repos');
+  });
+
+  it('should use named profile repos path', async () => {
+    const { resolveReposPath } = await import('../src/cli/flags.js');
+    const result = resolveReposPath([], 'myprofile');
+    expect(result).toContain('myprofile');
+    expect(result).toContain('repos');
+  });
+
+  it('should prefer --repos flag over profile', async () => {
+    const { resolveReposPath } = await import('../src/cli/flags.js');
+    const result = resolveReposPath(['--repos', '/custom/path'], 'myprofile');
+    expect(result).toBe('/custom/path');
+  });
+
+  it('should prefer GITD_REPOS env over profile', async () => {
+    const orig = process.env.GITD_REPOS;
+    process.env.GITD_REPOS = '/env/repos';
+    try {
+      const { resolveReposPath } = await import('../src/cli/flags.js');
+      const result = resolveReposPath([], 'myprofile');
+      expect(result).toBe('/env/repos');
+    } finally {
+      if (orig !== undefined) {
+        process.env.GITD_REPOS = orig;
+      } else {
+        delete process.env.GITD_REPOS;
+      }
+    }
+  });
 });

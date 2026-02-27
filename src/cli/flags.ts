@@ -75,10 +75,9 @@ export function parsePort(value: string): number {
  *   1. `--repos <path>` CLI flag
  *   2. `GITD_REPOS` environment variable
  *   3. Profile-based path: `~/.enbox/profiles/<name>/repos/`
- *   4. Fallback: `./repos` (CWD-relative, legacy behaviour)
+ *   4. Fallback: `~/.enbox/profiles/default/repos/`
  *
- * When a profile is active, repos are stored alongside the agent data
- * so they follow the identity rather than the working directory.
+ * All paths resolve to the home directory — no CWD-relative paths.
  */
 export function resolveReposPath(
   args: string[],
@@ -92,5 +91,7 @@ export function resolveReposPath(
 
   if (profileName) { return profileReposPath(profileName); }
 
-  return './repos';
+  // No profile — fall back to a well-known home directory path rather
+  // than polluting the current working directory.
+  return profileReposPath('default');
 }

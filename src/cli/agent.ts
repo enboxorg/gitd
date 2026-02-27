@@ -22,6 +22,7 @@ import { Web5 } from '@enbox/api';
 import { Web5UserAgent } from '@enbox/agent';
 
 import { createSqliteDwnApi } from './dwn-sqlite.js';
+import { profileDataPath } from '../profiles/config.js';
 
 import type { ForgeCiSchemaMap } from '../ci.js';
 import type { ForgeIssuesSchemaMap } from '../issues.js';
@@ -54,7 +55,7 @@ import { ForgeWikiProtocol } from '../wiki.js';
 /** Context returned by `connectAgent()` — provides typed protocol handles. */
 export type AgentContext = {
   did : string;
-  /** Active profile name, or `undefined` when running in legacy (CWD) mode. */
+  /** Active profile name, or `undefined` when running without a named profile. */
   profileName? : string;
   repo : TypedWeb5<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
   refs : TypedWeb5<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
@@ -79,7 +80,7 @@ export type ConnectOptions = {
   password : string;
   /**
    * Agent data path.  When provided, the agent stores all data under
-   * this directory instead of the default `DATA/AGENT` relative to CWD.
+   * this directory.  Defaults to `~/.enbox/profiles/default/DATA/AGENT`.
    *
    * The profile system sets this to `~/.enbox/profiles/<name>/DATA/AGENT`.
    */
@@ -317,82 +318,69 @@ async function registerWithDwnServers(
  * Connect to the local Web5 agent, initializing on first launch.
  *
  * When `dataPath` is provided, the agent's persistent data lives there.
- * Otherwise, it falls back to `DATA/AGENT` relative to CWD (legacy).
+ * Otherwise, it falls back to `~/.enbox/profiles/default/DATA/AGENT`
+ * so that no directories are created in the current working directory.
  *
  * Sync defaults to `'off'` for one-shot commands.  Long-running
  * commands like `serve` should pass an explicit interval.
  */
 export async function connectAgent(options: ConnectOptions): Promise<AgentContext & { recoveryPhrase?: string }> {
-  const { password, dataPath, recoveryPhrase: inputPhrase, sync = 'off' } = options;
+  const { password, recoveryPhrase: inputPhrase, sync = 'off' } = options;
 
-  let agent: Web5UserAgent;
+  // Always resolve to an absolute data path — never fall back to CWD.
+  const dataPath = options.dataPath ?? profileDataPath('default');
+
   let recoveryPhrase: string | undefined;
 
-  if (dataPath) {
-    // Profile-based: create agent with explicit data path.
-    // Pre-construct a SQLite-backed DWN so that Web5UserAgent.create()
-    // skips the default LevelDB stores for the four core DWN interfaces.
-    const dwnApi = await createSqliteDwnApi(dataPath);
-    agent = await Web5UserAgent.create({ dataPath, dwnApi });
+  // Pre-construct a SQLite-backed DWN so that Web5UserAgent.create()
+  // skips the default LevelDB stores for the four core DWN interfaces.
+  const dwnApi = await createSqliteDwnApi(dataPath);
+  const agent = await Web5UserAgent.create({ dataPath, dwnApi });
 
-    if (await agent.firstLaunch()) {
-      recoveryPhrase = await agent.initialize({
-        password,
-        recoveryPhrase : inputPhrase,
-        dwnEndpoints   : ['https://enbox-dwn.fly.dev'],
-      });
-    }
-    await agent.start({ password });
-
-    // Ensure at least one identity exists.
-    const identities = await agent.identity.list();
-    let identity = identities[0];
-    if (!identity) {
-      identity = await agent.identity.create({
-        didMethod  : 'dht',
-        metadata   : { name: 'Default' },
-        didOptions : {
-          services: [{
-            id              : 'dwn',
-            type            : 'DecentralizedWebNode',
-            serviceEndpoint : ['https://enbox-dwn.fly.dev'],
-            enc             : '#enc',
-            sig             : '#sig',
-          }],
-          verificationMethods: [
-            { algorithm: 'Ed25519', id: 'sig', purposes: ['assertionMethod', 'authentication'] },
-            { algorithm: 'X25519', id: 'enc', purposes: ['keyAgreement'] },
-          ],
-        },
-      });
-    }
-
-    // The SDK ignores the `registration` option when an explicit agent is
-    // passed — it only runs registration inside `if (agent === undefined)`.
-    // So we handle registration ourselves before calling Web5.connect().
-    await registerWithDwnServers(agent, identity.did.uri, dataPath);
-
-    const result = await Web5.connect({
-      agent,
-      connectedDid: identity.did.uri,
-      sync,
+  if (await agent.firstLaunch()) {
+    recoveryPhrase = await agent.initialize({
+      password,
+      recoveryPhrase : inputPhrase,
+      dwnEndpoints   : ['https://enbox-dwn.fly.dev'],
     });
+  }
+  await agent.start({ password });
 
-    return bindProtocols(result.web5, result.did, recoveryPhrase);
+  // Ensure at least one identity exists.
+  const identities = await agent.identity.list();
+  let identity = identities[0];
+  if (!identity) {
+    identity = await agent.identity.create({
+      didMethod  : 'dht',
+      metadata   : { name: 'Default' },
+      didOptions : {
+        services: [{
+          id              : 'dwn',
+          type            : 'DecentralizedWebNode',
+          serviceEndpoint : ['https://enbox-dwn.fly.dev'],
+          enc             : '#enc',
+          sig             : '#sig',
+        }],
+        verificationMethods: [
+          { algorithm: 'Ed25519', id: 'sig', purposes: ['assertionMethod', 'authentication'] },
+          { algorithm: 'X25519', id: 'enc', purposes: ['keyAgreement'] },
+        ],
+      },
+    });
   }
 
-  // Legacy: let Web5.connect() manage the agent (uses CWD-relative path).
-  // The SDK handles registration internally in this path.
-  const result = await Web5.connect({ password, sync });
+  // The SDK ignores the `registration` option when an explicit agent is
+  // passed — it only runs registration inside `if (agent === undefined)`.
+  // So we handle registration ourselves before calling Web5.connect().
+  await registerWithDwnServers(agent, identity.did.uri, dataPath);
 
-  if (result.recoveryPhrase) {
-    console.log('');
-    console.log('  Recovery phrase (save this — it cannot be shown again):');
-    console.log(`  ${result.recoveryPhrase}`);
-    console.log('');
-  }
+  const result = await Web5.connect({
+    agent,
+    connectedDid: identity.did.uri,
+    sync,
+  });
 
-  return bindProtocols(result.web5, result.did, result.recoveryPhrase);
+  return bindProtocols(result.web5, result.did, recoveryPhrase);
 }
 
 // ---------------------------------------------------------------------------
