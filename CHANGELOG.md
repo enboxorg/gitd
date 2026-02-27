@@ -1,5 +1,15 @@
 # @enbox/gitd
 
+## 0.6.0
+
+### Minor Changes
+
+- [#87](https://github.com/enboxorg/gitd/pull/87) [`b94169f`](https://github.com/enboxorg/gitd/commit/b94169f797b63864c292a2f7b89acddbbce2478e) Thanks [@LiranCohen](https://github.com/LiranCohen)! - `gitd init` now initializes a local git repo in the current directory and adds the `origin` remote automatically, matching git/gh conventions. Pass `--no-local` to skip local setup and only create the server-side bare repo + DWN record.
+
+### Patch Changes
+
+- [#85](https://github.com/enboxorg/gitd/pull/85) [`4794775`](https://github.com/enboxorg/gitd/commit/479477541504abc20d209183f1a9a4749d38aac6) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Eliminate CWD-relative path leaks: RESOLVERCACHE/, DATA/AGENT/, and ./repos no longer created in the working directory. All paths now resolve to ~/.enbox/profiles/default/ when no named profile is active.
+
 ## 0.5.0
 
 ### Minor Changes
