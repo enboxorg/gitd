@@ -1,5 +1,25 @@
 # @enbox/gitd
 
+## 0.5.0
+
+### Minor Changes
+
+- [#82](https://github.com/enboxorg/gitd/pull/82) [`bf734a0`](https://github.com/enboxorg/gitd/commit/bf734a053274b0b22f44b8a1c40c4217b941b53f) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `gitd serve --check` to validate public URL reachability, improve `gitd init` post-instructions to mention `--public-url`, and add DEPLOY.md deployment guide
+
+### Patch Changes
+
+- [#83](https://github.com/enboxorg/gitd/pull/83) [`b852043`](https://github.com/enboxorg/gitd/commit/b852043cc93b67b1e0d4d6ee64c761f9b30ee692) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Implement credential helper `store` and `erase` actions with file-based TTL-aware cache
+
+- [#84](https://github.com/enboxorg/gitd/pull/84) [`594af61`](https://github.com/enboxorg/gitd/commit/594af6143631568b0fc878cca804110c81d44a4f) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add exports test verifying all public symbols from `@enbox/gitd/git-server` and `@enbox/gitd/git-remote` sub-paths
+
+- [#77](https://github.com/enboxorg/gitd/pull/77) [`c093dd9`](https://github.com/enboxorg/gitd/commit/c093dd932bc62fea6d22fd7f63a9c1fee607fd0e) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix DWN registration in profile mode and remove spurious DATA/ directory creation. The SDK ignores the `registration` option when an explicit agent is passed, so registration is now performed directly before `Web5.connect()`.
+
+- [#81](https://github.com/enboxorg/gitd/pull/81) [`1a98208`](https://github.com/enboxorg/gitd/commit/1a982086bddb649edd492a8c3f23025f367c980e) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Complete `gitd setup` command: configure git credential helper (`git config --global credential.helper`), add `--check` for dry-run validation, and `--uninstall` to reverse configuration.
+
+- [#79](https://github.com/enboxorg/gitd/pull/79) [`2f1fa09`](https://github.com/enboxorg/gitd/commit/2f1fa09ee199e4ed893dcfdf64c6043c35fa850a) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Replace LevelDB with SQLite for DWN core stores (MessageStore, DataStore, StateIndex, ResumableTaskStore) using `@enbox/dwn-sql-store` and Bun's native `bun:sqlite`. The remaining LevelDB stores (SyncEngine, vault, DID resolver cache) await upstream SQL alternatives (enboxorg/enbox#569, enboxorg/enbox#570).
+
+- [#80](https://github.com/enboxorg/gitd/pull/80) [`cb24570`](https://github.com/enboxorg/gitd/commit/cb24570275e6127d975f67451b298f1c6f8fe434) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `GITD_ALLOW_PRIVATE=1` env var to bypass SSRF protection for local development with `did:web:localhost` and other local DID methods. Prints a warning to stderr when active. Also exports `assertNotPrivateUrl` and adds comprehensive SSRF tests replacing the previous stub.
+
 ## 0.4.0
 
 ### Minor Changes
