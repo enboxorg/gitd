@@ -3,13 +3,12 @@
  *
  * Supported URL forms (all invoke `git-remote-did <remote> <url>`):
  *
- *   did::dht:abc123                → DID = did:dht:abc123, repo = undefined
- *   did::dht:abc123/my-repo       → DID = did:dht:abc123, repo = my-repo
- *   did://dht:abc123/my-repo      → DID = did:dht:abc123, repo = my-repo
+ *   did::dht:abc123/my-repo            → DID = did:dht:abc123, repo = my-repo
+ *   did::did:dht:abc123/my-repo        → DID = did:dht:abc123, repo = my-repo
+ *   did://dht:abc123/my-repo           → DID = did:dht:abc123, repo = my-repo
  *
- * The double-colon form (`did::<address>`) is recommended because it avoids
- * URL-parsing ambiguity.  Git strips the `did::` prefix and passes
- * `<address>` as the URL argument.
+ * Both `did::dht:abc123` (short) and `did::did:dht:abc123` (full DID) forms
+ * are accepted.  The parser normalizes both to a valid `did:method:id` URI.
  *
  * @module
  */
@@ -45,6 +44,14 @@ export function parseDidUrl(url: string): ParsedDidUrl {
   // Strip did:// prefix if present (the `://` form).
   if (stripped.startsWith('did://')) {
     stripped = stripped.slice('did://'.length);
+  }
+
+  // Strip bare `did:` prefix when the full DID was included in the URL.
+  // This handles `did::did:dht:abc123/repo` where Git passes
+  // `did:dht:abc123/repo` — without this, `did:` would be prepended
+  // again below, producing the invalid `did:did:dht:abc123`.
+  if (stripped.startsWith('did:')) {
+    stripped = stripped.slice('did:'.length);
   }
 
   // At this point, `stripped` is either:

@@ -63,6 +63,33 @@ describe('parseDidUrl', () => {
     });
   });
 
+  describe('full-DID form (did::did:method:id)', () => {
+    it('should parse did:dht with repo when full DID is in URL', () => {
+      // Git strips "did::" prefix, passes "did:dht:abc123/my-repo"
+      const result = parseDidUrl('did:dht:abc123/my-repo');
+      expect(result.did).toBe('did:dht:abc123');
+      expect(result.repo).toBe('my-repo');
+    });
+
+    it('should parse did:dht without repo when full DID is in URL', () => {
+      const result = parseDidUrl('did:dht:abc123');
+      expect(result.did).toBe('did:dht:abc123');
+      expect(result.repo).toBeUndefined();
+    });
+
+    it('should parse did:web with repo when full DID is in URL', () => {
+      const result = parseDidUrl('did:web:example.com/my-repo');
+      expect(result.did).toBe('did:web:example.com');
+      expect(result.repo).toBe('my-repo');
+    });
+
+    it('should parse a real did:dht identifier with repo', () => {
+      const result = parseDidUrl('did:dht:n783djfui5qr4wrpgsgawzte6dmyp6qfarzarbr9yq1prboryjyy/hello');
+      expect(result.did).toBe('did:dht:n783djfui5qr4wrpgsgawzte6dmyp6qfarzarbr9yq1prboryjyy');
+      expect(result.repo).toBe('hello');
+    });
+  });
+
   describe('did:// form', () => {
     it('should parse did:// URL with repo', () => {
       const result = parseDidUrl('did://dht:abc123/my-repo');
