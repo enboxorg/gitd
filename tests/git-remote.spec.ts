@@ -382,3 +382,101 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
     expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}/test-repo`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Daemon lockfile
+// ---------------------------------------------------------------------------
+
+import { createServer } from 'node:http';
+import { dirname } from 'node:path';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
+
+import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
+
+describe('daemon lockfile', () => {
+  const path = lockfilePath();
+
+  beforeAll(() => {
+    // Ensure the parent directory exists (may not on CI / clean systems).
+    mkdirSync(dirname(path), { recursive: true });
+  });
+
+  afterAll(() => {
+    // Ensure cleanup even if a test fails.
+    try { unlinkSync(path); } catch { /* ignore */ }
+  });
+
+  it('should write and read a lockfile', () => {
+    writeLockfile(9418);
+    expect(existsSync(path)).toBe(true);
+
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.pid).toBe(process.pid);
+    expect(lock!.port).toBe(9418);
+    expect(lock!.startedAt).toBeDefined();
+  });
+
+  it('should remove lockfile for current process', () => {
+    writeLockfile(9418);
+    expect(existsSync(path)).toBe(true);
+    removeLockfile();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('should return null for missing lockfile', () => {
+    // Ensure no lockfile exists.
+    try { unlinkSync(path); } catch { /* ignore */ }
+    expect(readLockfile()).toBeNull();
+  });
+
+  it('should return null for stale PID', () => {
+    // Write a lockfile with a PID that doesn't exist.
+    writeFs(path, JSON.stringify({ pid: 999999999, port: 9999, startedAt: new Date().toISOString() }));
+    expect(readLockfile()).toBeNull();
+    // Stale lockfile should be cleaned up.
+    expect(existsSync(path)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local daemon discovery in resolveGitEndpoint
+// ---------------------------------------------------------------------------
+
+describe('resolveGitEndpoint with local daemon', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  beforeAll(async () => {
+    // Start a tiny HTTP server that responds to /health.
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+    // Write a lockfile pointing to our test server.
+    writeLockfile(port);
+  });
+
+  afterAll(() => {
+    removeLockfile();
+    server.close();
+  });
+
+  it('should resolve via local daemon when lockfile exists', async () => {
+    const result = await resolveGitEndpoint('did:dht:abc123', 'my-repo');
+    expect(result.source).toBe('LocalDaemon');
+    expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123/my-repo`);
+  });
+
+  it('should resolve without repo name via local daemon', async () => {
+    const result = await resolveGitEndpoint('did:dht:abc123');
+    expect(result.source).toBe('LocalDaemon');
+    expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123`);
+  });
+});
