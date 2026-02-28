@@ -15,6 +15,7 @@
  *   gitd issue close <number>               Close an issue
  *   gitd issue list [--status <open|closed>]
  *   gitd pr create <title>                  Open a pull request
+ *   gitd pr checkout <number>               Fetch bundle + create branch
  *   gitd pr show <number>                   Show PR details + reviews
  *   gitd pr comment <number> <body>         Add a comment/review
  *   gitd pr merge <number>                  Merge a PR

@@ -832,6 +832,76 @@ describe('gitd CLI commands', () => {
       expect(allOutput).not.toContain('Revision:');
       expect(allOutput).not.toContain('Bundle:');
     });
+
+    it('should checkout a PR with bundle into a local branch', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const tmpRepo = resolve('__TESTDATA__/pr-checkout-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      // Create a git repo with main + feature branch.
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Hello\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial commit'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['checkout', '-b', 'feat/checkout-test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'new-file.ts'), 'export const y = 2;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'add new file'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        // Create the PR with bundle from the feature branch.
+        process.chdir(tmpRepo);
+        await captureLog(() =>
+          prCommand(ctx, ['create', 'Checkout test PR', '--base', 'main']),
+        );
+
+        // Switch back to main so we can checkout the PR.
+        spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
+
+        // Checkout the PR.
+        const logs = await captureLog(() =>
+          prCommand(ctx, ['checkout', '5', '--branch', 'pr/test-checkout']),
+        );
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain('Switched to branch \'pr/test-checkout\'');
+        expect(allOutput).toContain('PR #5');
+
+        // Verify we're on the right branch.
+        const branch = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(branch.stdout?.trim()).toBe('pr/test-checkout');
+
+        // Verify the file from the feature branch exists.
+        expect(existsSync(join(tmpRepo, 'new-file.ts'))).toBe(true);
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('should fail checkout for PR without revision', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      // Create a PR explicitly without a bundle.
+      const createLogs = await captureLog(() =>
+        prCommand(ctx, ['create', 'No-bundle PR', '--no-bundle']),
+      );
+      const match = createLogs.join('\n').match(/PR #(\d+)/);
+      const num = match?.[1] ?? '999';
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', num]));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('no revisions');
+    });
+
+    it('should fail checkout for non-existent PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', '99']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found');
+    });
   });
 
   // =========================================================================
