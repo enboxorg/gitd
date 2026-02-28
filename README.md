@@ -1,5 +1,10 @@
 # gitd
 
+[![CI](https://github.com/enboxorg/gitd/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/enboxorg/gitd/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/enboxorg/gitd/graph/badge.svg)](https://codecov.io/gh/enboxorg/gitd)
+[![npm](https://img.shields.io/npm/v/@enbox/gitd)](https://www.npmjs.com/package/@enbox/gitd)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 A decentralized git forge built on [DWN](https://github.com/enboxorg/enbox) protocols.
 
 > **Research preview** — under active development. APIs and CLI may change without notice.
