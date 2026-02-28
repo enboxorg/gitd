@@ -107,6 +107,7 @@ export const ForgeIssuesDefinition = {
 
       issue: {
         $actions: [
+          { who: 'anyone', can: ['create', 'read'] },
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
           { role: 'repo:repo/triager', can: ['create', 'read', 'co-update'] },
@@ -123,6 +124,7 @@ export const ForgeIssuesDefinition = {
 
         comment: {
           $actions: [
+            { who: 'anyone', can: ['create', 'read'] },
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
             { who: 'author', of: 'repo/issue/comment', can: ['create', 'update', 'delete'] },

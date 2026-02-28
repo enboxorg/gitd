@@ -131,10 +131,13 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
-  const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
+  const flagBody = flagValue(args, '--body') ?? flagValue(args, '-m');
+  const positional = args.slice(1).filter(a => !a.startsWith('-')).join(' ');
+  const body = flagBody ?? (positional || undefined);
 
   if (!numberStr || !body) {
     console.error('Usage: gitd issue comment <number> <body>');
+    console.error('       gitd issue comment <number> --body <text>');
     process.exit(1);
   }
 

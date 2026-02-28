@@ -10,7 +10,7 @@
  * @module
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
 // Command
@@ -75,4 +75,14 @@ export async function cloneCommand(args: string[]): Promise<void> {
   if (exitCode !== 0) {
     process.exit(exitCode);
   }
+
+  // Determine the clone directory (git uses the repo name by default,
+  // unless the user specified a destination in extraArgs).
+  const cloneDir = extraArgs.find(a => !a.startsWith('-')) ?? repoPart;
+
+  // Store the repo name in git config so subsequent commands can auto-detect it.
+  spawnSync('git', ['config', 'enbox.repo', repoPart], {
+    cwd   : cloneDir,
+    stdio : 'pipe',
+  });
 }

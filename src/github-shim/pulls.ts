@@ -68,7 +68,8 @@ async function buildPullResponse(
   const number = parseInt(tags.number ?? data.number ?? '0', 10);
   const dwnStatus = tags.status ?? 'open';
   const merged = dwnStatus === 'merged';
-  const state = dwnStatus === 'open' ? 'open' : 'closed';
+  const draft = dwnStatus === 'draft';
+  const state = (dwnStatus === 'open' || draft) ? 'open' : 'closed';
   const baseBranch = tags.baseBranch ?? 'main';
   const headBranch = tags.headBranch ?? '';
 
@@ -142,7 +143,7 @@ async function buildPullResponse(
     closed_at           : state === 'closed' ? toISODate(rec.timestamp) : null,
     user,
     author_association  : sourceDid && sourceDid !== targetDid ? 'CONTRIBUTOR' : 'OWNER',
-    draft               : false,
+    draft,
     head                : {
       label : `${sourceDid ?? targetDid}:${headBranch}`,
       ref   : headBranch,
