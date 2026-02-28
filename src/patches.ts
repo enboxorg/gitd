@@ -22,6 +22,8 @@ import { defineProtocol } from '@enbox/api';
 export type PatchData = {
   title : string;
   body : string;
+  /** GitHub source PR number (set during migration for idempotency). */
+  number? : number;
 };
 
 /** Data shape for a revision (force-push snapshot). */

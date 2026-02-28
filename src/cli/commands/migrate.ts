@@ -607,14 +607,31 @@ async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string
     return 0;
   }
 
+  // Build a set of already-imported GitHub issue numbers for idempotency.
+  const { records: existingIssues } = await ctx.issues.records.query('repo/issue' as any, {
+    filter: { contextId: repoContextId },
+  });
+  const importedNumbers = new Set<number>();
+  for (const rec of existingIssues) {
+    const d = await rec.data.json();
+    if (typeof d.number === 'number') {
+      importedNumbers.add(d.number);
+    }
+  }
+
   let imported = 0;
 
   for (const ghIssue of issues) {
+    if (importedNumbers.has(ghIssue.number)) {
+      console.log(`  #${ghIssue.number} "${ghIssue.title}" — already imported, skipping.`);
+      continue;
+    }
+
     const author = ghIssue.user?.login ?? 'unknown';
     const body = prependAuthor(ghIssue.body ?? '', author);
 
     const { status: issueStatus, record: issueRecord } = await ctx.issues.records.create('repo/issue', {
-      data            : { title: ghIssue.title, body },
+      data            : { title: ghIssue.title, body, number: ghIssue.number },
       tags            : { status: ghIssue.state === 'open' ? 'open' : 'closed' },
       parentContextId : repoContextId,
     });
@@ -689,9 +706,26 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
     return 0;
   }
 
+  // Build a set of already-imported GitHub PR numbers for idempotency.
+  const { records: existingPatches } = await ctx.patches.records.query('repo/patch' as any, {
+    filter: { contextId: repoContextId },
+  });
+  const importedNumbers = new Set<number>();
+  for (const rec of existingPatches) {
+    const d = await rec.data.json();
+    if (typeof d.number === 'number') {
+      importedNumbers.add(d.number);
+    }
+  }
+
   let imported = 0;
 
   for (const ghPull of pulls) {
+    if (importedNumbers.has(ghPull.number)) {
+      console.log(`  #${ghPull.number} "${ghPull.title}" — already imported, skipping.`);
+      continue;
+    }
+
     const author = ghPull.user?.login ?? 'unknown';
     const body = prependAuthor(ghPull.body ?? '', author);
 
@@ -712,7 +746,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
     };
 
     const { status: prSt, record: prRecord } = await ctx.patches.records.create('repo/patch', {
-      data            : { title: ghPull.title, body },
+      data            : { title: ghPull.title, body, number: ghPull.number },
       tags,
       parentContextId : repoContextId,
     });
