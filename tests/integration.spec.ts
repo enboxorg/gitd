@@ -399,10 +399,10 @@ describe('gitd integration', () => {
       expect(reply.entries?.length).toBe(1);
     });
 
-    it('should reject issue creation from stranger (no role)', async () => {
+    it('should allow issue creation from anyone (open model)', async () => {
       const { repoContextId } = await setupRepoWithRoles();
 
-      const data = encoder.encode(JSON.stringify({ title: 'Spam', body: 'Buy stuff' }));
+      const data = encoder.encode(JSON.stringify({ title: 'External report', body: 'Found a bug' }));
       const write = await RecordsWrite.create({
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
@@ -414,7 +414,7 @@ describe('gitd integration', () => {
         signer          : Jws.createSigner(stranger),
       });
       const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      expect(reply.status.code).not.toBe(202);
+      expect(reply.status.code).toBe(202);
     });
 
     it('should create nested comments on issues', async () => {

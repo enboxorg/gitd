@@ -296,10 +296,13 @@ async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
-  const body = args.slice(1).join(' ') || (flagValue(args, '--body') ?? flagValue(args, '-m'));
+  const flagBody = flagValue(args, '--body') ?? flagValue(args, '-m');
+  const positional = args.slice(1).filter(a => !a.startsWith('-')).join(' ');
+  const body = flagBody ?? (positional || undefined);
 
   if (!numberStr || !body) {
     console.error('Usage: gitd pr comment <number> <body>');
+    console.error('       gitd pr comment <number> --body <text>');
     process.exit(1);
   }
 
@@ -417,7 +420,19 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
       process.exit(1);
     }
   } else if (strategy === 'rebase') {
-    const rb = spawnSync('git', ['rebase', headBranch], {
+    // Rebase the head branch onto the base branch, then fast-forward merge.
+    // 1. Switch to the head branch.
+    const coHead = spawnSync('git', ['checkout', headBranch], {
+      encoding : 'utf-8',
+      timeout  : 30_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (coHead.status !== 0) {
+      console.error(`Failed to switch to '${headBranch}': ${coHead.stderr?.trim()}`);
+      process.exit(1);
+    }
+    // 2. Rebase onto the base branch.
+    const rb = spawnSync('git', ['rebase', baseBranch], {
       encoding : 'utf-8',
       timeout  : 60_000,
       stdio    : ['pipe', 'pipe', 'pipe'],
@@ -429,6 +444,26 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
         encoding : 'utf-8',
         stdio    : ['pipe', 'pipe', 'pipe'],
       });
+      // Return to the base branch.
+      spawnSync('git', ['checkout', baseBranch], {
+        encoding : 'utf-8',
+        stdio    : ['pipe', 'pipe', 'pipe'],
+      });
+      process.exit(1);
+    }
+    // 3. Switch back to the base branch and fast-forward merge.
+    spawnSync('git', ['checkout', baseBranch], {
+      encoding : 'utf-8',
+      timeout  : 30_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    const ff = spawnSync('git', ['merge', '--ff-only', headBranch], {
+      encoding : 'utf-8',
+      timeout  : 60_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (ff.status !== 0) {
+      console.error(`Fast-forward merge failed: ${ff.stderr?.trim()}`);
       process.exit(1);
     }
   } else {

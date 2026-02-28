@@ -41,6 +41,13 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 
+  // Validate repo name — must match what the git server accepts.
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    console.error(`Invalid repo name: "${name}"`);
+    console.error('Names may only contain letters, digits, dots, hyphens, and underscores.');
+    process.exit(1);
+  }
+
   // Check if a repo with this name already exists.
   const { records: existing } = await ctx.repo.records.query('repo', {
     filter: { tags: { name } },
@@ -102,6 +109,9 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
       console.log(`Remote "origin" already exists — skipped.`);
       console.log(`  To add manually:  git remote add forge ${remoteUrl}`);
     }
+
+    // Store the repo name in git config so subsequent commands can auto-detect it.
+    spawnSync('git', ['config', 'enbox.repo', name], { stdio: 'pipe' });
   }
 
   // -----------------------------------------------------------------------
