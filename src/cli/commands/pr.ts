@@ -1,8 +1,9 @@
 /**
- * `gitd pr` — create, list, show, comment on, and merge pull requests.
+ * `gitd pr` — create, list, show, checkout, comment on, and merge pull requests.
  *
  * Usage:
  *   gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]
+ *   gitd pr checkout <number> [--branch <name>] [--detach]
  *   gitd pr show <number>
  *   gitd pr comment <number> <body>
  *   gitd pr merge <number> [--strategy <merge|squash|rebase>]
@@ -20,7 +21,7 @@ import type { AgentContext } from '../agent.js';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { readFileSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 
 import { getRepoContextId } from '../repo-context.js';
 import { flagValue, hasFlag, resolveRepoName } from '../flags.js';
@@ -35,6 +36,8 @@ export async function prCommand(ctx: AgentContext, args: string[]): Promise<void
 
   switch (sub) {
     case 'create': return prCreate(ctx, rest);
+    case 'checkout':
+    case 'co': return prCheckout(ctx, rest);
     case 'show': return prShow(ctx, rest);
     case 'comment': return prComment(ctx, rest);
     case 'merge': return prMerge(ctx, rest);
@@ -43,7 +46,7 @@ export async function prCommand(ctx: AgentContext, args: string[]): Promise<void
     case 'list':
     case 'ls': return prList(ctx, rest);
     default:
-      console.error('Usage: gitd pr <create|show|comment|merge|close|reopen|list>');
+      console.error('Usage: gitd pr <create|checkout|show|comment|merge|close|reopen|list>');
       process.exit(1);
   }
 }
@@ -99,6 +102,130 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   // Create revision + bundle if we have git context.
   if (gitInfo) {
     await createRevisionAndBundle(ctx, record, gitInfo);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// pr checkout
+// ---------------------------------------------------------------------------
+
+async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
+  const numberStr = args[0];
+  const branchOverride = flagValue(args, '--branch') ?? flagValue(args, '-b');
+  const detach = hasFlag(args, '--detach');
+
+  if (!numberStr) {
+    console.error('Usage: gitd pr checkout <number> [--branch <name>] [--detach]');
+    process.exit(1);
+  }
+
+  // Verify we're inside a git repo.
+  const inRepo = git(['rev-parse', '--is-inside-work-tree']);
+  if (!inRepo) {
+    console.error('Not inside a git repository.');
+    process.exit(1);
+  }
+
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  if (!patch) {
+    console.error(`PR #${numberStr} not found.`);
+    process.exit(1);
+  }
+
+  const patchTags = patch.tags as Record<string, string> | undefined;
+
+  // Fetch the latest revision under this patch.
+  const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
+    filter: { contextId: patch.contextId },
+  });
+
+  if (revisions.length === 0) {
+    console.error(`PR #${numberStr} has no revisions.`);
+    process.exit(1);
+  }
+
+  // Pick the latest revision (last created).
+  const revision = revisions[revisions.length - 1];
+  const revisionTags = revision.tags as Record<string, string> | undefined;
+
+  // Fetch the bundle from the revision.
+  const { records: bundles } = await ctx.patches.records.query('repo/patch/revision/revisionBundle' as any, {
+    filter: { contextId: revision.contextId },
+  });
+
+  if (bundles.length === 0) {
+    console.error(`PR #${numberStr} has no bundle attached.`);
+    process.exit(1);
+  }
+
+  const bundleRecord = bundles[0];
+  const bundleData = await bundleRecord.data.blob();
+  const bundleBytes = new Uint8Array(await bundleData.arrayBuffer());
+
+  // Write bundle to temp file.
+  const bundlePath = join(tmpdir(), `gitd-pr-checkout-${Date.now()}.bundle`);
+  try {
+    writeFileSync(bundlePath, bundleBytes);
+
+    // Verify the bundle.
+    const verify = git(['bundle', 'verify', bundlePath]);
+    if (verify === null) {
+      console.error('Bundle verification failed. Missing prerequisite objects?');
+      process.exit(1);
+    }
+
+    // Fetch objects from the bundle.
+    const fetchResult = spawnSync('git', ['fetch', bundlePath], {
+      encoding : 'utf-8',
+      timeout  : 60_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (fetchResult.status !== 0) {
+      console.error(`Failed to fetch from bundle: ${fetchResult.stderr?.trim()}`);
+      process.exit(1);
+    }
+
+    const tipCommit = revisionTags?.headCommit;
+    if (!tipCommit) {
+      console.error('Revision has no headCommit tag.');
+      process.exit(1);
+    }
+
+    const localBranch = branchOverride ?? patchTags?.headBranch ?? `pr/${numberStr}`;
+
+    if (detach) {
+      // Detached HEAD at the tip commit.
+      const coResult = spawnSync('git', ['checkout', '--detach', tipCommit], {
+        encoding : 'utf-8',
+        timeout  : 30_000,
+        stdio    : ['pipe', 'pipe', 'pipe'],
+      });
+      if (coResult.status !== 0) {
+        console.error(`Failed to checkout: ${coResult.stderr?.trim()}`);
+        process.exit(1);
+      }
+      console.log(`Checked out PR #${numberStr} at ${tipCommit.slice(0, 7)} (detached HEAD)`);
+    } else {
+      // Create or reset a local branch at the tip commit, then switch to it.
+      spawnSync('git', ['branch', '-f', localBranch, tipCommit], {
+        encoding : 'utf-8',
+        timeout  : 30_000,
+        stdio    : ['pipe', 'pipe', 'pipe'],
+      });
+      const coResult = spawnSync('git', ['checkout', localBranch], {
+        encoding : 'utf-8',
+        timeout  : 30_000,
+        stdio    : ['pipe', 'pipe', 'pipe'],
+      });
+      if (coResult.status !== 0) {
+        console.error(`Failed to checkout branch '${localBranch}': ${coResult.stderr?.trim()}`);
+        process.exit(1);
+      }
+      console.log(`Switched to branch '${localBranch}' (PR #${numberStr})`);
+    }
+  } finally {
+    try { unlinkSync(bundlePath); } catch { /* ignore cleanup errors */ }
   }
 }
 
