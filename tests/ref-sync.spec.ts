@@ -96,4 +96,8 @@ describe('readGitRefs', () => {
       }
     }
   });
+
+  it('should reject when git fails (e.g., invalid repo path)', async () => {
+    await expect(readGitRefs('/nonexistent/path')).rejects.toThrow();
+  });
 });
