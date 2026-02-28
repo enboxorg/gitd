@@ -680,22 +680,75 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('main <- feature-x'))).toBe(true);
     });
 
-    it('should merge a PR', async () => {
+    it('should merge a PR with default strategy', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['merge', '1']));
-      expect(logs.some((l) => l.includes('Merged PR #1'))).toBe(true);
-      expect(logs.some((l) => l.includes('strategy: merge'))).toBe(true);
+      const tmpRepo = resolve('__TESTDATA__/pr-merge-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      // Create a git repo with main + feature branch.
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Merge test\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial commit'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['checkout', '-b', 'feature-x'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'feature.ts'), 'export const x = 1;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'add feature'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+
+        // Create PR from the feature branch.
+        await captureLog(() =>
+          prCommand(ctx, ['create', 'Merge test PR', '--base', 'main']),
+        );
+        // The PR number depends on how many were created before.
+        // PR #1 and #2 already exist; this should be PR #3 at minimum.
+        // We'll find it by looking at the latest.
+        spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
+
+        // Checkout the PR to create the local branch.
+        await captureLog(() => prCommand(ctx, ['checkout', '3', '--branch', 'feature-x']));
+
+        // Now merge it.
+        const logs = await captureLog(() => prCommand(ctx, ['merge', '3']));
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain('Merged PR #3');
+        expect(allOutput).toContain('strategy: merge');
+        expect(allOutput).toContain('Deleted branch feature-x');
+
+        // Verify the merge commit exists on main.
+        const head = spawnSync('git', ['log', '--oneline', '-1'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(head.stdout).toContain('Merge PR #3');
+
+        // Verify the feature file exists on main after merge.
+        expect(existsSync(join(tmpRepo, 'feature.ts'))).toBe(true);
+
+        // Verify the feature branch was deleted.
+        const branches = spawnSync('git', ['branch'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(branches.stdout).not.toContain('feature-x');
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
     });
 
     it('should show merged status after merging', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['show', '1']));
+      const logs = await captureLog(() => prCommand(ctx, ['show', '3']));
       expect(logs.some((l) => l.includes('Status:   MERGED'))).toBe(true);
     });
 
     it('should not re-merge an already merged PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['merge', '1']));
+      const logs = await captureLog(() => prCommand(ctx, ['merge', '3']));
       expect(logs.some((l) => l.includes('already merged'))).toBe(true);
     });
 
@@ -747,7 +800,7 @@ describe('gitd CLI commands', () => {
 
     it('should not reopen a merged PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['reopen', '1']));
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', '3']));
       expect(logs.some((l) => l.includes('cannot be reopened'))).toBe(true);
     });
 
@@ -761,11 +814,13 @@ describe('gitd CLI commands', () => {
     it('should list all PRs with numbers', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const logs = await captureLog(() => prCommand(ctx, ['list']));
-      expect(logs.some((l) => l.includes('PRs (2)'))).toBe(true);
+      expect(logs.some((l) => l.includes('PRs (3)'))).toBe(true);
       expect(logs.some((l) => l.includes('#1'))).toBe(true);
       expect(logs.some((l) => l.includes('#2'))).toBe(true);
+      expect(logs.some((l) => l.includes('#3'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
       expect(logs.some((l) => l.includes('Fix typo'))).toBe(true);
+      expect(logs.some((l) => l.includes('Merge test PR'))).toBe(true);
     });
 
     it('should fail show for non-existent PR', async () => {
@@ -805,7 +860,7 @@ describe('gitd CLI commands', () => {
         const allOutput = logs.join('\n');
 
         // Should create the PR.
-        expect(allOutput).toContain('Created PR #3');
+        expect(allOutput).toContain('Created PR #4');
         expect(allOutput).toContain('main <- feat/test');
 
         // Should create revision with commit info.
@@ -828,7 +883,7 @@ describe('gitd CLI commands', () => {
       const allOutput = logs.join('\n');
 
       // Should create the PR without revision/bundle.
-      expect(allOutput).toContain('Created PR #4');
+      expect(allOutput).toContain('Created PR #5');
       expect(allOutput).not.toContain('Revision:');
       expect(allOutput).not.toContain('Bundle:');
     });
@@ -863,11 +918,11 @@ describe('gitd CLI commands', () => {
 
         // Checkout the PR.
         const logs = await captureLog(() =>
-          prCommand(ctx, ['checkout', '5', '--branch', 'pr/test-checkout']),
+          prCommand(ctx, ['checkout', '6', '--branch', 'pr/test-checkout']),
         );
         const allOutput = logs.join('\n');
         expect(allOutput).toContain('Switched to branch \'pr/test-checkout\'');
-        expect(allOutput).toContain('PR #5');
+        expect(allOutput).toContain('PR #6');
 
         // Verify we're on the right branch.
         const branch = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -901,6 +956,167 @@ describe('gitd CLI commands', () => {
       const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', '99']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
+    });
+
+    it('should squash merge a PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const tmpRepo = resolve('__TESTDATA__/pr-squash-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Squash test\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['checkout', '-b', 'feat/squash'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'a.ts'), 'export const a = 1;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'commit 1'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'b.ts'), 'export const b = 2;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'commit 2'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+        // Create PR from the feature branch. Dynamic number.
+        const createLogs = await captureLog(() =>
+          prCommand(ctx, ['create', 'Squash PR', '--base', 'main']),
+        );
+        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+
+        spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
+        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/squash']));
+
+        const logs = await captureLog(() => prCommand(ctx, ['merge', num, '--squash']));
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).toContain('strategy: squash');
+
+        // Squash should produce a single commit with the squash message.
+        const log = spawnSync('git', ['log', '--oneline', '-1'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(log.stdout).toContain('(squash)');
+
+        // Both files should exist on main.
+        expect(existsSync(join(tmpRepo, 'a.ts'))).toBe(true);
+        expect(existsSync(join(tmpRepo, 'b.ts'))).toBe(true);
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('should rebase merge a PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const tmpRepo = resolve('__TESTDATA__/pr-rebase-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Rebase test\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['checkout', '-b', 'feat/rebase'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'r.ts'), 'export const r = 1;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'rebase commit'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+        const createLogs = await captureLog(() =>
+          prCommand(ctx, ['create', 'Rebase PR', '--base', 'main']),
+        );
+        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+
+        spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
+        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/rebase']));
+
+        const logs = await captureLog(() => prCommand(ctx, ['merge', num, '--rebase']));
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).toContain('strategy: rebase');
+
+        // The rebased file should exist on main.
+        expect(existsSync(join(tmpRepo, 'r.ts'))).toBe(true);
+
+        // Rebase should NOT produce a merge commit — the log should have the original commit.
+        const log = spawnSync('git', ['log', '--oneline', '-3'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(log.stdout).toContain('rebase commit');
+        expect(log.stdout).not.toContain('Merge PR');
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('should keep branch with --no-delete-branch', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const tmpRepo = resolve('__TESTDATA__/pr-nodelete-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# No-delete test\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['checkout', '-b', 'feat/keep'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'keep.ts'), 'export const keep = 1;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'keep branch commit'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+        const createLogs = await captureLog(() =>
+          prCommand(ctx, ['create', 'Keep branch PR', '--base', 'main']),
+        );
+        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+
+        spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
+        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/keep']));
+
+        const logs = await captureLog(() =>
+          prCommand(ctx, ['merge', num, '--no-delete-branch']),
+        );
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).not.toContain('Deleted branch');
+
+        // The branch should still exist.
+        const branches = spawnSync('git', ['branch'], {
+          cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
+        });
+        expect(branches.stdout).toContain('feat/keep');
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('should fail merge when branch not found locally', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      // PR #1 has headBranch=feature-x which doesn't exist locally.
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', '1']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('not found locally');
+    });
+
+    it('should fail merge for closed PR', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      // PR #2 was closed earlier in the close test, then reopened.
+      // Close it again for this test.
+      await captureLog(() => prCommand(ctx, ['close', '2']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', '2']));
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('closed');
     });
   });
 

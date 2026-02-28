@@ -6,7 +6,7 @@
  *   gitd pr checkout <number> [--branch <name>] [--detach]
  *   gitd pr show <number>
  *   gitd pr comment <number> <body>
- *   gitd pr merge <number> [--strategy <merge|squash|rebase>]
+ *   gitd pr merge <number> [--squash | --rebase] [--no-delete-branch]
  *   gitd pr close <number>
  *   gitd pr reopen <number>
  *   gitd pr list [--status <draft|open|closed|merged>]
@@ -331,15 +331,22 @@ async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
 
 async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const numberStr = args[0];
-  const strategy = flagValue(args, '--strategy') ?? 'merge';
+  const strategy = hasFlag(args, '--squash')
+    ? 'squash'
+    : hasFlag(args, '--rebase')
+      ? 'rebase'
+      : 'merge';
+  const deleteBranch = !hasFlag(args, '--no-delete-branch');
 
   if (!numberStr) {
-    console.error('Usage: gitd pr merge <number> [--strategy <merge|squash|rebase>]');
+    console.error('Usage: gitd pr merge <number> [--squash | --rebase] [--no-delete-branch]');
     process.exit(1);
   }
 
-  if (!['merge', 'squash', 'rebase'].includes(strategy)) {
-    console.error(`Invalid strategy: ${strategy}. Must be merge, squash, or rebase.`);
+  // Must be inside a git repo.
+  const inRepo = git(['rev-parse', '--is-inside-work-tree']);
+  if (!inRepo) {
+    console.error('Not inside a git repository.');
     process.exit(1);
   }
 
@@ -363,6 +370,83 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const baseBranch = tags?.baseBranch ?? 'main';
+  const headBranch = tags?.headBranch ?? `pr/${numberStr}`;
+
+  // Ensure the PR branch exists locally.
+  const branchExists = git(['rev-parse', '--verify', headBranch]);
+  if (!branchExists) {
+    console.error(`Branch '${headBranch}' not found locally. Run \`gitd pr checkout ${numberStr}\` first.`);
+    process.exit(1);
+  }
+
+  // Switch to the base branch.
+  const coResult = spawnSync('git', ['checkout', baseBranch], {
+    encoding : 'utf-8',
+    timeout  : 30_000,
+    stdio    : ['pipe', 'pipe', 'pipe'],
+  });
+  if (coResult.status !== 0) {
+    console.error(`Failed to switch to base branch '${baseBranch}': ${coResult.stderr?.trim()}`);
+    process.exit(1);
+  }
+
+  // Count commits being merged (for display).
+  const countStr = git(['rev-list', '--count', `${baseBranch}..${headBranch}`]);
+  const commitCount = parseInt(countStr ?? '0', 10);
+
+  // Perform the merge with the chosen strategy.
+  if (strategy === 'squash') {
+    const sq = spawnSync('git', ['merge', '--squash', headBranch], {
+      encoding : 'utf-8',
+      timeout  : 60_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (sq.status !== 0) {
+      console.error(`Squash merge failed: ${sq.stderr?.trim()}`);
+      process.exit(1);
+    }
+    // Squash leaves changes staged — commit them.
+    const cm = spawnSync('git', ['commit', '-m', `Merge PR #${numberStr}: ${data.title} (squash)`], {
+      encoding : 'utf-8',
+      timeout  : 30_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (cm.status !== 0) {
+      console.error(`Squash commit failed: ${cm.stderr?.trim()}`);
+      process.exit(1);
+    }
+  } else if (strategy === 'rebase') {
+    const rb = spawnSync('git', ['rebase', headBranch], {
+      encoding : 'utf-8',
+      timeout  : 60_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (rb.status !== 0) {
+      console.error(`Rebase failed: ${rb.stderr?.trim()}`);
+      // Abort the rebase so we don't leave the repo in a broken state.
+      spawnSync('git', ['rebase', '--abort'], {
+        encoding : 'utf-8',
+        stdio    : ['pipe', 'pipe', 'pipe'],
+      });
+      process.exit(1);
+    }
+  } else {
+    // Standard merge commit.
+    const mg = spawnSync('git', ['merge', '--no-ff', headBranch, '-m', `Merge PR #${numberStr}: ${data.title}`], {
+      encoding : 'utf-8',
+      timeout  : 60_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (mg.status !== 0) {
+      console.error(`Merge failed: ${mg.stderr?.trim()}`);
+      process.exit(1);
+    }
+  }
+
+  // Capture the merge commit SHA.
+  const mergeCommit = git(['rev-parse', 'HEAD']) ?? 'unknown';
+
   // Update the patch status to merged.
   const { status } = await patch.update({
     data : data,
@@ -370,18 +454,39 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (status.code >= 300) {
-    console.error(`Failed to merge PR: ${status.code} ${status.detail}`);
+    console.error(`Failed to update PR status: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
-  // Create a merge result record.
+  // Create a merge result record with the actual commit SHA.
   await ctx.patches.records.create('repo/patch/mergeResult' as any, {
     data            : { mergedBy: ctx.did },
-    tags            : { mergeCommit: 'pending', strategy },
+    tags            : { mergeCommit, strategy },
     parentContextId : patch.contextId,
   } as any);
 
-  console.log(`Merged PR #${numberStr}: "${data.title}" (strategy: ${strategy})`);
+  // Create a status change record (audit trail).
+  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+    data            : { reason: `Merged via ${strategy} strategy` },
+    parentContextId : patch.contextId,
+  } as any);
+
+  const commitLabel = commitCount > 0
+    ? ` (${commitCount} commit${commitCount !== 1 ? 's' : ''})`
+    : '';
+  console.log(`Merged PR #${numberStr}${commitLabel} into ${baseBranch} at ${mergeCommit.slice(0, 7)} (strategy: ${strategy})`);
+
+  // Clean up the local PR branch.
+  if (deleteBranch) {
+    const delResult = spawnSync('git', ['branch', '-D', headBranch], {
+      encoding : 'utf-8',
+      timeout  : 30_000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    if (delResult.status === 0) {
+      console.log(`Deleted branch ${headBranch}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
