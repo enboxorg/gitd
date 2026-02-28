@@ -66,7 +66,15 @@ export function createRefSyncer(options: RefSyncOptions): OnPushComplete {
 
   return async (_did: string, _repo: string, repoPath: string): Promise<void> => {
     // Read current git refs from the bare repository.
-    const gitRefs = await readGitRefs(repoPath);
+    // If git fails (corrupt repo, permission denied, etc.), abort the sync
+    // to avoid deleting all DWN ref records due to an empty ref list.
+    let gitRefs: GitRef[];
+    try {
+      gitRefs = await readGitRefs(repoPath);
+    } catch (err) {
+      console.error(`ref-sync: failed to read refs from ${repoPath}: ${(err as Error).message}`);
+      return;
+    }
 
     // Query existing DWN ref records scoped to this repo.
     const { records: existingRecords } = await refs.records.query('repo/ref' as any, {
@@ -153,14 +161,15 @@ function spawnCollectStdout(cmd: string, args: string[], cwd: string): Promise<s
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
     child.stdout!.on('data', (chunk: Buffer) => chunks.push(chunk));
-    // Drain stderr to prevent pipe buffer deadlocks.
-    child.stderr!.resume();
+    child.stderr!.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code !== 0) {
-        resolve(''); // Empty refs for non-zero exit (e.g., empty repo).
+        const stderr = Buffer.concat(stderrChunks).toString('utf-8').trim();
+        reject(new Error(`${cmd} ${args.join(' ')} exited with code ${code}: ${stderr}`));
       } else {
         resolve(Buffer.concat(chunks).toString('utf-8'));
       }
