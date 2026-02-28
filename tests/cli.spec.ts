@@ -2155,6 +2155,23 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('Actually a PR'))).toBe(false);
     });
 
+    it('should skip already-imported issues on re-run', async () => {
+      // Re-run the same import — issues 100 and 101 were imported above.
+      mockGitHubApi({
+        '/repos/testowner/my-test-repo/issues?': [
+          { number: 100, title: 'GH Issue One', body: 'From GitHub', state: 'open', user: { login: 'alice' }, created_at: '2025-01-01T00:00:00Z' },
+          { number: 101, title: 'GH Issue Two', body: 'Closed one', state: 'closed', user: { login: 'bob' }, created_at: '2025-01-02T00:00:00Z', pull_request: undefined },
+        ],
+        '/repos/testowner/my-test-repo/issues/100/comments' : [],
+        '/repos/testowner/my-test-repo/issues/101/comments' : [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['issues', 'testowner/my-test-repo']));
+      expect(logs.some((l) => l.includes('already imported'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 0 issues'))).toBe(true);
+    });
+
     it('should handle no issues gracefully', async () => {
       mockGitHubApi({
         '/repos/testowner/my-test-repo/issues?': [],
@@ -2186,6 +2203,23 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('#201'))).toBe(true);
       expect(logs.some((l) => l.includes('open'))).toBe(true);
       expect(logs.some((l) => l.includes('Imported 2 PRs'))).toBe(true);
+    });
+
+    it('should skip already-imported PRs on re-run', async () => {
+      // Re-run the same import — PRs 200 and 201 were imported above.
+      mockGitHubApi({
+        '/repos/testowner/my-test-repo/pulls?': [
+          { number: 200, title: 'GH PR One', body: 'Add feature', state: 'closed', merged: true, user: { login: 'alice' }, base: { ref: 'main' }, head: { ref: 'feature-a' }, created_at: '2025-01-01T00:00:00Z' },
+          { number: 201, title: 'GH PR Two', body: 'WIP', state: 'open', merged: false, user: { login: 'bob' }, base: { ref: 'main' }, head: { ref: 'feature-b' }, created_at: '2025-01-02T00:00:00Z' },
+        ],
+        '/repos/testowner/my-test-repo/pulls/200/reviews' : [],
+        '/repos/testowner/my-test-repo/pulls/201/reviews' : [],
+      });
+
+      const { migrateCommand } = await import('../src/cli/commands/migrate.js');
+      const logs = await captureLog(() => migrateCommand(ctx, ['pulls', 'testowner/my-test-repo']));
+      expect(logs.some((l) => l.includes('already imported'))).toBe(true);
+      expect(logs.some((l) => l.includes('Imported 0 PRs'))).toBe(true);
     });
 
     it('should handle no pull requests gracefully', async () => {

@@ -21,6 +21,8 @@ import { defineProtocol } from '@enbox/api';
 export type IssueData = {
   title : string;
   body : string;
+  /** GitHub source issue number (set during migration for idempotency). */
+  number? : number;
 };
 
 /** Data shape for a comment on an issue. */
