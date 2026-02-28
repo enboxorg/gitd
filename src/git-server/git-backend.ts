@@ -178,7 +178,10 @@ function hashDid(did: string): string {
 /** Run a git command and return the exit code. */
 async function runGit(args: string[]): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { stdio: 'pipe' });
+    const child = spawn('git', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // Drain stdout and stderr to prevent pipe buffer deadlocks.
+    child.stdout!.resume();
+    child.stderr!.resume();
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 128));
   });
@@ -193,6 +196,9 @@ function spawnGitService(service: 'upload-pack' | 'receive-pack', repoPath: stri
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
+  // Drain stderr to prevent pipe buffer deadlocks.
+  child.stderr!.resume();
+
   const stdout = new ReadableStream<Uint8Array>({
     start(controller): void {
       child.stdout!.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
@@ -202,8 +208,17 @@ function spawnGitService(service: 'upload-pack' | 'receive-pack', repoPath: stri
   });
 
   const stdin = new WritableStream<Uint8Array>({
-    write(chunk): void {
-      child.stdin!.write(chunk);
+    write(chunk): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const ok = child.stdin!.write(chunk, (err) => {
+          if (err) { reject(err); }
+        });
+        if (ok) {
+          resolve();
+        } else {
+          child.stdin!.once('drain', resolve);
+        }
+      });
     },
     close(): void {
       child.stdin!.end();

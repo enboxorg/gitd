@@ -371,6 +371,9 @@ function spawnAndCollect(service: string, repoPath: string): Promise<Uint8Array 
 
     const chunks: Buffer[] = [];
 
+    // Drain stderr to prevent pipe buffer deadlocks.
+    child.stderr!.resume();
+
     child.stdout!.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.stdout!.on('error', reject);
 

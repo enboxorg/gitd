@@ -155,6 +155,8 @@ function spawnCollectStdout(cmd: string, args: string[], cwd: string): Promise<s
     const chunks: Buffer[] = [];
 
     child.stdout!.on('data', (chunk: Buffer) => chunks.push(chunk));
+    // Drain stderr to prevent pipe buffer deadlocks.
+    child.stderr!.resume();
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code !== 0) {
