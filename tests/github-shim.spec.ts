@@ -155,12 +155,26 @@ describe('GitHub API compatibility shim', () => {
       parentContextId : repoContextId,
     });
 
-    // 6. Create an open patch.
+    // 6. Create an open patch with a revision.
     const { record: patchRec } = await ctx.patches.records.create('repo/patch', {
       data            : { title: 'Add feature X', body: 'Implements feature X.', number: 1 },
-      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', number: '1' },
+      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', number: '1', sourceDid: testDid },
       parentContextId : repoContextId,
     });
+
+    // 6a. Create a revision record with commit and diff stat metadata.
+    await ctx.patches.records.create('repo/patch/revision' as any, {
+      data: {
+        description : 'v1: 3 commits',
+        diffStat    : { additions: 42, deletions: 7, filesChanged: 5 },
+      },
+      tags: {
+        headCommit  : 'abc1234567890abcdef1234567890abcdef123456',
+        baseCommit  : 'def0987654321fedcba0987654321fedcba098765',
+        commitCount : 3,
+      },
+      parentContextId: patchRec!.contextId ?? '',
+    } as any);
 
     // 7. Create a review on the patch.
     await ctx.patches.records.create('repo/patch/review' as any, {
@@ -176,12 +190,19 @@ describe('GitHub API compatibility shim', () => {
       parentContextId : patchRec!.contextId ?? '',
     } as any);
 
-    // 9. Create a merged patch.
-    await ctx.patches.records.create('repo/patch', {
+    // 9. Create a merged patch with a merge result.
+    const { record: mergedPatchRec } = await ctx.patches.records.create('repo/patch', {
       data            : { title: 'Fix typo', body: 'Fixed a typo in README.', number: 2 },
       tags            : { status: 'merged', baseBranch: 'main', headBranch: 'fix-typo', number: '2' },
       parentContextId : repoContextId,
     });
+
+    // 9a. Create a merge result with commit SHA.
+    await ctx.patches.records.create('repo/patch/mergeResult' as any, {
+      data            : { mergedBy: testDid },
+      tags            : { mergeCommit: 'ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00', strategy: 'squash' },
+      parentContextId : mergedPatchRec!.contextId ?? '',
+    } as any);
 
     // 10. Create a release.
     await ctx.releases.records.create('repo/release' as any, {
@@ -485,14 +506,25 @@ describe('GitHub API compatibility shim', () => {
       expect(pr.patch_url).toContain('/pulls/1.patch');
     });
 
-    it('should set merged_at for merged pulls', async () => {
+    it('should populate commit and diff stats from revision record', async () => {
+      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      const pr = parse(res);
+      expect(pr.head.sha).toBe('abc1234567890abcdef1234567890abcdef123456');
+      expect(pr.base.sha).toBe('def0987654321fedcba0987654321fedcba098765');
+      expect(pr.commits).toBe(3);
+      expect(pr.additions).toBe(42);
+      expect(pr.deletions).toBe(7);
+      expect(pr.changed_files).toBe(5);
+    });
+
+    it('should set merged_at and merge_commit_sha for merged pulls', async () => {
       const res = await handleShimRequest(ctx, repoUrl('/pulls?state=closed'));
       const data = parse(res);
       const merged = data.find((p: any) => p.merged === true);
       expect(merged).toBeDefined();
       expect(merged.merged_at).toBeDefined();
       expect(merged.merged_at).not.toBeNull();
-      expect(merged.merge_commit_sha).toBeDefined();
+      expect(merged.merge_commit_sha).toBe('ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00');
     });
 
     it('should set merged_at to null for open pulls', async () => {
