@@ -741,7 +741,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
         let verdict: string;
         switch (ghReview.state) {
           case 'APPROVED': verdict = 'approve'; break;
-          case 'CHANGES_REQUESTED': verdict = 'request_changes'; break;
+          case 'CHANGES_REQUESTED': verdict = 'reject'; break;
           default: verdict = 'comment'; break;
         }
 

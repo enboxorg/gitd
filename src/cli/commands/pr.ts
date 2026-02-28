@@ -530,6 +530,12 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  // Audit trail.
+  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+    data            : { reason: 'Closed by maintainer' },
+    parentContextId : patch.contextId,
+  } as any);
+
   console.log(`Closed PR #${numberStr}: "${data.title}"`);
 }
 
@@ -573,6 +579,12 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
     console.error(`Failed to reopen PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+
+  // Audit trail.
+  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+    data            : { reason: 'Reopened by maintainer' },
+    parentContextId : patch.contextId,
+  } as any);
 
   console.log(`Reopened PR #${numberStr}: "${data.title}"`);
 }

@@ -57,17 +57,64 @@ const VERDICT_MAP: Record<string, string> = {
 // Pull request object builder
 // ---------------------------------------------------------------------------
 
-function buildPullResponse(
-  rec: any, data: any, tags: Record<string, string>,
+async function buildPullResponse(
+  ctx: AgentContext, rec: any, data: any, tags: Record<string, string>,
   targetDid: string, repoName: string, baseUrl: string,
-): Record<string, unknown> {
+  from?: string,
+): Promise<Record<string, unknown>> {
   const owner = buildOwner(targetDid, baseUrl);
+  const sourceDid = tags.sourceDid;
+  const user = sourceDid ? buildOwner(sourceDid, baseUrl) : owner;
   const number = parseInt(tags.number ?? data.number ?? '0', 10);
   const dwnStatus = tags.status ?? 'open';
   const merged = dwnStatus === 'merged';
   const state = dwnStatus === 'open' ? 'open' : 'closed';
   const baseBranch = tags.baseBranch ?? 'main';
   const headBranch = tags.headBranch ?? '';
+
+  // Fetch latest revision to populate commit + diff stats.
+  let headSha = '';
+  let baseSha = '';
+  let commits = 0;
+  let additions = 0;
+  let deletions = 0;
+  let changedFiles = 0;
+
+  const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
+    from,
+    filter   : { contextId: rec.contextId },
+    dateSort : DateSort.CreatedDescending,
+  });
+
+  if (revisions.length > 0) {
+    const rev = revisions[0];
+    const revTags = (rev.tags as Record<string, string> | undefined) ?? {};
+    headSha = revTags.headCommit ?? '';
+    baseSha = revTags.baseCommit ?? '';
+    commits = parseInt(revTags.commitCount ?? '0', 10);
+
+    try {
+      const revData = await rev.data.json();
+      if (revData.diffStat) {
+        additions = revData.diffStat.additions ?? 0;
+        deletions = revData.diffStat.deletions ?? 0;
+        changedFiles = revData.diffStat.filesChanged ?? 0;
+      }
+    } catch { /* revision may not have parseable JSON body */ }
+  }
+
+  // Fetch merge result to populate merge_commit_sha.
+  let mergeCommitSha: string | null = null;
+  if (merged) {
+    const { records: mergeResults } = await ctx.patches.records.query('repo/patch/mergeResult' as any, {
+      from,
+      filter: { contextId: rec.contextId },
+    });
+    if (mergeResults.length > 0) {
+      const mrTags = (mergeResults[0].tags as Record<string, string> | undefined) ?? {};
+      mergeCommitSha = mrTags.mergeCommit ?? null;
+    }
+  }
 
   return {
     id                  : numericId(rec.id ?? ''),
@@ -87,33 +134,33 @@ function buildPullResponse(
     locked              : false,
     merged,
     mergeable           : state === 'open' ? true : null,
-    merge_commit_sha    : merged ? '0000000000000000000000000000000000000000' : null,
+    merge_commit_sha    : mergeCommitSha,
     merged_at           : merged ? toISODate(rec.timestamp) : null,
     merged_by           : merged ? owner : null,
     created_at          : toISODate(rec.dateCreated),
     updated_at          : toISODate(rec.timestamp),
     closed_at           : state === 'closed' ? toISODate(rec.timestamp) : null,
-    user                : owner,
-    author_association  : 'OWNER',
+    user,
+    author_association  : sourceDid && sourceDid !== targetDid ? 'CONTRIBUTOR' : 'OWNER',
     draft               : false,
     head                : {
-      label : `${targetDid}:${headBranch}`,
+      label : `${sourceDid ?? targetDid}:${headBranch}`,
       ref   : headBranch,
-      sha   : '',
+      sha   : headSha,
     },
     base: {
       label : `${targetDid}:${baseBranch}`,
       ref   : baseBranch,
-      sha   : '',
+      sha   : baseSha,
     },
     labels              : [],
     assignees           : [],
     milestone           : null,
     requested_reviewers : [],
-    commits             : 0,
-    additions           : 0,
-    deletions           : 0,
-    changed_files       : 0,
+    commits,
+    additions,
+    deletions,
+    changed_files       : changedFiles,
   };
 }
 
@@ -164,7 +211,7 @@ export async function handleListPulls(
   for (const rec of page) {
     const data = await rec.data.json();
     const tags = (rec.tags as Record<string, string> | undefined) ?? {};
-    items.push(buildPullResponse(rec, data, tags, targetDid, repoName, baseUrl));
+    items.push(await buildPullResponse(ctx, rec, data, tags, targetDid, repoName, baseUrl, from));
   }
 
   const linkHeader = buildLinkHeader(
@@ -205,7 +252,7 @@ export async function handleGetPull(
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
-  return jsonOk(buildPullResponse(rec, data, tags, targetDid, repoName, baseUrl));
+  return jsonOk(await buildPullResponse(ctx, rec, data, tags, targetDid, repoName, baseUrl, from));
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +366,7 @@ export async function handleCreatePull(
 
   const recTags = (record.tags as Record<string, string> | undefined) ?? {};
   const data = await record.data.json();
-  const pr = buildPullResponse(record, data, recTags, targetDid, repoName, baseUrl);
+  const pr = await buildPullResponse(ctx, record, data, recTags, targetDid, repoName, baseUrl);
 
   return jsonCreated(pr);
 }
@@ -374,7 +421,7 @@ export async function handleUpdatePull(
   }
 
   const updatedData = { title: newTitle, body: newBody, number: data.number };
-  const pr = buildPullResponse(rec, updatedData, newTags, targetDid, repoName, baseUrl);
+  const pr = await buildPullResponse(ctx, rec, updatedData, newTags, targetDid, repoName, baseUrl);
 
   return jsonOk(pr);
 }
@@ -425,15 +472,22 @@ export async function handleMergePull(
   }
 
   // Create a merge result record.
+  const commitSha = (reqBody.sha as string) ?? 'pending';
   await ctx.patches.records.create('repo/patch/mergeResult' as any, {
     data            : { mergedBy: ctx.did },
-    tags            : { mergeCommit: 'pending', strategy: mergeStrategy },
+    tags            : { mergeCommit: commitSha, strategy: mergeStrategy },
+    parentContextId : rec.contextId,
+  } as any);
+
+  // Audit trail.
+  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+    data            : { reason: `Merged via ${mergeStrategy} strategy` },
     parentContextId : rec.contextId,
   } as any);
 
   // GitHub returns a merge result object.
   return jsonOk({
-    sha     : '0000000000000000000000000000000000000000',
+    sha     : commitSha,
     merged  : true,
     message : `Pull request #${number} merged successfully.`,
   });
