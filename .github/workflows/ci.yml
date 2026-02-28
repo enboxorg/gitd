@@ -75,8 +75,15 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Test
-        run: bun run test:node
+      - name: Test with coverage
+        run: bun test .spec.ts --coverage --coverage-reporter=lcov --coverage-dir=coverage
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: false
 
   # ---------------------------------------------------------------------------
   # DHT integration tests (non-blocking)
