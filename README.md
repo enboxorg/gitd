@@ -1,19 +1,24 @@
 # gitd
 
-> **Research preview** — this project is under active development and not yet ready for production use. APIs, protocols, and CLI commands may change without notice.
+A decentralized git forge built on [DWN](https://github.com/enboxorg/enbox) protocols.
 
-A decentralized forge (GitHub alternative) built on [DWN](https://github.com/enboxorg/enbox) protocols. Git is already decentralized — `gitd` decentralizes the rest: issues, pull requests, code review, CI status, releases, package registry, and social features.
+> **Research preview** — under active development. APIs and CLI may change without notice.
 
-## Why
+```bash
+# install
+curl -fsSL https://gitd.sh/install | bash
 
-GitHub centralizes the social layer around git: identity, access control, issue tracking, code review, package hosting, and discovery all depend on a single provider. `gitd` replaces that layer with DWN protocols, where:
+# create a repo, push code, open a PR — all addressed by DID
+gitd setup
+gitd init my-project
+git clone did::did:dht:abc123/my-project
+# ... make changes ...
+git push
+gitd pr create "Add feature"
+gitd pr merge a1b2c3d
+```
 
-- **Identity is self-sovereign** — DIDs replace GitHub usernames. Portable across providers.
-- **Every user owns their data** — your issues, stars, and contributions live on your DWN, not a central server.
-- **Access control is protocol-level** — roles (maintainer, triager, contributor) are DWN records with cryptographic authorization.
-- **Git transport is DID-addressed** — `git clone did::did:dht:abc123/my-repo` resolves via the DID document.
-- **Packages are DID-scoped** — no global namespace squatting, cryptographic provenance by default.
-- **Repos are self-healing** — git bundles stored as DWN records enable any host to restore a repo on demand.
+---
 
 ## Install
 
@@ -21,112 +26,126 @@ GitHub centralizes the social layer around git: identity, access control, issue 
 curl -fsSL https://gitd.sh/install | bash
 ```
 
-Installs prebuilt binaries for Linux, macOS, and Windows (Git Bash/WSL). Three binaries are installed:
-
-| Binary | Purpose |
-|---|---|
-| `gitd` | Main CLI — forge commands, servers, shims |
-| `git-remote-did` | Git remote helper — resolves `did::` URLs to git endpoints |
-| `git-remote-did-credential` | Git credential helper — generates DID-signed push tokens |
+Or via bun / npm:
 
 ```bash
-# Or install via bun/npm
 bun add -g @enbox/gitd
 ```
 
-## CLI
+This installs three binaries:
+
+| Binary | Purpose |
+|---|---|
+| `gitd` | CLI — forge commands, servers, shims |
+| `git-remote-did` | Git remote helper — resolves `did::` URLs |
+| `git-remote-did-credential` | Credential helper — DID-signed push tokens |
+
+## Quick Start
 
 ```bash
-# Setup & transport
-gitd setup                     # Configure git for DID-based remotes
-gitd clone did:dht:abc/repo    # Clone via DID resolution
-gitd init my-repo              # Create a repo record + bare git repo
-gitd serve                     # Start git transport server
+gitd setup                      # configure git for DID remotes
+gitd init my-repo               # create repo record + bare git repo
+gitd serve                      # start git transport server
+git clone did::did:dht:abc/my-repo
+```
 
-# Issues
+## CLI Reference
+
+### Issues
+
+```bash
 gitd issue create "Bug report"
-gitd issue show 1
-gitd issue comment 1 "On it"
-gitd issue close 1
 gitd issue list
+gitd issue show a1b2c3d
+gitd issue comment a1b2c3d "On it"
+gitd issue close a1b2c3d
+```
 
-# Pull requests (alias: gitd patch)
+### Pull Requests
+
+```bash
 gitd pr create "Add feature"
-gitd pr show 1
-gitd pr comment 1 "LGTM"
-gitd pr merge 1
 gitd pr list
+gitd pr show a1b2c3d
+gitd pr checkout a1b2c3d
+gitd pr comment a1b2c3d "LGTM"
+gitd pr merge a1b2c3d
+```
 
-# Releases
+### Releases
+
+```bash
 gitd release create v1.0.0
-gitd release show v1.0.0
 gitd release list
+```
 
-# CI / Check suites
+### CI / Check Suites
+
+```bash
 gitd ci create <commit>
 gitd ci run <suite-id> lint
 gitd ci update <run-id> --status completed --conclusion success
 gitd ci status
+```
 
-# Package registry
+### Packages
+
+```bash
 gitd registry publish my-pkg 1.0.0 ./pkg.tgz
 gitd registry info my-pkg
 gitd registry verify my-pkg 1.0.0 --trusted did:jwk:build-svc
+```
 
-# Wiki, orgs, social, notifications
+### More
+
+```bash
 gitd wiki create getting-started "Getting Started"
 gitd org create my-org
 gitd social star <did>
 gitd notification list
-
-# GitHub migration
-gitd migrate all owner/repo    # Import repo, issues, PRs, releases
-
-# Web UI & services
-gitd web                       # Read-only web UI
-gitd indexer                   # Repo discovery + search service
-gitd daemon                    # Unified shim daemon (GitHub API, npm, Go, OCI)
-gitd whoami                    # Show connected DID
+gitd migrate all owner/repo     # import from GitHub
+gitd whoami                     # show connected DID
 ```
 
 ## Git Transport
 
-- **Smart HTTP server** — `git clone` and `git push` via native git protocol
-- **DID-signed push auth** — pushers prove DID ownership, server checks DWN role records
-- **Ref mirroring** — branch/tag refs sync to DWN records after each push
-- **Bundle sync** — git bundles sync to DWN records after each push (full, incremental, and squash)
-- **Cold-start restore** — repos auto-restore from DWN bundles when a host has no local copy
+`gitd serve` runs a smart HTTP git server with DID-based authentication.
+
+- Clone and push via native git protocol
+- Pushers prove DID ownership; server checks DWN role records
+- Refs and git bundles sync to DWN after each push
+- Repos auto-restore from DWN bundles on cold start
+
+## Compatibility Shims
+
+Local proxies that let existing tools talk to DWN without modification. Run them all with `gitd daemon`, or individually:
+
+| Shim | Example |
+|---|---|
+| **GitHub API** | `gh repo view did:dht:abc/my-repo` |
+| **npm** | `npm install --registry=http://localhost:4873 @did:dht:abc/my-pkg` |
+| **Go** | `GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc/my-mod` |
+| **OCI** | `docker pull localhost:5555/did:dht:abc/my-image:v1.0.0` |
 
 ## Web UI
 
-Server-rendered HTML interface for browsing any DWN-enabled git repo. Enter a DID to browse their repos, issues, patches, releases, and wiki pages. No client-side JavaScript.
+Server-rendered HTML for browsing repos, issues, PRs, releases, and wiki pages. No client-side JS.
 
 ```bash
 gitd web --port 3000
 ```
 
-## Compatibility Shims
-
-Local proxy servers that translate native tool protocols into DWN queries, so existing tools work without modification:
-
-- **GitHub API** (`gitd github-api`) — GitHub REST API v3 compatible; works with `gh` CLI, VS Code extensions, CI systems
-- **npm** (`gitd shim npm`) — `npm install --registry=http://localhost:4873 @did:dht:abc/my-pkg`
-- **Go** (`gitd shim go`) — `GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc/my-mod`
-- **OCI/Docker** (`gitd shim oci`) — `docker pull localhost:5555/did:dht:abc/my-image:v1.0.0`
-
-Run all shims in one process with `gitd daemon`, or start them individually.
-
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for a high-level overview of protocols, transport, and system design. See [PLAN.md](./PLAN.md) for the full implementation plan with detailed protocol definitions and roadmap.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for protocol and system design, or [PLAN.md](./PLAN.md) for the full roadmap.
 
 ## Development
 
 ```bash
-bun install            # Install dependencies
-bun run build          # Build (clean + tsc)
-bun run lint           # Lint (ESLint, zero warnings)
-bun test .spec.ts      # Run all tests
+bun install            # install dependencies
+bun run build          # typecheck + compile
+bun run lint           # eslint (zero warnings)
+bun test .spec.ts      # run all tests
 ```
 
 ## License
