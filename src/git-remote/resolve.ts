@@ -14,6 +14,7 @@ import type { DidService } from '@enbox/dids';
 
 import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 
+import { ensureDaemon } from '../daemon/lifecycle.js';
 import { readLockfile } from '../daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
@@ -122,32 +123,46 @@ const LOCAL_PROBE_TIMEOUT_MS = 2_000;
  * Check whether a local gitd daemon is running and reachable.
  *
  * Reads `~/.enbox/daemon.lock`, verifies the PID is alive, and probes
- * the health endpoint to confirm the server is responsive.
+ * the health endpoint to confirm the server is responsive.  If no daemon
+ * is running, attempts to auto-start one via `ensureDaemon()`.
  *
  * @returns A `GitEndpoint` pointing to `http://localhost:<port>/...`, or `null`.
  */
 async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoint | null> {
+  // Fast path: check for an already-running daemon.
   const lock = readLockfile();
-  if (!lock) { return null; }
-
-  // Probe the health endpoint to confirm the server is actually responding.
-  const healthUrl = `http://localhost:${lock.port}/health`;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
-    const res = await fetch(healthUrl, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) { return null; }
-  } catch {
-    return null;
+  if (lock) {
+    const healthUrl = `http://localhost:${lock.port}/health`;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
+      const res = await fetch(healthUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        return {
+          url    : buildUrl(`http://localhost:${lock.port}`, did, repo),
+          did,
+          source : 'LocalDaemon',
+        };
+      }
+    } catch {
+      // Not responding — fall through to auto-start.
+    }
   }
 
-  const baseUrl = `http://localhost:${lock.port}`;
-  return {
-    url    : buildUrl(baseUrl, did, repo),
-    did,
-    source : 'LocalDaemon',
-  };
+  // Slow path: try to auto-start a daemon.
+  try {
+    const result = await ensureDaemon();
+    return {
+      url    : buildUrl(`http://localhost:${result.port}`, did, repo),
+      did,
+      source : 'LocalDaemon',
+    };
+  } catch {
+    // Could not start daemon (no profile, no password, etc.) — fall through
+    // to DID document resolution.
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

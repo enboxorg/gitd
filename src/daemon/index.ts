@@ -13,6 +13,9 @@ export { builtinAdapters, findAdapter } from './adapters/index.js';
 export type { DaemonLock } from './lockfile.js';
 export { lockfilePath, readLockfile, removeLockfile, writeLockfile } from './lockfile.js';
 
+export type { DaemonStatus, EnsureDaemonResult } from './lifecycle.js';
+export { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from './lifecycle.js';
+
 export { githubAdapter } from './adapters/github.js';
 export { goAdapter } from './adapters/go.js';
 export { npmAdapter } from './adapters/npm.js';
