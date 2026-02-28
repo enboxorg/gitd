@@ -104,11 +104,13 @@ function checkSetup(binDir: string): void {
         const actual = readlinkSync(linkPath);
         if (resolve(actual) !== resolve(target)) {
           console.log(`  [MISMATCH] ${name} -> ${actual} (expected ${target})`);
+          ok = false;
         } else {
           console.log(`  [OK]       ${name} -> ${target}`);
         }
       } catch {
         console.log(`  [EXISTS]   ${name} at ${linkPath} (not a symlink)`);
+        ok = false;
       }
     }
   }
