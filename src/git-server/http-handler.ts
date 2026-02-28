@@ -171,7 +171,8 @@ export function createGitHttpHandler(
       if (!(await ensureRepo(did, repo))) {
         return new Response('Repository not found', { status: 404 });
       }
-      return handleServiceRpc(backend, did, repo, 'upload-pack', request);
+      const { response: uploadResponse } = await handleServiceRpc(backend, did, repo, 'upload-pack', request);
+      return uploadResponse;
     }
 
     // -----------------------------------------------------------------------
@@ -193,12 +194,19 @@ export function createGitHttpHandler(
         return new Response('Repository not found', { status: 404 });
       }
 
-      const response = await handleServiceRpc(backend, did, repo, 'receive-pack', request);
+      const { response, exitCode } = await handleServiceRpc(backend, did, repo, 'receive-pack', request);
 
-      // Fire the post-push callback asynchronously (don't block the response).
-      if (onPushComplete && response.status === 200) {
-        const repoPath = backend.repoPath(did, repo);
-        onPushComplete(did, repo, repoPath).catch((err) => {
+      // Fire the post-push callback only after git receive-pack exits
+      // successfully.  Git always returns HTTP 200 — rejections (non-fast-
+      // forward, hook failures) are communicated inside the pack protocol,
+      // so the subprocess exit code is the only reliable indicator.
+      if (onPushComplete) {
+        exitCode.then((code) => {
+          if (code === 0) {
+            const repoPath = backend.repoPath(did, repo);
+            return onPushComplete(did, repo, repoPath);
+          }
+        }).catch((err) => {
           console.error(`onPushComplete error for ${did}/${repo}: ${(err as Error).message}`);
         });
       }
@@ -316,13 +324,18 @@ async function handleInfoRefs(
  * Pipes the request body to `git <service> --stateless-rpc` stdin and
  * streams stdout back as the response.
  */
+type ServiceRpcResult = {
+  response: Response;
+  exitCode: Promise<number>;
+};
+
 async function handleServiceRpc(
   backend: GitBackend,
   did: string,
   repo: string,
   service: 'upload-pack' | 'receive-pack',
   request: Request,
-): Promise<Response> {
+): Promise<ServiceRpcResult> {
   const gitProcess = service === 'upload-pack'
     ? backend.uploadPack(did, repo)
     : backend.receivePack(did, repo);
@@ -346,13 +359,15 @@ async function handleServiceRpc(
     await writer.close();
   }
 
-  return new Response(gitProcess.stdout, {
+  const response = new Response(gitProcess.stdout, {
     status  : 200,
     headers : {
       'Content-Type'  : `application/x-git-${service}-result`,
       'Cache-Control' : 'no-cache',
     },
   });
+
+  return { response, exitCode: gitProcess.exitCode };
 }
 
 // ---------------------------------------------------------------------------
