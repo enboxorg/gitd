@@ -268,6 +268,8 @@ function spawnChecked(cmd: string, args: string[], cwd: string): Promise<void> {
     const child = spawn(cmd, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     const stderrChunks: Buffer[] = [];
 
+    // Drain stdout to prevent pipe buffer deadlocks.
+    child.stdout!.resume();
     child.stderr!.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
     child.on('error', reject);
     child.on('exit', (code) => {
@@ -288,6 +290,8 @@ function spawnCollectStdout(cmd: string, args: string[], cwd: string): Promise<s
     const chunks: Buffer[] = [];
 
     child.stdout!.on('data', (chunk: Buffer) => chunks.push(chunk));
+    // Drain stderr to prevent pipe buffer deadlocks.
+    child.stderr!.resume();
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code !== 0) {
