@@ -17,13 +17,13 @@ export {
   buildApiUrl,
   buildLinkHeader,
   buildOwner,
+  findByShortId,
   fromOpt,
-  getNextIssueNumber,
-  getNextPatchNumber,
   getRepoRecord,
   numericId,
   paginate,
   parsePagination,
+  shortId,
   toISODate,
 } from './helpers.js';
 

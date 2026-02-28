@@ -30,7 +30,6 @@ import {
   buildLinkHeader,
   buildOwner,
   fromOpt,
-  getNextPatchNumber,
   getRepoRecord,
   jsonCreated,
   jsonMethodNotAllowed,
@@ -65,7 +64,7 @@ async function buildPullResponse(
   const owner = buildOwner(targetDid, baseUrl);
   const sourceDid = tags.sourceDid;
   const user = sourceDid ? buildOwner(sourceDid, baseUrl) : owner;
-  const number = parseInt(tags.number ?? data.number ?? '0', 10);
+  const number = numericId(rec.id ?? '');
   const dwnStatus = tags.status ?? 'open';
   const merged = dwnStatus === 'merged';
   const draft = dwnStatus === 'draft';
@@ -240,16 +239,17 @@ export async function handleGetPull(
   const from = fromOpt(ctx, targetDid);
   const baseUrl = buildApiUrl(url);
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.patches.records.query('repo/patch', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) {
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) {
     return jsonNotFound(`Pull request #${number} not found.`);
   }
 
-  const rec = records[0];
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
@@ -273,16 +273,17 @@ export async function handleListPullReviews(
   const pagination = parsePagination(url);
 
   // Find the patch first.
+  const num = parseInt(number, 10);
   const { records: patches } = await ctx.patches.records.query('repo/patch', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (patches.length === 0) {
+  const patchRec = patches.find(r => numericId(r.id ?? '') === num);
+  if (!patchRec) {
     return jsonNotFound(`Pull request #${number} not found.`);
   }
 
-  const patchRec = patches[0];
   const owner = buildOwner(targetDid, baseUrl);
 
   // Fetch reviews.
@@ -346,17 +347,15 @@ export async function handleCreatePull(
   const baseBranch = (reqBody.base as string) ?? 'main';
   const headBranch = (reqBody.head as string) ?? '';
   const baseUrl = buildApiUrl(url);
-  const number = await getNextPatchNumber(ctx, repo.contextId);
 
   const tags: Record<string, string> = {
-    status : 'open',
     baseBranch,
-    number : String(number),
+    status: 'open',
   };
   if (headBranch) { tags.headBranch = headBranch; }
 
   const { status, record } = await ctx.patches.records.create('repo/patch', {
-    data            : { title, body, number },
+    data            : { title, body },
     tags,
     parentContextId : repo.contextId,
   });
@@ -387,15 +386,16 @@ export async function handleUpdatePull(
 
   const baseUrl = buildApiUrl(url);
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.patches.records.query('repo/patch', {
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) {
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) {
     return jsonNotFound(`Pull request #${number} not found.`);
   }
 
-  const rec = records[0];
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
@@ -413,7 +413,7 @@ export async function handleUpdatePull(
   if (newBase) { newTags.baseBranch = newBase; }
 
   const { status } = await rec.update({
-    data : { title: newTitle, body: newBody, number: data.number },
+    data : { title: newTitle, body: newBody },
     tags : newTags,
   });
 
@@ -421,7 +421,7 @@ export async function handleUpdatePull(
     return jsonValidationError(`Failed to update pull request: ${status.detail}`);
   }
 
-  const updatedData = { title: newTitle, body: newBody, number: data.number };
+  const updatedData = { title: newTitle, body: newBody };
   const pr = await buildPullResponse(ctx, rec, updatedData, newTags, targetDid, repoName, baseUrl);
 
   return jsonOk(pr);
@@ -440,15 +440,16 @@ export async function handleMergePull(
     return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
   }
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.patches.records.query('repo/patch', {
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) {
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) {
     return jsonNotFound(`Pull request #${number} not found.`);
   }
 
-  const rec = records[0];
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
@@ -510,15 +511,15 @@ export async function handleCreatePullReview(
   const baseUrl = buildApiUrl(url);
 
   // Find the patch.
+  const num = parseInt(number, 10);
   const { records: patches } = await ctx.patches.records.query('repo/patch', {
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (patches.length === 0) {
+  const patchRec = patches.find(r => numericId(r.id ?? '') === num);
+  if (!patchRec) {
     return jsonNotFound(`Pull request #${number} not found.`);
   }
-
-  const patchRec = patches[0];
   const reviewBody = (reqBody.body as string) ?? '';
 
   // GitHub API uses "event" field: APPROVE, REQUEST_CHANGES, COMMENT.

@@ -8,6 +8,8 @@
  * @module
  */
 
+import { createHash } from 'node:crypto';
+
 import type { AgentContext } from '../cli/agent.js';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +68,35 @@ export function numericId(id: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0); // ensure unsigned 32-bit
+}
+
+/**
+ * Derive a 7-character hex short ID from a DWN record identifier.
+ *
+ * Uses SHA-256 of the record ID, truncated to the first 7 hex characters.
+ * This gives 28 bits of entropy — collision probability reaches 50% at
+ * ~16 384 records, which is sufficient for per-repo PR/issue identification.
+ *
+ * Short IDs replace sequential numbers for PRs and issues, avoiding race
+ * conditions from concurrent creation.
+ */
+export function shortId(recordId: string): string {
+  return createHash('sha256').update(recordId).digest('hex').slice(0, 7);
+}
+
+/**
+ * Find a record by short ID prefix within a list of records.
+ *
+ * Computes `shortId(record.id)` for each record and returns the first
+ * match where the short ID starts with the given prefix. This supports
+ * both full 7-char IDs and abbreviated prefixes (like git's short SHA).
+ */
+export function findByShortId<T extends { id: string }>(
+  records: T[],
+  prefix: string,
+): T | undefined {
+  const lower = prefix.toLowerCase();
+  return records.find(r => shortId(r.id).startsWith(lower));
 }
 
 // ---------------------------------------------------------------------------
@@ -239,42 +270,11 @@ export function jsonMethodNotAllowed(message: string): JsonResponse {
 // Sequential numbering
 // ---------------------------------------------------------------------------
 
-/**
- * Get the next sequential issue number.
- * Returns `max(existing numbers) + 1`, or 1 if no issues exist.
- */
-export async function getNextIssueNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
-  const { records } = await ctx.issues.records.query('repo/issue', {
-    filter: { contextId: repoContextId },
-  });
-
-  let maxNumber = 0;
-  for (const rec of records) {
-    const recTags = rec.tags as Record<string, string> | undefined;
-    const num = parseInt(recTags?.number ?? '0', 10);
-    if (num > maxNumber) { maxNumber = num; }
-  }
-
-  return maxNumber + 1;
-}
-
-/**
- * Get the next sequential patch number.
- */
-export async function getNextPatchNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
-  const { records } = await ctx.patches.records.query('repo/patch', {
-    filter: { contextId: repoContextId },
-  });
-
-  let maxNumber = 0;
-  for (const rec of records) {
-    const recTags = rec.tags as Record<string, string> | undefined;
-    const num = parseInt(recTags?.number ?? '0', 10);
-    if (num > maxNumber) { maxNumber = num; }
-  }
-
-  return maxNumber + 1;
-}
+// Sequential number helpers (`getNextIssueNumber`, `getNextPatchNumber`)
+// have been removed.  PRs and issues are now identified by short hash
+// IDs derived from the DWN record ID via `shortId()`.  The GitHub shim
+// uses `numericId()` (FNV-1a) to generate stable integers for the API
+// `number` field.
 
 /** Convert an ISO date string to GitHub's ISO 8601 format. */
 export function toISODate(dateStr: string | undefined): string {

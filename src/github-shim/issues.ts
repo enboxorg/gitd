@@ -24,7 +24,6 @@ import {
   buildLinkHeader,
   buildOwner,
   fromOpt,
-  getNextIssueNumber,
   getRepoRecord,
   jsonCreated,
   jsonNotFound,
@@ -45,7 +44,7 @@ function buildIssueResponse(
   targetDid: string, repoName: string, baseUrl: string,
 ): Record<string, unknown> {
   const owner = buildOwner(targetDid, baseUrl);
-  const number = parseInt(tags.number ?? data.number ?? '0', 10);
+  const number = numericId(rec.id ?? '');
   const state = tags.status === 'closed' ? 'closed' : 'open';
 
   return {
@@ -149,16 +148,17 @@ export async function handleGetIssue(
   const from = fromOpt(ctx, targetDid);
   const baseUrl = buildApiUrl(url);
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.issues.records.query('repo/issue', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) {
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) {
     return jsonNotFound(`Issue #${number} not found.`);
   }
 
-  const rec = records[0];
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
@@ -191,16 +191,17 @@ export async function handleListIssueComments(
   const pagination = parsePagination(url);
 
   // Find the issue first.
+  const num = parseInt(number, 10);
   const { records: issues } = await ctx.issues.records.query('repo/issue', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (issues.length === 0) {
+  const issueRec = issues.find(r => numericId(r.id ?? '') === num);
+  if (!issueRec) {
     return jsonNotFound(`Issue #${number} not found.`);
   }
 
-  const issueRec = issues[0];
   const owner = buildOwner(targetDid, baseUrl);
 
   // Fetch comments.
@@ -260,11 +261,10 @@ export async function handleCreateIssue(
 
   const body = (reqBody.body as string) ?? '';
   const baseUrl = buildApiUrl(url);
-  const number = await getNextIssueNumber(ctx, repo.contextId);
 
   const { status, record } = await ctx.issues.records.create('repo/issue', {
-    data            : { title, body, number },
-    tags            : { status: 'open', number: String(number) },
+    data            : { title, body },
+    tags            : { status: 'open' },
     parentContextId : repo.contextId,
   });
 
@@ -294,15 +294,16 @@ export async function handleUpdateIssue(
 
   const baseUrl = buildApiUrl(url);
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.issues.records.query('repo/issue', {
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) {
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) {
     return jsonNotFound(`Issue #${number} not found.`);
   }
 
-  const rec = records[0];
   const data = await rec.data.json();
   const tags = (rec.tags as Record<string, string> | undefined) ?? {};
 
@@ -316,7 +317,7 @@ export async function handleUpdateIssue(
   if (reqBody.state === 'open') { newStatus = 'open'; }
 
   const { status } = await rec.update({
-    data : { title: newTitle, body: newBody, number: data.number },
+    data : { title: newTitle, body: newBody },
     tags : { ...tags, status: newStatus },
   });
 
@@ -325,7 +326,7 @@ export async function handleUpdateIssue(
   }
 
   const updatedTags = { ...tags, status: newStatus };
-  const updatedData = { title: newTitle, body: newBody, number: data.number };
+  const updatedData = { title: newTitle, body: newBody };
   const issue = buildIssueResponse(rec, updatedData, updatedTags, targetDid, repoName, baseUrl);
 
   return jsonOk(issue);
@@ -352,15 +353,15 @@ export async function handleCreateIssueComment(
   const baseUrl = buildApiUrl(url);
 
   // Find the issue.
+  const num = parseInt(number, 10);
   const { records: issues } = await ctx.issues.records.query('repo/issue', {
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (issues.length === 0) {
+  const issueRec = issues.find(r => numericId(r.id ?? '') === num);
+  if (!issueRec) {
     return jsonNotFound(`Issue #${number} not found.`);
   }
-
-  const issueRec = issues[0];
 
   const { status, record: commentRec } = await ctx.issues.records.create('repo/issue/comment' as any, {
     data            : { body },

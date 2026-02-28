@@ -64,6 +64,9 @@ function parse(res: JsonResponse): any {
 
 describe('GitHub API compatibility shim', () => {
   let ctx: AgentContext;
+  let issueRecId: string;
+  let patchRecId: string;
+  let mergedPatchRecId: string;
 
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
@@ -131,10 +134,11 @@ describe('GitHub API compatibility shim', () => {
 
     // 2. Create an open issue.
     const { record: issueRec } = await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Fix the widget', body: 'The widget is broken.', number: 1 },
-      tags            : { status: 'open', number: '1' },
+      data            : { title: 'Fix the widget', body: 'The widget is broken.' },
+      tags            : { status: 'open' },
       parentContextId : repoContextId,
     });
+    issueRecId = issueRec!.id;
 
     // 3. Create a comment on the issue.
     await ctx.issues.records.create('repo/issue/comment' as any, {
@@ -150,17 +154,18 @@ describe('GitHub API compatibility shim', () => {
 
     // 5. Create a closed issue.
     await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Old bug', body: 'Already fixed.', number: 2 },
-      tags            : { status: 'closed', number: '2' },
+      data            : { title: 'Old bug', body: 'Already fixed.' },
+      tags            : { status: 'closed' },
       parentContextId : repoContextId,
     });
 
     // 6. Create an open patch with a revision.
     const { record: patchRec } = await ctx.patches.records.create('repo/patch', {
-      data            : { title: 'Add feature X', body: 'Implements feature X.', number: 1 },
-      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', number: '1', sourceDid: testDid },
+      data            : { title: 'Add feature X', body: 'Implements feature X.' },
+      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', sourceDid: testDid },
       parentContextId : repoContextId,
     });
+    patchRecId = patchRec!.id;
 
     // 6a. Create a revision record with commit and diff stat metadata.
     await ctx.patches.records.create('repo/patch/revision' as any, {
@@ -192,10 +197,11 @@ describe('GitHub API compatibility shim', () => {
 
     // 9. Create a merged patch with a merge result.
     const { record: mergedPatchRec } = await ctx.patches.records.create('repo/patch', {
-      data            : { title: 'Fix typo', body: 'Fixed a typo in README.', number: 2 },
-      tags            : { status: 'merged', baseBranch: 'main', headBranch: 'fix-typo', number: '2' },
+      data            : { title: 'Fix typo', body: 'Fixed a typo in README.' },
+      tags            : { status: 'merged', baseBranch: 'main', headBranch: 'fix-typo' },
       parentContextId : repoContextId,
     });
+    mergedPatchRecId = mergedPatchRec!.id;
 
     // 9a. Create a merge result with commit SHA.
     await ctx.patches.records.create('repo/patch/mergeResult' as any, {
@@ -351,13 +357,14 @@ describe('GitHub API compatibility shim', () => {
     it('should include GitHub-style issue fields', async () => {
       const res = await handleShimRequest(ctx, repoUrl('/issues?state=all'));
       const data = parse(res);
-      const issue = data.find((i: any) => i.number === 1);
+      const issueNum = numericId(issueRecId);
+      const issue = data.find((i: any) => i.number === issueNum);
       expect(issue).toBeDefined();
       expect(issue.title).toBe('Fix the widget');
       expect(issue.body).toBe('The widget is broken.');
       expect(issue.user.login).toBe(testDid);
-      expect(issue.url).toContain('/issues/1');
-      expect(issue.comments_url).toContain('/issues/1/comments');
+      expect(issue.url).toContain(`/issues/${issueNum}`);
+      expect(issue.comments_url).toContain(`/issues/${issueNum}/comments`);
       expect(issue.labels).toEqual([]);
       expect(issue.locked).toBe(false);
     });
@@ -396,17 +403,19 @@ describe('GitHub API compatibility shim', () => {
 
   describe('GET /repos/:did/:repo/issues/:number', () => {
     it('should return issue detail', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}`));
       expect(res.status).toBe(200);
       const data = parse(res);
-      expect(data.number).toBe(1);
+      expect(data.number).toBe(issueNum);
       expect(data.title).toBe('Fix the widget');
       expect(data.body).toBe('The widget is broken.');
       expect(data.state).toBe('open');
     });
 
     it('should include comment count', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}`));
       const data = parse(res);
       expect(data.comments).toBe(2);
     });
@@ -431,7 +440,8 @@ describe('GitHub API compatibility shim', () => {
 
   describe('GET /repos/:did/:repo/issues/:number/comments', () => {
     it('should return issue comments', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}/comments`));
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(Array.isArray(data)).toBe(true);
@@ -439,13 +449,14 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should include GitHub-style comment fields', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}/comments`));
       const data = parse(res);
       expect(data[0].body).toBe('I can reproduce this.');
       expect(data[0].user.login).toBe(testDid);
       expect(data[0].created_at).toBeDefined();
       expect(data[0].author_association).toBe('OWNER');
-      expect(data[0].issue_url).toContain('/issues/1');
+      expect(data[0].issue_url).toContain(`/issues/${issueNum}`);
     });
 
     it('should return 404 for non-existent issue comments', async () => {
@@ -454,7 +465,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should support pagination', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments?per_page=1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}/comments?per_page=1`));
       const data = parse(res);
       expect(data.length).toBe(1);
       expect(res.headers['Link']).toBeDefined();
@@ -494,20 +506,22 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should include GitHub-style pull request fields', async () => {
+      const patchNum = numericId(patchRecId);
       const res = await handleShimRequest(ctx, repoUrl('/pulls'));
       const data = parse(res);
       const pr = data[0];
-      expect(pr.number).toBe(1);
+      expect(pr.number).toBe(patchNum);
       expect(pr.head.ref).toBe('feat-x');
       expect(pr.base.ref).toBe('main');
       expect(pr.user.login).toBe(testDid);
       expect(pr.draft).toBe(false);
-      expect(pr.diff_url).toContain('/pulls/1.diff');
-      expect(pr.patch_url).toContain('/pulls/1.patch');
+      expect(pr.diff_url).toContain(`/pulls/${patchNum}.diff`);
+      expect(pr.patch_url).toContain(`/pulls/${patchNum}.patch`);
     });
 
     it('should populate commit and diff stats from revision record', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`));
       const pr = parse(res);
       expect(pr.head.sha).toBe('abc1234567890abcdef1234567890abcdef123456');
       expect(pr.base.sha).toBe('def0987654321fedcba0987654321fedcba098765');
@@ -541,19 +555,21 @@ describe('GitHub API compatibility shim', () => {
 
   describe('GET /repos/:did/:repo/pulls/:number', () => {
     it('should return pull request detail', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`));
       expect(res.status).toBe(200);
       const data = parse(res);
-      expect(data.number).toBe(1);
+      expect(data.number).toBe(patchNum);
       expect(data.title).toBe('Add feature X');
       expect(data.body).toBe('Implements feature X.');
     });
 
     it('should return merged pull detail with correct flags', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/2'));
+      const mergedNum = numericId(mergedPatchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${mergedNum}`));
       expect(res.status).toBe(200);
       const data = parse(res);
-      expect(data.number).toBe(2);
+      expect(data.number).toBe(mergedNum);
       expect(data.state).toBe('closed');
       expect(data.merged).toBe(true);
     });
@@ -572,7 +588,8 @@ describe('GitHub API compatibility shim', () => {
 
   describe('GET /repos/:did/:repo/pulls/:number/reviews', () => {
     it('should return pull request reviews', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/reviews`));
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(Array.isArray(data)).toBe(true);
@@ -580,7 +597,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should map verdict to GitHub review state', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/reviews`));
       const data = parse(res);
       const approved = data.find((r: any) => r.state === 'APPROVED');
       expect(approved).toBeDefined();
@@ -592,12 +610,13 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should include GitHub-style review fields', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/reviews`));
       const data = parse(res);
       expect(data[0].user.login).toBe(testDid);
       expect(data[0].submitted_at).toBeDefined();
       expect(data[0].author_association).toBe('OWNER');
-      expect(data[0].pull_request_url).toContain('/pulls/1');
+      expect(data[0].pull_request_url).toContain(`/pulls/${patchNum}`);
     });
 
     it('should return 404 for non-existent pull reviews', async () => {
@@ -606,7 +625,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should support pagination', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/reviews?per_page=1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/reviews?per_page=1`));
       const data = parse(res);
       expect(data.length).toBe(1);
       expect(res.headers['Link']).toBeDefined();
@@ -772,18 +792,19 @@ describe('GitHub API compatibility shim', () => {
       expect(data.title).toBe('New shim issue');
       expect(data.body).toBe('Created via API shim.');
       expect(data.state).toBe('open');
-      expect(data.number).toBeGreaterThanOrEqual(3);
+      expect(typeof data.number).toBe('number');
+      expect(data.number).toBeGreaterThan(0);
       expect(data.user.login).toBe(testDid);
     });
 
-    it('should auto-assign the next sequential number', async () => {
+    it('should assign a numericId derived from record ID', async () => {
       const res = await handleShimRequest(ctx, repoUrl('/issues'), 'POST', {
         title: 'Another shim issue',
       });
       expect(res.status).toBe(201);
       const data = parse(res);
-      // Should be at least 4 since we already created 2 seeded + 1 in prev test.
-      expect(data.number).toBeGreaterThanOrEqual(4);
+      expect(typeof data.number).toBe('number');
+      expect(data.number).toBeGreaterThan(0);
     });
 
     it('should return 422 when title is missing', async () => {
@@ -809,17 +830,19 @@ describe('GitHub API compatibility shim', () => {
 
   describe('PATCH /repos/:did/:repo/issues/:number', () => {
     it('should update the title of an issue', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}`), 'PATCH', {
         title: 'Fix the widget (updated)',
       });
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(data.title).toBe('Fix the widget (updated)');
-      expect(data.number).toBe(1);
+      expect(data.number).toBe(issueNum);
     });
 
     it('should close an issue by setting state=closed', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}`), 'PATCH', {
         state: 'closed',
       });
       expect(res.status).toBe(200);
@@ -828,7 +851,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should reopen an issue by setting state=open', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1'), 'PATCH', {
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}`), 'PATCH', {
         state: 'open',
       });
       expect(res.status).toBe(200);
@@ -850,19 +874,21 @@ describe('GitHub API compatibility shim', () => {
 
   describe('POST /repos/:did/:repo/issues/:number/comments', () => {
     it('should create a comment and return 201', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'), 'POST', {
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}/comments`), 'POST', {
         body: 'New comment via shim.',
       });
       expect(res.status).toBe(201);
       const data = parse(res);
       expect(data.body).toBe('New comment via shim.');
       expect(data.user.login).toBe(testDid);
-      expect(data.issue_url).toContain('/issues/1');
+      expect(data.issue_url).toContain(`/issues/${issueNum}`);
       expect(data.author_association).toBe('OWNER');
     });
 
     it('should return 422 when body is missing', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/issues/1/comments'), 'POST', {});
+      const issueNum = numericId(issueRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/issues/${issueNum}/comments`), 'POST', {});
       expect(res.status).toBe(422);
       const data = parse(res);
       expect(data.message).toContain('body');
@@ -896,7 +922,8 @@ describe('GitHub API compatibility shim', () => {
       expect(data.merged).toBe(false);
       expect(data.base.ref).toBe('main');
       expect(data.head.ref).toBe('feat-new');
-      expect(data.number).toBeGreaterThanOrEqual(3);
+      expect(typeof data.number).toBe('number');
+      expect(data.number).toBeGreaterThan(0);
     });
 
     it('should default base to main when not specified', async () => {
@@ -924,17 +951,19 @@ describe('GitHub API compatibility shim', () => {
 
   describe('PATCH /repos/:did/:repo/pulls/:number', () => {
     it('should update the title of a pull request', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`), 'PATCH', {
         title: 'Add feature X (updated)',
       });
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(data.title).toBe('Add feature X (updated)');
-      expect(data.number).toBe(1);
+      expect(data.number).toBe(patchNum);
     });
 
     it('should close a pull request by setting state=closed', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`), 'PATCH', {
         state: 'closed',
       });
       expect(res.status).toBe(200);
@@ -944,7 +973,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should reopen a pull request by setting state=open', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'), 'PATCH', {
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`), 'PATCH', {
         state: 'open',
       });
       expect(res.status).toBe(200);
@@ -966,7 +996,8 @@ describe('GitHub API compatibility shim', () => {
 
   describe('PUT /repos/:did/:repo/pulls/:number/merge', () => {
     it('should merge an open pull request', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'PUT', {});
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/merge`), 'PUT', {});
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(data.merged).toBe(true);
@@ -974,14 +1005,16 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should return 405 when trying to merge an already merged pull', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'PUT', {});
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/merge`), 'PUT', {});
       expect(res.status).toBe(405);
       const data = parse(res);
       expect(data.message).toContain('already merged');
     });
 
     it('should verify the pull is now merged via GET', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}`));
       expect(res.status).toBe(200);
       const data = parse(res);
       expect(data.state).toBe('closed');
@@ -1000,8 +1033,7 @@ describe('GitHub API compatibility shim', () => {
   // =========================================================================
 
   describe('POST /repos/:did/:repo/pulls/:number/reviews', () => {
-    // Use a pull that was created in the POST /pulls tests (number >= 3).
-    // We query to find a valid open pull number first.
+    // Create a fresh PR per test — the numericId is derived from the record ID.
     it('should create a review with APPROVE event', async () => {
       // Create a fresh PR to review.
       const createRes = await handleShimRequest(ctx, repoUrl('/pulls'), 'POST', {
@@ -1156,7 +1188,8 @@ describe('GitHub API compatibility shim', () => {
     });
 
     it('should return 405 for GET on /pulls/:number/merge', async () => {
-      const res = await handleShimRequest(ctx, repoUrl('/pulls/1/merge'), 'GET', {});
+      const patchNum = numericId(patchRecId);
+      const res = await handleShimRequest(ctx, repoUrl(`/pulls/${patchNum}/merge`), 'GET', {});
       expect(res.status).toBe(405);
     });
   });

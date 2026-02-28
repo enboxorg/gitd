@@ -562,6 +562,10 @@ describe('gitd CLI commands', () => {
   // =========================================================================
 
   describe('issue', () => {
+    // Short hash IDs extracted from CLI output (populated by create tests).
+    let issueId1: string;
+    let issueId2: string;
+
     it('should fail create without a title', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const { errors, exitCode } = await captureError(() => issueCommand(ctx, ['create']));
@@ -569,64 +573,71 @@ describe('gitd CLI commands', () => {
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should create issue #1 with sequential numbering', async () => {
+    it('should create first issue with short hash ID', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['create', 'Bug report', '--body', 'Something broke']));
-      expect(logs.some((l) => l.includes('Created issue #1'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created issue'))).toBe(true);
       expect(logs.some((l) => l.includes('Bug report'))).toBe(true);
+      // Extract the 7-char hex short ID from output: "Created issue <id>: ..."
+      const match = logs.join('\n').match(/Created issue ([0-9a-f]{7})/);
+      expect(match).toBeTruthy();
+      issueId1 = match![1];
     });
 
-    it('should create issue #2 with next number', async () => {
+    it('should create second issue with short hash ID', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['create', 'Feature request']));
-      expect(logs.some((l) => l.includes('Created issue #2'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created issue'))).toBe(true);
+      const match = logs.join('\n').match(/Created issue ([0-9a-f]{7})/);
+      expect(match).toBeTruthy();
+      issueId2 = match![1];
     });
 
-    it('should show issue details by number', async () => {
+    it('should show issue details by short ID', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
-      expect(logs.some((l) => l.includes('Issue #1: Bug report'))).toBe(true);
+      const logs = await captureLog(() => issueCommand(ctx, ['show', issueId1]));
+      expect(logs.some((l) => l.includes(`Issue ${issueId1}: Bug report`))).toBe(true);
       expect(logs.some((l) => l.includes('Status:  OPEN'))).toBe(true);
       expect(logs.some((l) => l.includes('Something broke'))).toBe(true);
     });
 
     it('should add a comment to an issue', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['comment', '1', 'Looking into this']));
-      expect(logs.some((l) => l.includes('Added comment to issue #1'))).toBe(true);
+      const logs = await captureLog(() => issueCommand(ctx, ['comment', issueId1, 'Looking into this']));
+      expect(logs.some((l) => l.includes(`Added comment to issue ${issueId1}`))).toBe(true);
     });
 
     it('should show comments in issue detail', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
+      const logs = await captureLog(() => issueCommand(ctx, ['show', issueId1]));
       expect(logs.some((l) => l.includes('Comments (1)'))).toBe(true);
       expect(logs.some((l) => l.includes('Looking into this'))).toBe(true);
     });
 
     it('should close an issue', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['close', '1']));
-      expect(logs.some((l) => l.includes('Closed issue #1'))).toBe(true);
+      const logs = await captureLog(() => issueCommand(ctx, ['close', issueId1]));
+      expect(logs.some((l) => l.includes(`Closed issue ${issueId1}`))).toBe(true);
     });
 
     it('should show closed status after closing', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['show', '1']));
+      const logs = await captureLog(() => issueCommand(ctx, ['show', issueId1]));
       expect(logs.some((l) => l.includes('Status:  CLOSED'))).toBe(true);
     });
 
     it('should reopen a closed issue', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const logs = await captureLog(() => issueCommand(ctx, ['reopen', '1']));
-      expect(logs.some((l) => l.includes('Reopened issue #1'))).toBe(true);
+      const logs = await captureLog(() => issueCommand(ctx, ['reopen', issueId1]));
+      expect(logs.some((l) => l.includes(`Reopened issue ${issueId1}`))).toBe(true);
     });
 
-    it('should list all issues with numbers', async () => {
+    it('should list all issues with IDs', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const logs = await captureLog(() => issueCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('Issues (2)'))).toBe(true);
-      expect(logs.some((l) => l.includes('#1'))).toBe(true);
-      expect(logs.some((l) => l.includes('#2'))).toBe(true);
+      expect(logs.some((l) => l.includes(issueId1))).toBe(true);
+      expect(logs.some((l) => l.includes(issueId2))).toBe(true);
       expect(logs.some((l) => l.includes('Bug report'))).toBe(true);
       expect(logs.some((l) => l.includes('Feature request'))).toBe(true);
     });
@@ -639,7 +650,7 @@ describe('gitd CLI commands', () => {
 
     it('should fail show for non-existent issue', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
-      const { errors, exitCode } = await captureError(() => issueCommand(ctx, ['show', '99']));
+      const { errors, exitCode } = await captureError(() => issueCommand(ctx, ['show', 'fffffff']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
@@ -650,6 +661,11 @@ describe('gitd CLI commands', () => {
   // =========================================================================
 
   describe('pr', () => {
+    // Short hash IDs extracted from CLI output (populated by create tests).
+    let prId1: string;
+    let prId2: string;
+    let prId3: string;
+
     it('should fail create without a title', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const { errors, exitCode } = await captureError(() => prCommand(ctx, ['create']));
@@ -657,25 +673,31 @@ describe('gitd CLI commands', () => {
       expect(errors[0]).toContain('Usage');
     });
 
-    it('should create PR #1 with sequential numbering', async () => {
+    it('should create first PR with short hash ID', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const logs = await captureLog(() =>
         prCommand(ctx, ['create', 'Add feature X', '--body', 'This adds X', '--base', 'main', '--head', 'feature-x']),
       );
-      expect(logs.some((l) => l.includes('Created PR #1'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created PR'))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
+      const match = logs.join('\n').match(/Created PR ([0-9a-f]{7})/);
+      expect(match).toBeTruthy();
+      prId1 = match![1];
     });
 
-    it('should create PR #2 with next number', async () => {
+    it('should create second PR with short hash ID', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const logs = await captureLog(() => prCommand(ctx, ['create', 'Fix typo']));
-      expect(logs.some((l) => l.includes('Created PR #2'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created PR'))).toBe(true);
+      const match = logs.join('\n').match(/Created PR ([0-9a-f]{7})/);
+      expect(match).toBeTruthy();
+      prId2 = match![1];
     });
 
-    it('should show PR details by number', async () => {
+    it('should show PR details by short ID', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['show', '1']));
-      expect(logs.some((l) => l.includes('PR #1: Add feature X'))).toBe(true);
+      const logs = await captureLog(() => prCommand(ctx, ['show', prId1]));
+      expect(logs.some((l) => l.includes(`PR ${prId1}: Add feature X`))).toBe(true);
       expect(logs.some((l) => l.includes('Status:   OPEN'))).toBe(true);
       expect(logs.some((l) => l.includes('main <- feature-x'))).toBe(true);
     });
@@ -702,21 +724,23 @@ describe('gitd CLI commands', () => {
         process.chdir(tmpRepo);
 
         // Create PR from the feature branch.
-        await captureLog(() =>
+        const createLogs = await captureLog(() =>
           prCommand(ctx, ['create', 'Merge test PR', '--base', 'main']),
         );
-        // The PR number depends on how many were created before.
-        // PR #1 and #2 already exist; this should be PR #3 at minimum.
-        // We'll find it by looking at the latest.
+        // Extract the short hash ID from the create output.
+        const createMatch = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/);
+        expect(createMatch).toBeTruthy();
+        prId3 = createMatch![1];
+
         spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
 
         // Checkout the PR to create the local branch.
-        await captureLog(() => prCommand(ctx, ['checkout', '3', '--branch', 'feature-x']));
+        await captureLog(() => prCommand(ctx, ['checkout', prId3, '--branch', 'feature-x']));
 
         // Now merge it.
-        const logs = await captureLog(() => prCommand(ctx, ['merge', '3']));
+        const logs = await captureLog(() => prCommand(ctx, ['merge', prId3]));
         const allOutput = logs.join('\n');
-        expect(allOutput).toContain('Merged PR #3');
+        expect(allOutput).toContain(`Merged PR ${prId3}`);
         expect(allOutput).toContain('strategy: merge');
         expect(allOutput).toContain('Deleted branch feature-x');
 
@@ -724,7 +748,7 @@ describe('gitd CLI commands', () => {
         const head = spawnSync('git', ['log', '--oneline', '-1'], {
           cwd: tmpRepo, encoding: 'utf-8', stdio: 'pipe',
         });
-        expect(head.stdout).toContain('Merge PR #3');
+        expect(head.stdout).toContain(`Merge PR ${prId3}`);
 
         // Verify the feature file exists on main after merge.
         expect(existsSync(join(tmpRepo, 'feature.ts'))).toBe(true);
@@ -742,25 +766,25 @@ describe('gitd CLI commands', () => {
 
     it('should show merged status after merging', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['show', '3']));
+      const logs = await captureLog(() => prCommand(ctx, ['show', prId3]));
       expect(logs.some((l) => l.includes('Status:   MERGED'))).toBe(true);
     });
 
     it('should not re-merge an already merged PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['merge', '3']));
+      const logs = await captureLog(() => prCommand(ctx, ['merge', prId3]));
       expect(logs.some((l) => l.includes('already merged'))).toBe(true);
     });
 
     it('should add a comment to a PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['comment', '2', 'Looks good to me']));
-      expect(logs.some((l) => l.includes('Added comment to PR #2'))).toBe(true);
+      const logs = await captureLog(() => prCommand(ctx, ['comment', prId2, 'Looks good to me']));
+      expect(logs.some((l) => l.includes(`Added comment to PR ${prId2}`))).toBe(true);
     });
 
     it('should show review comments in PR detail', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['show', '2']));
+      const logs = await captureLog(() => prCommand(ctx, ['show', prId2]));
       expect(logs.some((l) => l.includes('Reviews (1)'))).toBe(true);
       expect(logs.some((l) => l.includes('COMMENTED'))).toBe(true);
       expect(logs.some((l) => l.includes('Looks good to me'))).toBe(true);
@@ -768,56 +792,56 @@ describe('gitd CLI commands', () => {
 
     it('should fail comment without body', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', '2']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', prId2]));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('Usage');
     });
 
     it('should fail comment for non-existent PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', '99', 'hello']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['comment', 'fffffff', 'hello']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
 
     it('should close a PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['close', '2']));
-      expect(logs.some((l) => l.includes('Closed PR #2'))).toBe(true);
+      const logs = await captureLog(() => prCommand(ctx, ['close', prId2]));
+      expect(logs.some((l) => l.includes(`Closed PR ${prId2}`))).toBe(true);
     });
 
     it('should reopen a closed PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['reopen', '2']));
-      expect(logs.some((l) => l.includes('Reopened PR #2'))).toBe(true);
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', prId2]));
+      expect(logs.some((l) => l.includes(`Reopened PR ${prId2}`))).toBe(true);
     });
 
     it('should not reopen an already open PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['reopen', '2']));
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', prId2]));
       expect(logs.some((l) => l.includes('already open'))).toBe(true);
     });
 
     it('should not reopen a merged PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const logs = await captureLog(() => prCommand(ctx, ['reopen', '3']));
+      const logs = await captureLog(() => prCommand(ctx, ['reopen', prId3]));
       expect(logs.some((l) => l.includes('cannot be reopened'))).toBe(true);
     });
 
     it('should fail reopen for non-existent PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['reopen', '99']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['reopen', 'fffffff']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
 
-    it('should list all PRs with numbers', async () => {
+    it('should list all PRs with IDs', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const logs = await captureLog(() => prCommand(ctx, ['list']));
       expect(logs.some((l) => l.includes('PRs (3)'))).toBe(true);
-      expect(logs.some((l) => l.includes('#1'))).toBe(true);
-      expect(logs.some((l) => l.includes('#2'))).toBe(true);
-      expect(logs.some((l) => l.includes('#3'))).toBe(true);
+      expect(logs.some((l) => l.includes(prId1))).toBe(true);
+      expect(logs.some((l) => l.includes(prId2))).toBe(true);
+      expect(logs.some((l) => l.includes(prId3))).toBe(true);
       expect(logs.some((l) => l.includes('Add feature X'))).toBe(true);
       expect(logs.some((l) => l.includes('Fix typo'))).toBe(true);
       expect(logs.some((l) => l.includes('Merge test PR'))).toBe(true);
@@ -825,7 +849,7 @@ describe('gitd CLI commands', () => {
 
     it('should fail show for non-existent PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['show', '99']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['show', 'fffffff']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
@@ -860,7 +884,8 @@ describe('gitd CLI commands', () => {
         const allOutput = logs.join('\n');
 
         // Should create the PR.
-        expect(allOutput).toContain('Created PR #4');
+        expect(allOutput).toContain('Created PR');
+        expect(allOutput).toMatch(/Created PR [0-9a-f]{7}/);
         expect(allOutput).toContain('main <- feat/test');
 
         // Should create revision with commit info.
@@ -883,7 +908,7 @@ describe('gitd CLI commands', () => {
       const allOutput = logs.join('\n');
 
       // Should create the PR without revision/bundle.
-      expect(allOutput).toContain('Created PR #5');
+      expect(allOutput).toMatch(/Created PR [0-9a-f]{7}/);
       expect(allOutput).not.toContain('Revision:');
       expect(allOutput).not.toContain('Bundle:');
     });
@@ -909,20 +934,21 @@ describe('gitd CLI commands', () => {
       try {
         // Create the PR with bundle from the feature branch.
         process.chdir(tmpRepo);
-        await captureLog(() =>
+        const createLogs = await captureLog(() =>
           prCommand(ctx, ['create', 'Checkout test PR', '--base', 'main']),
         );
+        const checkoutPrId = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/)?.[1] ?? 'missing';
 
         // Switch back to main so we can checkout the PR.
         spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
 
         // Checkout the PR.
         const logs = await captureLog(() =>
-          prCommand(ctx, ['checkout', '6', '--branch', 'pr/test-checkout']),
+          prCommand(ctx, ['checkout', checkoutPrId, '--branch', 'pr/test-checkout']),
         );
         const allOutput = logs.join('\n');
         expect(allOutput).toContain('Switched to branch \'pr/test-checkout\'');
-        expect(allOutput).toContain('PR #6');
+        expect(allOutput).toContain(`PR ${checkoutPrId}`);
 
         // Verify we're on the right branch.
         const branch = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -944,16 +970,15 @@ describe('gitd CLI commands', () => {
       const createLogs = await captureLog(() =>
         prCommand(ctx, ['create', 'No-bundle PR', '--no-bundle']),
       );
-      const match = createLogs.join('\n').match(/PR #(\d+)/);
-      const num = match?.[1] ?? '999';
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', num]));
+      const noBundleId = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/)?.[1] ?? 'missing';
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', noBundleId]));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('no revisions');
     });
 
     it('should fail checkout for non-existent PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', '99']));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['checkout', 'aaaaaaa']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
@@ -980,18 +1005,18 @@ describe('gitd CLI commands', () => {
       const origCwd = process.cwd();
       try {
         process.chdir(tmpRepo);
-        // Create PR from the feature branch. Dynamic number.
+        // Create PR from the feature branch. Extract short hash ID.
         const createLogs = await captureLog(() =>
           prCommand(ctx, ['create', 'Squash PR', '--base', 'main']),
         );
-        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+        const squashId = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/)?.[1] ?? 'missing';
 
         spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
-        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/squash']));
+        await captureLog(() => prCommand(ctx, ['checkout', squashId, '--branch', 'feat/squash']));
 
-        const logs = await captureLog(() => prCommand(ctx, ['merge', num, '--squash']));
+        const logs = await captureLog(() => prCommand(ctx, ['merge', squashId, '--squash']));
         const allOutput = logs.join('\n');
-        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).toContain(`Merged PR ${squashId}`);
         expect(allOutput).toContain('strategy: squash');
 
         // Squash should produce a single commit with the squash message.
@@ -1031,14 +1056,14 @@ describe('gitd CLI commands', () => {
         const createLogs = await captureLog(() =>
           prCommand(ctx, ['create', 'Rebase PR', '--base', 'main']),
         );
-        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+        const rebaseId = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/)?.[1] ?? 'missing';
 
         spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
-        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/rebase']));
+        await captureLog(() => prCommand(ctx, ['checkout', rebaseId, '--branch', 'feat/rebase']));
 
-        const logs = await captureLog(() => prCommand(ctx, ['merge', num, '--rebase']));
+        const logs = await captureLog(() => prCommand(ctx, ['merge', rebaseId, '--rebase']));
         const allOutput = logs.join('\n');
-        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).toContain(`Merged PR ${rebaseId}`);
         expect(allOutput).toContain('strategy: rebase');
 
         // The rebased file should exist on main.
@@ -1078,16 +1103,16 @@ describe('gitd CLI commands', () => {
         const createLogs = await captureLog(() =>
           prCommand(ctx, ['create', 'Keep branch PR', '--base', 'main']),
         );
-        const num = createLogs.join('\n').match(/PR #(\d+)/)?.[1] ?? '999';
+        const keepId = createLogs.join('\n').match(/Created PR ([0-9a-f]{7})/)?.[1] ?? 'missing';
 
         spawnSync('git', ['checkout', 'main'], { cwd: tmpRepo, stdio: 'pipe' });
-        await captureLog(() => prCommand(ctx, ['checkout', num, '--branch', 'feat/keep']));
+        await captureLog(() => prCommand(ctx, ['checkout', keepId, '--branch', 'feat/keep']));
 
         const logs = await captureLog(() =>
-          prCommand(ctx, ['merge', num, '--no-delete-branch']),
+          prCommand(ctx, ['merge', keepId, '--no-delete-branch']),
         );
         const allOutput = logs.join('\n');
-        expect(allOutput).toContain(`Merged PR #${num}`);
+        expect(allOutput).toContain(`Merged PR ${keepId}`);
         expect(allOutput).not.toContain('Deleted branch');
 
         // The branch should still exist.
@@ -1103,18 +1128,18 @@ describe('gitd CLI commands', () => {
 
     it('should fail merge when branch not found locally', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      // PR #1 has headBranch=feature-x which doesn't exist locally.
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', '1']));
+      // prId1 has headBranch=feature-x which doesn't exist locally.
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', prId1]));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found locally');
     });
 
     it('should fail merge for closed PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
-      // PR #2 was closed earlier in the close test, then reopened.
+      // prId2 was closed earlier in the close test, then reopened.
       // Close it again for this test.
-      await captureLog(() => prCommand(ctx, ['close', '2']));
-      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', '2']));
+      await captureLog(() => prCommand(ctx, ['close', prId2]));
+      const { errors, exitCode } = await captureError(() => prCommand(ctx, ['merge', prId2]));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('closed');
     });

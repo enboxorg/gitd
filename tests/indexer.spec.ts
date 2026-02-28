@@ -121,26 +121,26 @@ describe('gitd indexer', () => {
 
     // 2. Create open issues.
     await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Bug report', body: 'Something broke.', number: 1 },
-      tags            : { status: 'open', number: '1' },
+      data            : { title: 'Bug report', body: 'Something broke.' },
+      tags            : { status: 'open' },
       parentContextId : repoContextId,
     });
     await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Feature request', body: 'Add X.', number: 2 },
-      tags            : { status: 'open', number: '2' },
+      data            : { title: 'Feature request', body: 'Add X.' },
+      tags            : { status: 'open' },
       parentContextId : repoContextId,
     });
     // 3. Create a closed issue.
     await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Old bug', body: 'Fixed.', number: 3 },
-      tags            : { status: 'closed', number: '3' },
+      data            : { title: 'Old bug', body: 'Fixed.' },
+      tags            : { status: 'closed' },
       parentContextId : repoContextId,
     });
 
     // 4. Create an open patch.
     await ctx.patches.records.create('repo/patch', {
-      data            : { title: 'Fix bug', body: 'Fixes #1.', number: 1 },
-      tags            : { status: 'open', baseBranch: 'main', number: '1' },
+      data            : { title: 'Fix bug', body: 'Fixes #1.' },
+      tags            : { status: 'open', baseBranch: 'main' },
       parentContextId : repoContextId,
     });
 

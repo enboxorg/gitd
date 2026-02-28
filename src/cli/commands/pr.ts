@@ -3,12 +3,12 @@
  *
  * Usage:
  *   gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]
- *   gitd pr checkout <number> [--branch <name>] [--detach]
- *   gitd pr show <number>
- *   gitd pr comment <number> <body>
- *   gitd pr merge <number> [--squash | --rebase] [--no-delete-branch]
- *   gitd pr close <number>
- *   gitd pr reopen <number>
+ *   gitd pr checkout <id> [--branch <name>] [--detach]
+ *   gitd pr show <id>
+ *   gitd pr comment <id> <body>
+ *   gitd pr merge <id> [--squash | --rebase] [--no-delete-branch]
+ *   gitd pr close <id>
+ *   gitd pr reopen <id>
  *   gitd pr list [--status <draft|open|closed|merged>]
  *
  * `gitd patch` is accepted as an alias for `gitd pr`.
@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 
 import { getRepoContextId } from '../repo-context.js';
+import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, hasFlag, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
@@ -69,9 +70,6 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
-  // Assign the next sequential number.
-  const number = await getNextNumber(ctx, repoContextId);
-
   // Detect git context for revision + bundle creation.
   const gitInfo = noBundle ? null : detectGitContext(base);
 
@@ -80,13 +78,12 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const tags: Record<string, string> = {
     status     : 'open',
     baseBranch : base,
-    number     : String(number),
   };
   if (headBranch) { tags.headBranch = headBranch; }
   if (gitInfo) { tags.sourceDid = ctx.did; }
 
   const { status, record } = await ctx.patches.records.create('repo/patch', {
-    data            : { title, body, number },
+    data            : { title, body },
     tags,
     parentContextId : repoContextId,
   });
@@ -96,7 +93,9 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Created PR #${number}: "${title}" (${base}${headBranch ? ` <- ${headBranch}` : ''})`);
+  const id = shortId(record.id);
+
+  console.log(`Created PR ${id}: "${title}" (${base}${headBranch ? ` <- ${headBranch}` : ''})`);
   console.log(`  Record ID: ${record.id}`);
 
   // Create revision + bundle if we have git context.
@@ -110,12 +109,12 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
+  const idStr = args[0];
   const branchOverride = flagValue(args, '--branch') ?? flagValue(args, '-b');
   const detach = hasFlag(args, '--detach');
 
-  if (!numberStr) {
-    console.error('Usage: gitd pr checkout <number> [--branch <name>] [--detach]');
+  if (!idStr) {
+    console.error('Usage: gitd pr checkout <id> [--branch <name>] [--detach]');
     process.exit(1);
   }
 
@@ -127,9 +126,9 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  const patch = await findById(ctx, repoContextId, idStr);
   if (!patch) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -141,7 +140,7 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (revisions.length === 0) {
-    console.error(`PR #${numberStr} has no revisions.`);
+    console.error(`PR ${idStr} has no revisions.`);
     process.exit(1);
   }
 
@@ -155,7 +154,7 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
   });
 
   if (bundles.length === 0) {
-    console.error(`PR #${numberStr} has no bundle attached.`);
+    console.error(`PR ${idStr} has no bundle attached.`);
     process.exit(1);
   }
 
@@ -192,7 +191,7 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
       process.exit(1);
     }
 
-    const localBranch = branchOverride ?? patchTags?.headBranch ?? `pr/${numberStr}`;
+    const localBranch = branchOverride ?? patchTags?.headBranch ?? `pr/${idStr}`;
 
     if (detach) {
       // Detached HEAD at the tip commit.
@@ -205,7 +204,7 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
         console.error(`Failed to checkout: ${coResult.stderr?.trim()}`);
         process.exit(1);
       }
-      console.log(`Checked out PR #${numberStr} at ${tipCommit.slice(0, 7)} (detached HEAD)`);
+      console.log(`Checked out PR ${idStr} at ${tipCommit.slice(0, 7)} (detached HEAD)`);
     } else {
       // Create or reset a local branch at the tip commit, then switch to it.
       spawnSync('git', ['branch', '-f', localBranch, tipCommit], {
@@ -222,7 +221,7 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
         console.error(`Failed to checkout branch '${localBranch}': ${coResult.stderr?.trim()}`);
         process.exit(1);
       }
-      console.log(`Switched to branch '${localBranch}' (PR #${numberStr})`);
+      console.log(`Switched to branch '${localBranch}' (PR ${idStr})`);
     }
   } finally {
     try { unlinkSync(bundlePath); } catch { /* ignore cleanup errors */ }
@@ -234,16 +233,16 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd pr show <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd pr show <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const record = await findPrByNumber(ctx, repoContextId, numberStr);
+  const record = await findById(ctx, repoContextId, idStr);
   if (!record) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -251,11 +250,11 @@ async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = record.tags as Record<string, string> | undefined;
   const st = tags?.status ?? 'unknown';
   const date = record.dateCreated?.slice(0, 10) ?? '';
-  const num = data.number ?? tags?.number ?? '?';
+  const id = shortId(record.id);
   const base = tags?.baseBranch ?? '?';
   const head = tags?.headBranch;
 
-  console.log(`PR #${num}: ${data.title}`);
+  console.log(`PR ${id}: ${data.title}`);
   console.log(`  Status:   ${st.toUpperCase()}`);
   console.log(`  Branches: ${base}${head ? ` <- ${head}` : ''}`);
   console.log(`  Created:  ${date}`);
@@ -295,21 +294,21 @@ async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
+  const idStr = args[0];
   const flagBody = flagValue(args, '--body') ?? flagValue(args, '-m');
   const positional = args.slice(1).filter(a => !a.startsWith('-')).join(' ');
   const body = flagBody ?? (positional || undefined);
 
-  if (!numberStr || !body) {
-    console.error('Usage: gitd pr comment <number> <body>');
-    console.error('       gitd pr comment <number> --body <text>');
+  if (!idStr || !body) {
+    console.error('Usage: gitd pr comment <id> <body>');
+    console.error('       gitd pr comment <id> --body <text>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  const patch = await findById(ctx, repoContextId, idStr);
   if (!patch) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -325,7 +324,7 @@ async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Added comment to PR #${numberStr}.`);
+  console.log(`Added comment to PR ${idStr}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +332,7 @@ async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
+  const idStr = args[0];
   const strategy = hasFlag(args, '--squash')
     ? 'squash'
     : hasFlag(args, '--rebase')
@@ -341,8 +340,8 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
       : 'merge';
   const deleteBranch = !hasFlag(args, '--no-delete-branch');
 
-  if (!numberStr) {
-    console.error('Usage: gitd pr merge <number> [--squash | --rebase] [--no-delete-branch]');
+  if (!idStr) {
+    console.error('Usage: gitd pr merge <id> [--squash | --rebase] [--no-delete-branch]');
     process.exit(1);
   }
 
@@ -354,9 +353,9 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  const patch = await findById(ctx, repoContextId, idStr);
   if (!patch) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -364,22 +363,22 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'merged') {
-    console.log(`PR #${numberStr} is already merged.`);
+    console.log(`PR ${idStr} is already merged.`);
     return;
   }
 
   if (tags?.status === 'closed') {
-    console.error(`PR #${numberStr} is closed. Reopen it before merging.`);
+    console.error(`PR ${idStr} is closed. Reopen it before merging.`);
     process.exit(1);
   }
 
   const baseBranch = tags?.baseBranch ?? 'main';
-  const headBranch = tags?.headBranch ?? `pr/${numberStr}`;
+  const headBranch = tags?.headBranch ?? `pr/${idStr}`;
 
   // Ensure the PR branch exists locally.
   const branchExists = git(['rev-parse', '--verify', headBranch]);
   if (!branchExists) {
-    console.error(`Branch '${headBranch}' not found locally. Run \`gitd pr checkout ${numberStr}\` first.`);
+    console.error(`Branch '${headBranch}' not found locally. Run \`gitd pr checkout ${idStr}\` first.`);
     process.exit(1);
   }
 
@@ -410,7 +409,7 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
       process.exit(1);
     }
     // Squash leaves changes staged — commit them.
-    const cm = spawnSync('git', ['commit', '-m', `Merge PR #${numberStr}: ${data.title} (squash)`], {
+    const cm = spawnSync('git', ['commit', '-m', `Merge PR ${idStr}: ${data.title} (squash)`], {
       encoding : 'utf-8',
       timeout  : 30_000,
       stdio    : ['pipe', 'pipe', 'pipe'],
@@ -468,7 +467,7 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
     }
   } else {
     // Standard merge commit.
-    const mg = spawnSync('git', ['merge', '--no-ff', headBranch, '-m', `Merge PR #${numberStr}: ${data.title}`], {
+    const mg = spawnSync('git', ['merge', '--no-ff', headBranch, '-m', `Merge PR ${idStr}: ${data.title}`], {
       encoding : 'utf-8',
       timeout  : 60_000,
       stdio    : ['pipe', 'pipe', 'pipe'],
@@ -509,7 +508,7 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const commitLabel = commitCount > 0
     ? ` (${commitCount} commit${commitCount !== 1 ? 's' : ''})`
     : '';
-  console.log(`Merged PR #${numberStr}${commitLabel} into ${baseBranch} at ${mergeCommit.slice(0, 7)} (strategy: ${strategy})`);
+  console.log(`Merged PR ${idStr}${commitLabel} into ${baseBranch} at ${mergeCommit.slice(0, 7)} (strategy: ${strategy})`);
 
   // Clean up the local PR branch.
   if (deleteBranch) {
@@ -529,16 +528,16 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd pr close <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd pr close <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  const patch = await findById(ctx, repoContextId, idStr);
   if (!patch) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -546,12 +545,12 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'closed') {
-    console.log(`PR #${numberStr} is already closed.`);
+    console.log(`PR ${idStr} is already closed.`);
     return;
   }
 
   if (tags?.status === 'merged') {
-    console.log(`PR #${numberStr} is merged and cannot be closed.`);
+    console.log(`PR ${idStr} is merged and cannot be closed.`);
     return;
   }
 
@@ -571,7 +570,7 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
     parentContextId : patch.contextId,
   } as any);
 
-  console.log(`Closed PR #${numberStr}: "${data.title}"`);
+  console.log(`Closed PR ${idStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -579,16 +578,16 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd pr reopen <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd pr reopen <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findPrByNumber(ctx, repoContextId, numberStr);
+  const patch = await findById(ctx, repoContextId, idStr);
   if (!patch) {
-    console.error(`PR #${numberStr} not found.`);
+    console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -596,12 +595,12 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = patch.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'open' || tags?.status === 'draft') {
-    console.log(`PR #${numberStr} is already open.`);
+    console.log(`PR ${idStr} is already open.`);
     return;
   }
 
   if (tags?.status === 'merged') {
-    console.log(`PR #${numberStr} is merged and cannot be reopened.`);
+    console.log(`PR ${idStr} is merged and cannot be reopened.`);
     return;
   }
 
@@ -621,7 +620,7 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
     parentContextId : patch.contextId,
   } as any);
 
-  console.log(`Reopened PR #${numberStr}: "${data.title}"`);
+  console.log(`Reopened PR ${idStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -663,9 +662,9 @@ async function prList(ctx: AgentContext, args: string[]): Promise<void> {
     const base = recTags?.baseBranch ?? '?';
     const head = recTags?.headBranch;
     const date = rec.dateCreated?.slice(0, 10) ?? '';
-    const num = data.number ?? recTags?.number ?? '?';
+    const id = shortId(rec.id);
     const branches = head ? `${base} <- ${head}` : base;
-    console.log(`  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title} (${branches})`);
+    console.log(`  ${id} [${st.toUpperCase().padEnd(6)}] ${data.title} (${branches})`);
     console.log(`        created: ${date}  id: ${rec.id}`);
   }
 }
@@ -827,37 +826,16 @@ async function createRevisionAndBundle(
 // ---------------------------------------------------------------------------
 
 /**
- * Get the next sequential PR number by querying existing PRs.
+ * Find a PR record by its short hash ID (or prefix).
  */
-async function getNextNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
+async function findById(
+  ctx: AgentContext,
+  repoContextId: string,
+  idStr: string,
+): Promise<any | undefined> {
   const { records } = await ctx.patches.records.query('repo/patch', {
     filter: { contextId: repoContextId },
   });
 
-  let maxNumber = 0;
-  for (const rec of records) {
-    const recTags = rec.tags as Record<string, string> | undefined;
-    const num = parseInt(recTags?.number ?? '0', 10);
-    if (num > maxNumber) { maxNumber = num; }
-  }
-
-  return maxNumber + 1;
-}
-
-/**
- * Find a PR record by its sequential number.
- */
-async function findPrByNumber(
-  ctx: AgentContext,
-  repoContextId: string,
-  numberStr: string,
-): Promise<any | undefined> {
-  const { records } = await ctx.patches.records.query('repo/patch', {
-    filter: {
-      contextId : repoContextId,
-      tags      : { number: numberStr },
-    },
-  });
-
-  return records[0];
+  return findByShortId(records, idStr);
 }

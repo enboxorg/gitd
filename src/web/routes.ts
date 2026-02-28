@@ -15,6 +15,7 @@ import type { AgentContext } from '../cli/agent.js';
 import { DateSort } from '@enbox/dwn-sdk-js';
 
 import { esc, layout, renderBody, shortDate, statusBadge } from './html.js';
+import { numericId, shortId } from '../github-shim/helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -184,11 +185,12 @@ export async function issuesListPage(ctx: AgentContext, targetDid: string, repoN
   for (const rec of records) {
     const data = await rec.data.json();
     const tags = rec.tags as Record<string, string> | undefined;
-    const num = data.number ?? tags?.number ?? '?';
+    const num = numericId(rec.id ?? '');
+    const sid = shortId(rec.id ?? '');
     const status = tags?.status ?? 'open';
     rows += `<tr>
-      <td><a href="${basePath}/issues/${esc(String(num))}">#${esc(String(num))}</a></td>
-      <td><a href="${basePath}/issues/${esc(String(num))}">${esc(data.title)}</a></td>
+      <td><a href="${basePath}/issues/${num}">${esc(sid)}</a></td>
+      <td><a href="${basePath}/issues/${num}">${esc(data.title)}</a></td>
       <td>${statusBadge(status)}</td>
       <td class="meta">${shortDate(rec.dateCreated)}</td>
     </tr>`;
@@ -198,7 +200,7 @@ export async function issuesListPage(ctx: AgentContext, targetDid: string, repoN
     <div class="card">
       <h2>Issues (${records.length})</h2>
       <table>
-        <tr><th>#</th><th>Title</th><th>Status</th><th>Created</th></tr>
+        <tr><th>ID</th><th>Title</th><th>Status</th><th>Created</th></tr>
         ${rows}
       </table>
     </div>`;
@@ -217,14 +219,14 @@ export async function issueDetailPage(
   const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return null; }
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.issues.records.query('repo/issue', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) { return null; }
-
-  const rec = records[0];
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) { return null; }
   const data = await rec.data.json();
   const tags = rec.tags as Record<string, string> | undefined;
   const status = tags?.status ?? 'open';
@@ -247,7 +249,7 @@ export async function issueDetailPage(
 
   const html = `
     <div class="card">
-      <h2>Issue #${esc(number)}: ${esc(data.title)} ${statusBadge(status)}</h2>
+      <h2>Issue ${esc(shortId(rec.id ?? ''))}: ${esc(data.title)} ${statusBadge(status)}</h2>
       <p class="meta">Created ${shortDate(rec.dateCreated)}</p>
       ${data.body ? `<div style="margin-top:16px">${renderBody(data.body)}</div>` : ''}
     </div>
@@ -259,7 +261,7 @@ export async function issueDetailPage(
     ` : ''}
     <p><a href="${basePath}/issues">&larr; Back to issues</a></p>`;
 
-  return layout(`Issue #${number}`, repoTitle(repo), html, basePath);
+  return layout(`Issue ${shortId(rec.id ?? '')}`, repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,13 +287,14 @@ export async function patchesListPage(ctx: AgentContext, targetDid: string, repo
   for (const rec of records) {
     const data = await rec.data.json();
     const tags = rec.tags as Record<string, string> | undefined;
-    const num = data.number ?? tags?.number ?? '?';
+    const num = numericId(rec.id ?? '');
+    const sid = shortId(rec.id ?? '');
     const status = tags?.status ?? 'open';
     const base = tags?.baseBranch ?? '';
     const head = tags?.headBranch ?? '';
     rows += `<tr>
-      <td><a href="${basePath}/patches/${esc(String(num))}">#${esc(String(num))}</a></td>
-      <td><a href="${basePath}/patches/${esc(String(num))}">${esc(data.title)}</a></td>
+      <td><a href="${basePath}/patches/${num}">${esc(sid)}</a></td>
+      <td><a href="${basePath}/patches/${num}">${esc(data.title)}</a></td>
       <td>${statusBadge(status)}</td>
       <td class="meta">${esc(base)}${head ? ` &larr; ${esc(head)}` : ''}</td>
       <td class="meta">${shortDate(rec.dateCreated)}</td>
@@ -302,7 +305,7 @@ export async function patchesListPage(ctx: AgentContext, targetDid: string, repo
     <div class="card">
       <h2>Patches (${records.length})</h2>
       <table>
-        <tr><th>#</th><th>Title</th><th>Status</th><th>Branches</th><th>Created</th></tr>
+        <tr><th>ID</th><th>Title</th><th>Status</th><th>Branches</th><th>Created</th></tr>
         ${rows}
       </table>
     </div>`;
@@ -321,14 +324,14 @@ export async function patchDetailPage(
   const repo = await getRepoRecord(ctx, targetDid, repoName);
   if (!repo) { return null; }
 
+  const num = parseInt(number, 10);
   const { records } = await ctx.patches.records.query('repo/patch', {
     from,
-    filter: { contextId: repo.contextId, tags: { number } },
+    filter: { contextId: repo.contextId },
   });
 
-  if (records.length === 0) { return null; }
-
-  const rec = records[0];
+  const rec = records.find(r => numericId(r.id ?? '') === num);
+  if (!rec) { return null; }
   const data = await rec.data.json();
   const tags = rec.tags as Record<string, string> | undefined;
   const status = tags?.status ?? 'open';
@@ -355,7 +358,7 @@ export async function patchDetailPage(
 
   const html = `
     <div class="card">
-      <h2>Patch #${esc(number)}: ${esc(data.title)} ${statusBadge(status)}</h2>
+      <h2>Patch ${esc(shortId(rec.id ?? ''))}: ${esc(data.title)} ${statusBadge(status)}</h2>
       <p class="meta">
         ${esc(base)}${head ? ` &larr; ${esc(head)}` : ''}
         &middot; Created ${shortDate(rec.dateCreated)}
@@ -370,7 +373,7 @@ export async function patchDetailPage(
     ` : ''}
     <p><a href="${basePath}/patches">&larr; Back to patches</a></p>`;
 
-  return layout(`Patch #${number}`, repoTitle(repo), html, basePath);
+  return layout(`Patch ${shortId(rec.id ?? '')}`, repoTitle(repo), html, basePath);
 }
 
 // ---------------------------------------------------------------------------
