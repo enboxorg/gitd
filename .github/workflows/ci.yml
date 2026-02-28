@@ -79,6 +79,46 @@ jobs:
         run: bun run test:node
 
   # ---------------------------------------------------------------------------
+  # DHT integration tests (non-blocking)
+  #
+  # Runs the did:dht resolution tests against the live DHT gateway. These are
+  # network-dependent and may flake, so they do not block the ci-passed gate.
+  # ---------------------------------------------------------------------------
+  dht-integration:
+    name: DHT Integration
+    runs-on: ubuntu-latest
+    needs: [changes, build-and-test]
+    if: needs.changes.outputs.src == 'true' && needs.build-and-test.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore bun cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-store-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-store-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Run DHT integration tests
+        env:
+          DID_DHT_GATEWAY_URI: https://enbox-did-dht.fly.dev
+        run: bun test tests/git-remote.spec.ts --timeout 30000
+
+  # ---------------------------------------------------------------------------
   # Gate job for branch protection. Always runs; succeeds when the pipeline
   # passes OR when it was skipped (docs-only change).
   # ---------------------------------------------------------------------------
