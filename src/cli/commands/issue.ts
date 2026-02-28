@@ -3,10 +3,10 @@
  *
  * Usage:
  *   gitd issue create <title> [--body <text>]
- *   gitd issue show <number>
- *   gitd issue comment <number> <body>
- *   gitd issue close <number> [--reason <text>]
- *   gitd issue reopen <number>
+ *   gitd issue show <id>
+ *   gitd issue comment <id> <body>
+ *   gitd issue close <id> [--reason <text>]
+ *   gitd issue reopen <id>
  *   gitd issue list [--status <open|closed>]
  *
  * @module
@@ -15,6 +15,7 @@
 import type { AgentContext } from '../agent.js';
 
 import { getRepoContextId } from '../repo-context.js';
+import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
@@ -54,12 +55,9 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
 
-  // Assign the next sequential number.
-  const number = await getNextNumber(ctx, repoContextId);
-
   const { status, record } = await ctx.issues.records.create('repo/issue', {
-    data            : { title, body, number },
-    tags            : { status: 'open', number: String(number) },
+    data            : { title, body },
+    tags            : { status: 'open' },
     parentContextId : repoContextId,
   });
 
@@ -68,7 +66,8 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Created issue #${number}: "${title}"`);
+  const id = shortId(record.id);
+  console.log(`Created issue ${id}: "${title}"`);
   console.log(`  Record ID: ${record.id}`);
 }
 
@@ -77,16 +76,16 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd issue show <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd issue show <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const record = await findIssueByNumber(ctx, repoContextId, numberStr);
+  const record = await findById(ctx, repoContextId, idStr);
   if (!record) {
-    console.error(`Issue #${numberStr} not found.`);
+    console.error(`Issue ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -94,9 +93,8 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = record.tags as Record<string, string> | undefined;
   const st = tags?.status ?? 'unknown';
   const date = record.dateCreated?.slice(0, 10) ?? '';
-  const num = data.number ?? tags?.number ?? '?';
 
-  console.log(`Issue #${num}: ${data.title}`);
+  console.log(`Issue ${shortId(record.id)}: ${data.title}`);
   console.log(`  Status:  ${st.toUpperCase()}`);
   console.log(`  Created: ${date}`);
   console.log(`  ID:      ${record.id}`);
@@ -130,21 +128,21 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
+  const idStr = args[0];
   const flagBody = flagValue(args, '--body') ?? flagValue(args, '-m');
   const positional = args.slice(1).filter(a => !a.startsWith('-')).join(' ');
   const body = flagBody ?? (positional || undefined);
 
-  if (!numberStr || !body) {
-    console.error('Usage: gitd issue comment <number> <body>');
-    console.error('       gitd issue comment <number> --body <text>');
+  if (!idStr || !body) {
+    console.error('Usage: gitd issue comment <id> <body>');
+    console.error('       gitd issue comment <id> --body <text>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
+  const issue = await findById(ctx, repoContextId, idStr);
   if (!issue) {
-    console.error(`Issue #${numberStr} not found.`);
+    console.error(`Issue ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -158,7 +156,7 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Added comment to issue #${numberStr}.`);
+  console.log(`Added comment to issue ${idStr}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,16 +164,16 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd issue close <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd issue close <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
+  const issue = await findById(ctx, repoContextId, idStr);
   if (!issue) {
-    console.error(`Issue #${numberStr} not found.`);
+    console.error(`Issue ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -183,7 +181,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = issue.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'closed') {
-    console.log(`Issue #${numberStr} is already closed.`);
+    console.log(`Issue ${idStr} is already closed.`);
     return;
   }
 
@@ -197,7 +195,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Closed issue #${numberStr}: "${data.title}"`);
+  console.log(`Closed issue ${idStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,16 +203,16 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
-  const numberStr = args[0];
-  if (!numberStr) {
-    console.error('Usage: gitd issue reopen <number>');
+  const idStr = args[0];
+  if (!idStr) {
+    console.error('Usage: gitd issue reopen <id>');
     process.exit(1);
   }
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findIssueByNumber(ctx, repoContextId, numberStr);
+  const issue = await findById(ctx, repoContextId, idStr);
   if (!issue) {
-    console.error(`Issue #${numberStr} not found.`);
+    console.error(`Issue ${idStr} not found.`);
     process.exit(1);
   }
 
@@ -222,7 +220,7 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
   const tags = issue.tags as Record<string, string> | undefined;
 
   if (tags?.status === 'open') {
-    console.log(`Issue #${numberStr} is already open.`);
+    console.log(`Issue ${idStr} is already open.`);
     return;
   }
 
@@ -236,7 +234,7 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Reopened issue #${numberStr}: "${data.title}"`);
+  console.log(`Reopened issue ${idStr}: "${data.title}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,8 +274,8 @@ async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
     const recTags = rec.tags as Record<string, string> | undefined;
     const st = recTags?.status ?? 'unknown';
     const date = rec.dateCreated?.slice(0, 10) ?? '';
-    const num = data.number ?? recTags?.number ?? '?';
-    console.log(`  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title}`);
+    const id = shortId(rec.id);
+    console.log(`  ${id} [${st.toUpperCase().padEnd(6)}] ${data.title}`);
     console.log(`        created: ${date}  id: ${rec.id}`);
   }
 }
@@ -287,38 +285,16 @@ async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Get the next sequential issue number by querying existing issues.
- * Returns `max(existing numbers) + 1`, or 1 if no issues exist.
+ * Find an issue record by its short hash ID (or unambiguous prefix).
  */
-async function getNextNumber(ctx: AgentContext, repoContextId: string): Promise<number> {
+async function findById(
+  ctx: AgentContext,
+  repoContextId: string,
+  idStr: string,
+): Promise<any | undefined> {
   const { records } = await ctx.issues.records.query('repo/issue', {
     filter: { contextId: repoContextId },
   });
 
-  let maxNumber = 0;
-  for (const rec of records) {
-    const recTags = rec.tags as Record<string, string> | undefined;
-    const num = parseInt(recTags?.number ?? '0', 10);
-    if (num > maxNumber) { maxNumber = num; }
-  }
-
-  return maxNumber + 1;
-}
-
-/**
- * Find an issue record by its sequential number.
- */
-async function findIssueByNumber(
-  ctx: AgentContext,
-  repoContextId: string,
-  numberStr: string,
-): Promise<any | undefined> {
-  const { records } = await ctx.issues.records.query('repo/issue', {
-    filter: {
-      contextId : repoContextId,
-      tags      : { number: numberStr },
-    },
-  });
-
-  return records[0];
+  return findByShortId(records, idStr);
 }

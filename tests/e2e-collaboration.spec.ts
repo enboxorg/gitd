@@ -45,6 +45,7 @@ import { ForgeRefsProtocol } from '../src/refs.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
 import { generatePushCredentials } from '../src/git-remote/credential-helper.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
+import { shortId } from '../src/github-shim/helpers.js';
 import {
   decodePushToken,
   DID_AUTH_USERNAME,
@@ -430,7 +431,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   // HTTP.  The protocol allows anyone to create: `{ who: 'anyone', can: ['create'] }`.
   // =========================================================================
 
-  let prNumber: number;
+  let patchRecordId: string;
   let patchContextId: string;
 
   it('Phase 3a: Bob creates a git bundle of his changes', async () => {
@@ -498,26 +499,18 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
       }
     }
 
-    // Assign the next PR number
-    const { records: existing } = await alicePatches.records.query('repo/patch', {
-      filter: { contextId: repoContextId },
-    });
-    prNumber = existing.length + 1;
-
     // Create the patch record (PR) — signed by Bob, not stored locally
     const { record: patchRecord } = await bobPatches.records.create(
       'repo/patch',
       {
         data: {
-          title  : 'feat: add multiply function',
-          body   : 'Adds a multiply function to utils and a test for it.',
-          number : prNumber,
+          title : 'feat: add multiply function',
+          body  : 'Adds a multiply function to utils and a test for it.',
         },
         tags: {
           status     : 'open',
           baseBranch : 'main',
           headBranch : 'feat/add-multiply',
-          number     : String(prNumber),
           sourceDid  : bobDid,
         },
         parentContextId : repoContextId,
@@ -525,6 +518,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
       },
     );
     await sendToAlice(patchRecord);
+    patchRecordId = patchRecord.id;
     patchContextId = patchRecord.contextId!;
 
     // Create the revision record — signed by Bob, sent to Alice
@@ -572,19 +566,17 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
   it('Phase 3c: Bob\'s PR is visible in Alice\'s DWN', async () => {
     const { records } = await alicePatches.records.query('repo/patch', {
-      filter: {
-        contextId : repoContextId,
-        tags      : { number: String(prNumber) },
-      },
+      filter: { contextId: repoContextId },
     });
 
-    expect(records.length).toBe(1);
+    // Find the patch created by Bob
+    const patch = records.find((r: any) => r.id === patchRecordId);
+    expect(patch).toBeDefined();
 
-    const data = await records[0].data.json();
+    const data = await patch!.data.json();
     expect(data.title).toBe('feat: add multiply function');
-    expect(data.number).toBe(prNumber);
 
-    const tags = records[0].tags as Record<string, string>;
+    const tags = patch!.tags as Record<string, string>;
     expect(tags.status).toBe('open');
     expect(tags.sourceDid).toBe(bobDid);
   });
@@ -612,12 +604,10 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
   it('Phase 4b: Alice checks out Bob\'s PR (fetches bundle into local tree)', async () => {
     // Fetch the revision and bundle from Alice's DWN
-    const patch = (await alicePatches.records.query('repo/patch', {
-      filter: {
-        contextId : repoContextId,
-        tags      : { number: String(prNumber) },
-      },
-    })).records[0];
+    const patchResults = await alicePatches.records.query('repo/patch', {
+      filter: { contextId: repoContextId },
+    });
+    const patch = patchResults.records.find((r: any) => r.id === patchRecordId)!;
 
     const { records: revisions } = await alicePatches.records.query(
       'repo/patch/revision' as any,
@@ -656,7 +646,8 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
       // Create a local branch for the PR
       const tipCommit = revisionTags.headCommit;
-      await exec(`git checkout -b pr/${prNumber} ${tipCommit}`, { cwd: ALICE_CLONE_PATH });
+      const prId = shortId(patchRecordId);
+      await exec(`git checkout -b pr/${prId} ${tipCommit}`, { cwd: ALICE_CLONE_PATH });
 
       // Verify Bob's commits are now in Alice's tree
       const { stdout: log } = await exec(
@@ -671,12 +662,10 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   });
 
   it('Phase 4c: Alice adds a review comment', async () => {
-    const patch = (await alicePatches.records.query('repo/patch', {
-      filter: {
-        contextId : repoContextId,
-        tags      : { number: String(prNumber) },
-      },
-    })).records[0];
+    const patchResults = await alicePatches.records.query('repo/patch', {
+      filter: { contextId: repoContextId },
+    });
+    const patch = patchResults.records.find((r: any) => r.id === patchRecordId)!;
 
     const { status: reviewStatus } = await alicePatches.records.create(
       'repo/patch/review' as any,
@@ -696,7 +685,8 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   it('Phase 4d: Alice merges Bob\'s PR into main', async () => {
     // Switch to main and merge the PR branch
     await exec('git checkout main', { cwd: ALICE_CLONE_PATH });
-    await exec(`git merge --no-ff -m "Merge PR #${prNumber}: feat: add multiply function" pr/${prNumber}`, {
+    const prId = shortId(patchRecordId);
+    await exec(`git merge --no-ff -m "Merge PR ${prId}: feat: add multiply function" pr/${prId}`, {
       cwd: ALICE_CLONE_PATH,
     });
 
@@ -726,14 +716,10 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   it('Phase 4f: Alice records the merge result in DWN', async () => {
     // Update the patch status to merged
     const { records } = await alicePatches.records.query('repo/patch', {
-      filter: {
-        contextId : repoContextId,
-        tags      : { number: String(prNumber) },
-      },
+      filter: { contextId: repoContextId },
     });
-    expect(records.length).toBe(1);
-
-    const patch = records[0];
+    const patch = records.find((r: any) => r.id === patchRecordId)!;
+    expect(patch).toBeDefined();
     const patchData = await patch.data.json();
 
     // Update status tag to 'merged'
@@ -771,12 +757,10 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
     // Verify status is now merged
     const { records: updated } = await alicePatches.records.query('repo/patch', {
-      filter: {
-        contextId : repoContextId,
-        tags      : { number: String(prNumber) },
-      },
+      filter: { contextId: repoContextId },
     });
-    const updatedTags = updated[0].tags as Record<string, string>;
+    const updatedPatch = updated.find((r: any) => r.id === patchRecordId);
+    const updatedTags = updatedPatch!.tags as Record<string, string>;
     expect(updatedTags.status).toBe('merged');
   });
 
@@ -814,20 +798,21 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     const { records: patches } = await alicePatches.records.query('repo/patch', {
       filter: {
         contextId : repoContextId,
-        tags      : { number: String(prNumber), status: 'merged' },
+        tags      : { status: 'merged' },
       },
     });
 
-    expect(patches.length).toBe(1);
+    const mergedPatch = patches.find((r: any) => r.id === patchRecordId);
+    expect(mergedPatch).toBeDefined();
 
-    const data = await patches[0].data.json();
+    const data = await mergedPatch!.data.json();
     expect(data.title).toBe('feat: add multiply function');
 
     // Query for the mergeResult child record
     const { records: mergeResults } = await alicePatches.records.query(
       'repo/patch/mergeResult' as any,
       {
-        filter: { contextId: patches[0].contextId },
+        filter: { contextId: mergedPatch!.contextId },
       },
     );
 

@@ -12,6 +12,7 @@
 import type { AgentContext } from '../agent.js';
 
 import { getRepoContextId } from '../repo-context.js';
+import { shortId } from '../../github-shim/helpers.js';
 import { flagValue, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
@@ -45,11 +46,11 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
     const data = await rec.data.json();
     const tags = rec.tags as Record<string, string> | undefined;
     const st = tags?.status ?? '?';
-    const num = data.number ?? tags?.number ?? '?';
+    const id = shortId(rec.id ?? '');
     entries.push({
       type : 'issue',
       date : rec.dateCreated ?? '',
-      line : `issue  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
+      line : `issue  ${id} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
     });
   }
 
@@ -62,11 +63,11 @@ export async function logCommand(ctx: AgentContext, args: string[]): Promise<voi
     const data = await rec.data.json();
     const tags = rec.tags as Record<string, string> | undefined;
     const st = tags?.status ?? '?';
-    const num = data.number ?? tags?.number ?? '?';
+    const id = shortId(rec.id ?? '');
     entries.push({
       type : 'pr',
       date : rec.dateCreated ?? '',
-      line : `pr     #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
+      line : `pr     ${id} [${st.toUpperCase().padEnd(6)}] ${data.title}`,
     });
   }
 

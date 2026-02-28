@@ -31,6 +31,7 @@ import { ForgeRepoProtocol } from '../src/repo.js';
 import { ForgeSocialProtocol } from '../src/social.js';
 import { ForgeWikiProtocol } from '../src/wiki.js';
 import { handleRequest } from '../src/web/server.js';
+import { numericId, shortId } from '../src/github-shim/helpers.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -64,6 +65,8 @@ function repoUrl(subPath: string): URL {
 
 describe('gitd web UI', () => {
   let ctx: AgentContext;
+  let issueRecId: string;
+  let patchRecId: string;
 
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
@@ -131,10 +134,11 @@ describe('gitd web UI', () => {
 
     // 2. Create an open issue.
     const { record: issueRec } = await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Fix the widget', body: 'The widget is broken.', number: 1 },
-      tags            : { status: 'open', number: '1' },
+      data            : { title: 'Fix the widget', body: 'The widget is broken.' },
+      tags            : { status: 'open' },
       parentContextId : repoContextId,
     });
+    issueRecId = issueRec!.id;
 
     // 3. Create a comment on the issue.
     await ctx.issues.records.create('repo/issue/comment' as any, {
@@ -143,18 +147,19 @@ describe('gitd web UI', () => {
     } as any);
 
     // 4. Create a closed issue.
-    await ctx.issues.records.create('repo/issue', {
-      data            : { title: 'Old bug', body: 'Already fixed.', number: 2 },
-      tags            : { status: 'closed', number: '2' },
+    const { record: _closedIssueRec } = await ctx.issues.records.create('repo/issue', {
+      data            : { title: 'Old bug', body: 'Already fixed.' },
+      tags            : { status: 'closed' },
       parentContextId : repoContextId,
     });
 
     // 5. Create an open patch.
     const { record: patchRec } = await ctx.patches.records.create('repo/patch', {
-      data            : { title: 'Add feature X', body: 'Implements feature X.', number: 1 },
-      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x', number: '1' },
+      data            : { title: 'Add feature X', body: 'Implements feature X.' },
+      tags            : { status: 'open', baseBranch: 'main', headBranch: 'feat-x' },
       parentContextId : repoContextId,
     });
+    patchRecId = patchRec!.id;
 
     // 6. Create a review on the patch.
     await ctx.patches.records.create('repo/patch/review' as any, {
@@ -262,12 +267,11 @@ describe('gitd web UI', () => {
       expect(res.body).toContain('Old bug');
     });
 
-    it('should show issue numbers as repo-scoped links', async () => {
+    it('should show issue IDs as repo-scoped links', async () => {
       const res = await handleRequest(ctx, repoUrl('/issues'));
-      expect(res.body).toContain(`href="/${testDid}/test-repo/issues/1"`);
-      expect(res.body).toContain('#1');
-      expect(res.body).toContain(`href="/${testDid}/test-repo/issues/2"`);
-      expect(res.body).toContain('#2');
+      const issueNum = numericId(issueRecId);
+      expect(res.body).toContain(`href="/${testDid}/test-repo/issues/${issueNum}"`);
+      expect(res.body).toContain(shortId(issueRecId));
     });
 
     it('should show status badges', async () => {
@@ -283,25 +287,29 @@ describe('gitd web UI', () => {
 
   describe('GET /:did/:repo/issues/:number', () => {
     it('should return 200 with issue detail', async () => {
-      const res = await handleRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleRequest(ctx, repoUrl(`/issues/${issueNum}`));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Fix the widget');
       expect(res.body).toContain('The widget is broken.');
     });
 
     it('should show comments', async () => {
-      const res = await handleRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleRequest(ctx, repoUrl(`/issues/${issueNum}`));
       expect(res.body).toContain('I can reproduce this.');
       expect(res.body).toContain('Comments (1)');
     });
 
     it('should show status badge', async () => {
-      const res = await handleRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleRequest(ctx, repoUrl(`/issues/${issueNum}`));
       expect(res.body).toContain('OPEN');
     });
 
     it('should include repo-scoped back link', async () => {
-      const res = await handleRequest(ctx, repoUrl('/issues/1'));
+      const issueNum = numericId(issueRecId);
+      const res = await handleRequest(ctx, repoUrl(`/issues/${issueNum}`));
       expect(res.body).toContain(`href="/${testDid}/test-repo/issues"`);
     });
 
@@ -330,9 +338,10 @@ describe('gitd web UI', () => {
     });
 
     it('should show repo-scoped patch links', async () => {
+      const patchNum = numericId(patchRecId);
       const res = await handleRequest(ctx, repoUrl('/patches'));
-      expect(res.body).toContain(`href="/${testDid}/test-repo/patches/1"`);
-      expect(res.body).toContain('#1');
+      expect(res.body).toContain(`href="/${testDid}/test-repo/patches/${patchNum}"`);
+      expect(res.body).toContain(shortId(patchRecId));
     });
   });
 
@@ -342,28 +351,32 @@ describe('gitd web UI', () => {
 
   describe('GET /:did/:repo/patches/:number', () => {
     it('should return 200 with patch detail', async () => {
-      const res = await handleRequest(ctx, repoUrl('/patches/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleRequest(ctx, repoUrl(`/patches/${patchNum}`));
       expect(res.status).toBe(200);
       expect(res.body).toContain('Add feature X');
       expect(res.body).toContain('Implements feature X.');
     });
 
     it('should show reviews', async () => {
-      const res = await handleRequest(ctx, repoUrl('/patches/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleRequest(ctx, repoUrl(`/patches/${patchNum}`));
       expect(res.body).toContain('Looks good to me.');
       expect(res.body).toContain('Reviews (1)');
       expect(res.body).toContain('APPROVE');
     });
 
     it('should show branch info and status', async () => {
-      const res = await handleRequest(ctx, repoUrl('/patches/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleRequest(ctx, repoUrl(`/patches/${patchNum}`));
       expect(res.body).toContain('main');
       expect(res.body).toContain('feat-x');
       expect(res.body).toContain('OPEN');
     });
 
     it('should include repo-scoped back link', async () => {
-      const res = await handleRequest(ctx, repoUrl('/patches/1'));
+      const patchNum = numericId(patchRecId);
+      const res = await handleRequest(ctx, repoUrl(`/patches/${patchNum}`));
       expect(res.body).toContain(`href="/${testDid}/test-repo/patches"`);
     });
 

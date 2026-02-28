@@ -614,8 +614,8 @@ async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string
     const body = prependAuthor(ghIssue.body ?? '', author);
 
     const { status: issueStatus, record: issueRecord } = await ctx.issues.records.create('repo/issue', {
-      data            : { title: ghIssue.title, body, number: ghIssue.number },
-      tags            : { status: ghIssue.state === 'open' ? 'open' : 'closed', number: String(ghIssue.number) },
+      data            : { title: ghIssue.title, body },
+      tags            : { status: ghIssue.state === 'open' ? 'open' : 'closed' },
       parentContextId : repoContextId,
     });
 
@@ -709,11 +709,10 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
       status     : prStatus,
       baseBranch : ghPull.base.ref,
       headBranch : ghPull.head.ref,
-      number     : String(ghPull.number),
     };
 
     const { status: prSt, record: prRecord } = await ctx.patches.records.create('repo/patch', {
-      data            : { title: ghPull.title, body, number: ghPull.number },
+      data            : { title: ghPull.title, body },
       tags,
       parentContextId : repoContextId,
     });
