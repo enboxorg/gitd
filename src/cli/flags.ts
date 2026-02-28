@@ -8,11 +8,18 @@ import { spawnSync } from 'node:child_process';
 
 import { profileReposPath } from '../profiles/config.js';
 
-/** Extract the value following a flag in argv (e.g. `--port 8080`). */
+/** Extract the value following a flag in argv (e.g. `--port 8080` or `--port=8080`). */
 export function flagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1 || idx + 1 >= args.length) { return undefined; }
-  return args[idx + 1];
+  const prefix = `${flag}=`;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag) {
+      return i + 1 < args.length ? args[i + 1] : undefined;
+    }
+    if (args[i].startsWith(prefix)) {
+      return args[i].slice(prefix.length);
+    }
+  }
+  return undefined;
 }
 
 /** Check whether a boolean flag is present in argv. */
