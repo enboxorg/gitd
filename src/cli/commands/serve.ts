@@ -30,6 +30,7 @@ import { createGitServer } from '../../git-server/server.js';
 import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
+import { getVersion } from '../../version.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
 import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
 import {
@@ -38,6 +39,7 @@ import {
   startDidRepublisher,
 } from '../../git-server/did-service.js';
 import { removeLockfile, writeLockfile } from '../../daemon/lockfile.js';
+
 
 // ---------------------------------------------------------------------------
 // Public URL check
@@ -170,6 +172,26 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     return result.success;
   };
 
+  // Idle auto-shutdown — when running as a background daemon, shut down
+  // after 1 hour of no incoming HTTP requests to prevent orphaned processes.
+  const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+  const isBackground = process.env.GITD_DAEMON_BACKGROUND === '1';
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Mutable holder so the idle timer callback can reference the shutdown
+  // function that is only available after the server is created.
+  const shutdown: { fn?: () => Promise<void> } = {};
+
+  const onRequest = isBackground
+    ? (): void => {
+      if (idleTimer) { clearTimeout(idleTimer); }
+      idleTimer = setTimeout(() => {
+        console.log('[daemon] Idle timeout reached (1h). Shutting down...');
+        shutdown.fn?.();
+      }, IDLE_TIMEOUT_MS);
+    }
+    : undefined;
+
   const server = await createGitServer({
     basePath,
     port,
@@ -177,6 +199,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     authenticatePush,
     onPushComplete,
     onRepoNotFound,
+    onRequest,
   });
 
   // Register the git endpoint in the DID document (if public URL is provided).
@@ -225,7 +248,18 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const stopRepublisher = startDidRepublisher(ctx.web5);
 
   // Register the daemon so git-remote-did can discover it.
-  writeLockfile(server.port);
+  writeLockfile(server.port, getVersion() ?? undefined);
+
+  // Wire up the idle shutdown function now that we have all the pieces.
+  shutdown.fn = async (): Promise<void> => {
+    removeLockfile();
+    stopRepublisher();
+    await server.stop();
+    process.exit(0);
+  };
+
+  // Start the idle timer for background daemons.
+  if (isBackground && onRequest) { onRequest(); }
 
   console.log(`gitd server listening on port ${server.port}`);
   console.log(`  DID:     ${ctx.did}`);

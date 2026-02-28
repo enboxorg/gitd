@@ -34,6 +34,9 @@ import { GitBackend } from './git-backend.js';
 const DEFAULT_MAX_BODY_GIT = 50 * 1024 * 1024;
 
 /** Configuration for the git transport sidecar server. */
+/** Callback invoked on every incoming HTTP request (for idle-tracking, metrics, etc.). */
+export type OnRequestCallback = () => void;
+
 export type GitServerOptions = {
   /** Base directory for storing bare repositories. */
   basePath: string;
@@ -71,6 +74,12 @@ export type GitServerOptions = {
    * @default 50 * 1024 * 1024 (50 MB)
    */
   maxBodySize?: number;
+
+  /**
+   * Optional callback invoked on every incoming HTTP request.
+   * Useful for idle-timeout tracking in background daemon mode.
+   */
+  onRequest?: OnRequestCallback;
 };
 
 /** A running git server instance. */
@@ -105,6 +114,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     onPushComplete,
     onRepoNotFound,
     maxBodySize = DEFAULT_MAX_BODY_GIT,
+    onRequest,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -118,6 +128,8 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
   });
 
   const server = createServer(async (req, res) => {
+    onRequest?.();
+
     // Health check endpoint.
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });

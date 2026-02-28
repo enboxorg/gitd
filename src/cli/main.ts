@@ -90,6 +90,7 @@ import { registryCommand } from './commands/registry.js';
 import { releaseCommand } from './commands/release.js';
 import { repoCommand } from './commands/repo.js';
 import { serveCommand } from './commands/serve.js';
+import { serveDaemonCommand } from './commands/serve-lifecycle.js';
 import { setupCommand } from './commands/setup.js';
 import { shimCommand } from './commands/shim.js';
 import { socialCommand } from './commands/social.js';
@@ -121,6 +122,10 @@ function printUsage(): void {
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
   console.log('  serve [--port <port>] [--check]              Start the git transport server');
+  console.log('  serve status                                Show daemon status');
+  console.log('  serve stop                                  Stop the background daemon');
+  console.log('  serve restart                               Restart the daemon');
+  console.log('  serve logs                                  Tail daemon log file');
   console.log('');
   console.log('  repo info                                   Show repo metadata');
   console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|triager|contributor)');
@@ -333,6 +338,14 @@ async function main(): Promise<void> {
       // Auth can run without a pre-existing profile (for `login`).
       await authCommand(null, rest);
       return;
+
+    case 'serve':
+      // Lifecycle subcommands don't need the agent.
+      if (rest[0] === 'status' || rest[0] === 'stop' || rest[0] === 'restart' || rest[0] === 'logs') {
+        await serveDaemonCommand(rest);
+        return;
+      }
+      break; // Fall through to agent-requiring path for `gitd serve`.
   }
 
   // Commands that require the Web5 agent.

@@ -32,6 +32,9 @@ export type DaemonLock = {
 
   /** ISO 8601 timestamp of when the daemon started. */
   startedAt: string;
+
+  /** The gitd version that started this daemon (for upgrade detection). */
+  version?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -48,11 +51,12 @@ export function lockfilePath(): string {
 // ---------------------------------------------------------------------------
 
 /** Write the daemon lockfile. Overwrites any existing file. */
-export function writeLockfile(port: number): void {
+export function writeLockfile(port: number, version?: string): void {
   const lock: DaemonLock = {
     pid       : process.pid,
     port,
     startedAt : new Date().toISOString(),
+    ...(version ? { version } : {}),
   };
   const path = lockfilePath();
   mkdirSync(dirname(path), { recursive: true });
