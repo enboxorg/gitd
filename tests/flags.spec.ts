@@ -1,10 +1,11 @@
 /**
- * CLI flag parsing tests — flagValue and hasFlag helpers.
+ * CLI flag parsing tests — flagValue, hasFlag, and parsePort helpers.
  */
 import { describe, expect, it } from 'bun:test';
 
 import { flagValue } from '../src/cli/flags.js';
 import { hasFlag } from '../src/cli/flags.js';
+import { parsePort } from '../src/cli/flags.js';
 
 // ---------------------------------------------------------------------------
 // flagValue
@@ -79,5 +80,71 @@ describe('hasFlag', () => {
 
   it('should return false for an empty args array', () => {
     expect(hasFlag([], '--verbose')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePort
+// ---------------------------------------------------------------------------
+
+describe('parsePort', () => {
+  it('should parse a valid port number', () => {
+    expect(parsePort('8080')).toBe(8080);
+  });
+
+  it('should accept port 1 (minimum)', () => {
+    expect(parsePort('1')).toBe(1);
+  });
+
+  it('should accept port 65535 (maximum)', () => {
+    expect(parsePort('65535')).toBe(65535);
+  });
+
+  it('should exit on port 0', () => {
+    const exit = process.exit;
+    let exitCode: number | undefined;
+    process.exit = ((code: number): never => { exitCode = code; throw new Error('exit'); }) as never;
+    try {
+      expect(() => parsePort('0')).toThrow('exit');
+      expect(exitCode).toBe(1);
+    } finally {
+      process.exit = exit;
+    }
+  });
+
+  it('should exit on port above 65535', () => {
+    const exit = process.exit;
+    let exitCode: number | undefined;
+    process.exit = ((code: number): never => { exitCode = code; throw new Error('exit'); }) as never;
+    try {
+      expect(() => parsePort('99999')).toThrow('exit');
+      expect(exitCode).toBe(1);
+    } finally {
+      process.exit = exit;
+    }
+  });
+
+  it('should exit on non-numeric input', () => {
+    const exit = process.exit;
+    let exitCode: number | undefined;
+    process.exit = ((code: number): never => { exitCode = code; throw new Error('exit'); }) as never;
+    try {
+      expect(() => parsePort('abc')).toThrow('exit');
+      expect(exitCode).toBe(1);
+    } finally {
+      process.exit = exit;
+    }
+  });
+
+  it('should exit on negative port', () => {
+    const exit = process.exit;
+    let exitCode: number | undefined;
+    process.exit = ((code: number): never => { exitCode = code; throw new Error('exit'); }) as never;
+    try {
+      expect(() => parsePort('-1')).toThrow('exit');
+      expect(exitCode).toBe(1);
+    } finally {
+      process.exit = exit;
+    }
   });
 });

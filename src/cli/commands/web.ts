@@ -12,15 +12,15 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { flagValue } from '../flags.js';
 import { startWebServer } from '../../web/server.js';
+import { flagValue, parsePort } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
 
 export async function webCommand(ctx: AgentContext, args: string[]): Promise<void> {
-  const port = parseInt(flagValue(args, '--port') ?? process.env.GITD_WEB_PORT ?? '8080', 10);
+  const port = parsePort(flagValue(args, '--port') ?? process.env.GITD_WEB_PORT ?? '8080');
 
   console.log('Starting gitd web UI...');
   startWebServer({ ctx, port });
