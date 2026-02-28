@@ -95,6 +95,7 @@ import { shimCommand } from './commands/shim.js';
 import { socialCommand } from './commands/social.js';
 import { webCommand } from './commands/web.js';
 import { wikiCommand } from './commands/wiki.js';
+import { checkGit, requireGit, warnGit } from './preflight.js';
 import { profileDataPath, resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
@@ -311,13 +312,18 @@ function printVersion(): void {
 async function main(): Promise<void> {
   if (command === '--version' || command === '-v' || command === 'version') {
     printVersion();
+    warnGit(checkGit());
     return;
   }
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     printUsage();
+    warnGit(checkGit());
     return;
   }
+
+  // All functional commands require git.
+  requireGit();
 
   // Commands that don't require the Web5 agent.
   switch (command) {
