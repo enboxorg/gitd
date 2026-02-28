@@ -14,20 +14,22 @@ import type { DidService } from '@enbox/dids';
 
 import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 
+import { readLockfile } from '../daemon/lockfile.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /** Result of resolving a DID to a git transport endpoint. */
 export type GitEndpoint = {
-  /** The resolved HTTPS URL for git smart HTTP transport. */
+  /** The resolved HTTP(S) URL for git smart HTTP transport. */
   url: string;
 
   /** The DID that was resolved. */
   did: string;
 
   /** How the endpoint was discovered. */
-  source: 'GitTransport' | 'DecentralizedWebNode';
+  source: 'LocalDaemon' | 'GitTransport' | 'DecentralizedWebNode';
 };
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,10 @@ const DID_RESOLUTION_TIMEOUT_MS = 30_000;
  * @throws If resolution fails, times out, or no git-compatible service is found
  */
 export async function resolveGitEndpoint(did: string, repo?: string): Promise<GitEndpoint> {
+  // Priority 0: Check for a running local daemon.
+  const local = await resolveLocalDaemon(did, repo);
+  if (local) { return local; }
+
   const { didDocument, didResolutionMetadata } = await Promise.race([
     getResolver().resolve(did),
     new Promise<never>((_, reject) =>
@@ -103,6 +109,45 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
     `No GitTransport or DecentralizedWebNode service found in DID document for ${did}. ` +
     `Services: ${services.map((s) => s.type).join(', ') || '(none)'}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Local daemon discovery
+// ---------------------------------------------------------------------------
+
+/** Timeout for the local daemon health probe (ms). */
+const LOCAL_PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * Check whether a local gitd daemon is running and reachable.
+ *
+ * Reads `~/.enbox/daemon.lock`, verifies the PID is alive, and probes
+ * the health endpoint to confirm the server is responsive.
+ *
+ * @returns A `GitEndpoint` pointing to `http://localhost:<port>/...`, or `null`.
+ */
+async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoint | null> {
+  const lock = readLockfile();
+  if (!lock) { return null; }
+
+  // Probe the health endpoint to confirm the server is actually responding.
+  const healthUrl = `http://localhost:${lock.port}/health`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
+    const res = await fetch(healthUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) { return null; }
+  } catch {
+    return null;
+  }
+
+  const baseUrl = `http://localhost:${lock.port}`;
+  return {
+    url    : buildUrl(baseUrl, did, repo),
+    did,
+    source : 'LocalDaemon',
+  };
 }
 
 // ---------------------------------------------------------------------------

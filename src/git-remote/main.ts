@@ -58,8 +58,12 @@ async function main(): Promise<void> {
 
   console.error(`git-remote-did: resolved ${parsed.did} → ${endpoint.url} (via ${endpoint.source})`);
 
-  // Delegate to git-remote-https — it handles all the transport complexity.
-  const child = spawn('git', ['remote-https', remoteName, endpoint.url], {
+  // Pick the right transport helper based on the URL scheme.
+  const helper = endpoint.url.startsWith('https://')
+    ? 'remote-https'
+    : 'remote-http';
+
+  const child = spawn('git', [helper, remoteName, endpoint.url], {
     stdio: 'inherit',
   });
 

@@ -37,6 +37,7 @@ import {
   registerGitService,
   startDidRepublisher,
 } from '../../git-server/did-service.js';
+import { removeLockfile, writeLockfile } from '../../daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
 // Public URL check
@@ -223,6 +224,9 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   // Keep the DID document alive on the DHT network.
   const stopRepublisher = startDidRepublisher(ctx.web5);
 
+  // Register the daemon so git-remote-did can discover it.
+  writeLockfile(server.port);
+
   console.log(`gitd server listening on port ${server.port}`);
   console.log(`  DID:     ${ctx.did}`);
   console.log(`  Repos:   ${basePath}`);
@@ -244,6 +248,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   await new Promise<void>(() => {
     process.on('SIGINT', async () => {
       console.log('\nShutting down...');
+      removeLockfile();
       stopRepublisher();
       await server.stop();
       process.exit(0);
