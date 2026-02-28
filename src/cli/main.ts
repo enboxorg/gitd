@@ -136,7 +136,7 @@ function printUsage(): void {
   console.log('  pr create <title> [--base ...] [--head ...]     Open a pull request');
   console.log('  pr show <number>                               Show PR details and reviews');
   console.log('  pr comment <number> <body>                     Add a comment/review');
-  console.log('  pr merge <number>                              Merge a PR');
+  console.log('  pr merge <number> [--squash|--rebase]           Merge a PR with actual git merge');
   console.log('  pr close <number>                              Close a PR');
   console.log('  pr reopen <number>                             Reopen a closed PR');
   console.log('  pr list [--status <status>]                    List PRs');
