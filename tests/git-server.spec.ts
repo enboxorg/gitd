@@ -322,6 +322,33 @@ describe('createGitHttpHandler', () => {
         },
       });
 
+      // Send a flush packet (0000) — tells git "no refs to update", exits 0.
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-receive-pack`, {
+        method  : 'POST',
+        body    : '0000',
+        headers : { 'Content-Type': 'application/x-git-receive-pack-request' },
+      });
+      const res = await pushHandler(req);
+      expect(res.status).toBe(200);
+      // Consume the response body so the subprocess can finish.
+      await res.arrayBuffer();
+
+      // The callback fires asynchronously after the exit code resolves.
+      await new Promise((r) => setTimeout(r, 200));
+      expect(pushCompleteCalled).toBe(true);
+      expect(callbackDid).toBe(TEST_DID);
+      expect(callbackRepo).toBe(TEST_REPO);
+    });
+
+    it('should not invoke onPushComplete when git rejects the push', async () => {
+      let pushCompleteCalled = false;
+
+      const pushHandler = createGitHttpHandler({
+        backend,
+        onPushComplete: async () => { pushCompleteCalled = true; },
+      });
+
+      // Send an empty body — git receive-pack exits with code 128.
       const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-receive-pack`, {
         method  : 'POST',
         body    : '',
@@ -329,12 +356,10 @@ describe('createGitHttpHandler', () => {
       });
       const res = await pushHandler(req);
       expect(res.status).toBe(200);
+      await res.arrayBuffer();
 
-      // The callback fires asynchronously; give it a tick to complete.
-      await new Promise((r) => setTimeout(r, 50));
-      expect(pushCompleteCalled).toBe(true);
-      expect(callbackDid).toBe(TEST_DID);
-      expect(callbackRepo).toBe(TEST_REPO);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(pushCompleteCalled).toBe(false);
     });
 
     it('should not invoke onPushComplete for upload-pack', async () => {
@@ -352,7 +377,7 @@ describe('createGitHttpHandler', () => {
       const res = await pushHandler(req);
       expect(res.status).toBe(200);
 
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 200));
       expect(pushCompleteCalled).toBe(false);
     });
 
@@ -371,7 +396,7 @@ describe('createGitHttpHandler', () => {
       const res = await pushHandler(req);
       expect(res.status).toBe(401);
 
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 200));
       expect(pushCompleteCalled).toBe(false);
     });
   });
