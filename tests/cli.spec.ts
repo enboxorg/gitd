@@ -774,6 +774,64 @@ describe('gitd CLI commands', () => {
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
     });
+
+    it('should create PR with revision and bundle from git context', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const tmpRepo = resolve('__TESTDATA__/pr-bundle-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      // Create a git repo with a main branch and a feature branch.
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Hello\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial commit'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      // Create a feature branch with a new commit.
+      spawnSync('git', ['checkout', '-b', 'feat/test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'feature.ts'), 'export const x = 1;\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'add feature'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      // chdir into the feature branch repo.
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+
+        const logs = await captureLog(() =>
+          prCommand(ctx, ['create', 'Feature with bundle', '--base', 'main']),
+        );
+        const allOutput = logs.join('\n');
+
+        // Should create the PR.
+        expect(allOutput).toContain('Created PR #3');
+        expect(allOutput).toContain('main <- feat/test');
+
+        // Should create revision with commit info.
+        expect(allOutput).toContain('Revision: 1 commit');
+
+        // Should create bundle.
+        expect(allOutput).toContain('Bundle:');
+        expect(allOutput).toContain('bytes');
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
+    });
+
+    it('should skip bundle with --no-bundle flag', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const logs = await captureLog(() =>
+        prCommand(ctx, ['create', 'No bundle PR', '--base', 'main', '--head', 'my-branch', '--no-bundle']),
+      );
+      const allOutput = logs.join('\n');
+
+      // Should create the PR without revision/bundle.
+      expect(allOutput).toContain('Created PR #4');
+      expect(allOutput).not.toContain('Revision:');
+      expect(allOutput).not.toContain('Bundle:');
+    });
   });
 
   // =========================================================================
