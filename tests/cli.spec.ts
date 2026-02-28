@@ -1189,6 +1189,48 @@ describe('gitd CLI commands', () => {
       expect(allOutput).toContain('git-remote-did');
     });
 
+    it('--check should report failure when symlink points to wrong target', async () => {
+      const { setupCommand } = await import('../src/cli/commands/setup.js');
+      const binDir = '__TESTDATA__/cli-bin-mismatch';
+      mkdirSync(binDir, { recursive: true });
+      // Create symlinks pointing to the wrong file.
+      const { symlinkSync: sls, unlinkSync: uls } = await import('node:fs');
+      for (const name of ['git-remote-did', 'git-remote-did-credential']) {
+        const p = join(binDir, name);
+        if (existsSync(p)) { uls(p); }
+        sls('/dev/null', p);
+      }
+      try {
+        const logs = await captureLog(() => setupCommand(['--check', '--bin-dir', binDir]));
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain('[MISMATCH]');
+        expect(allOutput).toContain('Some checks failed');
+        expect(allOutput).not.toContain('All checks passed');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+
+    it('--check should report failure when binary exists but is not a symlink', async () => {
+      const { setupCommand } = await import('../src/cli/commands/setup.js');
+      const binDir = '__TESTDATA__/cli-bin-exists';
+      mkdirSync(binDir, { recursive: true });
+      // Create regular files instead of symlinks.
+      for (const name of ['git-remote-did', 'git-remote-did-credential']) {
+        writeFileSync(join(binDir, name), '#!/bin/sh\n');
+      }
+      try {
+        const logs = await captureLog(() => setupCommand(['--check', '--bin-dir', binDir]));
+        const allOutput = logs.join('\n');
+        expect(allOutput).toContain('[EXISTS]');
+        expect(allOutput).toContain('not a symlink');
+        expect(allOutput).toContain('Some checks failed');
+        expect(allOutput).not.toContain('All checks passed');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+
     it('--uninstall should remove symlinks', async () => {
       const { setupCommand } = await import('../src/cli/commands/setup.js');
       const logs = await captureLog(() => setupCommand(['--uninstall', '--bin-dir', '__TESTDATA__/cli-bin']));
