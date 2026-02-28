@@ -17,8 +17,13 @@
 
 import type { AgentContext } from '../agent.js';
 
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { readFileSync, statSync, unlinkSync } from 'node:fs';
+
 import { getRepoContextId } from '../repo-context.js';
-import { flagValue, resolveRepoName } from '../flags.js';
+import { flagValue, hasFlag, resolveRepoName } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -52,9 +57,10 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const body = flagValue(args, '--body') ?? flagValue(args, '-m') ?? '';
   const base = flagValue(args, '--base') ?? 'main';
   const head = flagValue(args, '--head');
+  const noBundle = hasFlag(args, '--no-bundle');
 
   if (!title) {
-    console.error('Usage: gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]');
+    console.error('Usage: gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>] [--no-bundle]');
     process.exit(1);
   }
 
@@ -63,12 +69,18 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   // Assign the next sequential number.
   const number = await getNextNumber(ctx, repoContextId);
 
+  // Detect git context for revision + bundle creation.
+  const gitInfo = noBundle ? null : detectGitContext(base);
+
+  const headBranch = head ?? gitInfo?.headBranch;
+
   const tags: Record<string, string> = {
     status     : 'open',
     baseBranch : base,
     number     : String(number),
   };
-  if (head) { tags.headBranch = head; }
+  if (headBranch) { tags.headBranch = headBranch; }
+  if (gitInfo) { tags.sourceDid = ctx.did; }
 
   const { status, record } = await ctx.patches.records.create('repo/patch', {
     data            : { title, body, number },
@@ -81,8 +93,13 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Created PR #${number}: "${title}" (${base}${head ? ` <- ${head}` : ''})`);
+  console.log(`Created PR #${number}: "${title}" (${base}${headBranch ? ` <- ${headBranch}` : ''})`);
   console.log(`  Record ID: ${record.id}`);
+
+  // Create revision + bundle if we have git context.
+  if (gitInfo) {
+    await createRevisionAndBundle(ctx, record, gitInfo);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +388,158 @@ async function prList(ctx: AgentContext, args: string[]): Promise<void> {
     const branches = head ? `${base} <- ${head}` : base;
     console.log(`  #${String(num).padEnd(4)} [${st.toUpperCase().padEnd(6)}] ${data.title} (${branches})`);
     console.log(`        created: ${date}  id: ${rec.id}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Git context detection + revision/bundle creation
+// ---------------------------------------------------------------------------
+
+/** Git information collected from the working directory. */
+type GitContext = {
+  headCommit : string;
+  baseCommit : string;
+  headBranch : string;
+  commitCount : number;
+  diffStat : { additions: number; deletions: number; filesChanged: number };
+};
+
+/** Run a git command synchronously, returning trimmed stdout or `null` on failure. */
+function git(args: string[]): string | null {
+  const result = spawnSync('git', args, {
+    encoding : 'utf-8',
+    timeout  : 30_000,
+    stdio    : ['pipe', 'pipe', 'pipe'],
+  });
+  if (result.status !== 0) { return null; }
+  return result.stdout?.trim() ?? null;
+}
+
+/**
+ * Detect git context for the current working directory.
+ *
+ * Returns `null` if not in a git repo, the base branch doesn't exist,
+ * or there are no commits to bundle.
+ */
+function detectGitContext(baseBranch: string): GitContext | null {
+  // Check we're in a git repo.
+  const headCommit = git(['rev-parse', 'HEAD']);
+  if (!headCommit) { return null; }
+
+  // Resolve the merge base.
+  const baseCommit = git(['merge-base', 'HEAD', baseBranch]);
+  if (!baseCommit) { return null; }
+
+  // No new commits — nothing to bundle.
+  if (headCommit === baseCommit) { return null; }
+
+  // Current branch name.
+  const headBranch = git(['rev-parse', '--abbrev-ref', 'HEAD']) ?? 'HEAD';
+
+  // Commit count.
+  const countStr = git(['rev-list', '--count', `${baseCommit}..HEAD`]);
+  const commitCount = parseInt(countStr ?? '0', 10);
+  if (commitCount === 0) { return null; }
+
+  // Diff stat.
+  const diffStat = parseDiffStat(
+    git(['diff', '--stat', `${baseCommit}..HEAD`]) ?? '',
+  );
+
+  return { headCommit, baseCommit, headBranch, commitCount, diffStat };
+}
+
+/** Parse the summary line of `git diff --stat` output. */
+function parseDiffStat(output: string): { additions: number; deletions: number; filesChanged: number } {
+  // The last line looks like: " 3 files changed, 10 insertions(+), 2 deletions(-)"
+  const lines = output.trim().split('\n');
+  const summary = lines[lines.length - 1] ?? '';
+  const filesMatch = summary.match(/(\d+)\s+files?\s+changed/);
+  const addMatch = summary.match(/(\d+)\s+insertions?\(\+\)/);
+  const delMatch = summary.match(/(\d+)\s+deletions?\(-\)/);
+  return {
+    filesChanged : parseInt(filesMatch?.[1] ?? '0', 10),
+    additions    : parseInt(addMatch?.[1] ?? '0', 10),
+    deletions    : parseInt(delMatch?.[1] ?? '0', 10),
+  };
+}
+
+/**
+ * Create a revision record and attach a git bundle to a patch.
+ *
+ * 1. Creates a scoped git bundle (`HEAD ^<baseCommit>`)
+ * 2. Writes a `repo/patch/revision` record with commit metadata
+ * 3. Writes a `repo/patch/revision/revisionBundle` record with the bundle binary
+ */
+async function createRevisionAndBundle(
+  ctx: AgentContext,
+  patchRecord: any,
+  gitCtx: GitContext,
+): Promise<void> {
+  // Create the revision record.
+  const { status: revStatus, record: revisionRecord } = await ctx.patches.records.create(
+    'repo/patch/revision' as any,
+    {
+      data: {
+        description : `v1: ${gitCtx.commitCount} commit${gitCtx.commitCount !== 1 ? 's' : ''}`,
+        diffStat    : gitCtx.diffStat,
+      },
+      tags: {
+        headCommit  : gitCtx.headCommit,
+        baseCommit  : gitCtx.baseCommit,
+        commitCount : gitCtx.commitCount,
+      },
+      parentContextId: patchRecord.contextId,
+    } as any,
+  );
+
+  if (revStatus.code >= 300) {
+    console.error(`  Warning: failed to create revision record: ${revStatus.code} ${revStatus.detail}`);
+    return;
+  }
+
+  console.log(`  Revision: ${gitCtx.commitCount} commit${gitCtx.commitCount !== 1 ? 's' : ''} (${gitCtx.baseCommit.slice(0, 7)}..${gitCtx.headCommit.slice(0, 7)})`);
+  console.log(`  DiffStat: +${gitCtx.diffStat.additions} -${gitCtx.diffStat.deletions} (${gitCtx.diffStat.filesChanged} file${gitCtx.diffStat.filesChanged !== 1 ? 's' : ''})`);
+
+  // Create the scoped git bundle.
+  const bundlePath = join(tmpdir(), `gitd-pr-${Date.now()}.bundle`);
+  const bundleResult = git(['bundle', 'create', bundlePath, 'HEAD', `^${gitCtx.baseCommit}`]);
+  if (bundleResult === null) {
+    console.error('  Warning: failed to create git bundle.');
+    return;
+  }
+
+  try {
+    const bundleBytes = new Uint8Array(readFileSync(bundlePath));
+    const bundleSize = statSync(bundlePath).size;
+
+    // Count refs in the bundle.
+    const refListOutput = git(['bundle', 'list-heads', bundlePath]) ?? '';
+    const refCount = refListOutput.split('\n').filter((l) => l.trim().length > 0).length;
+
+    const { status: bundleStatus } = await ctx.patches.records.create(
+      'repo/patch/revision/revisionBundle' as any,
+      {
+        data       : bundleBytes,
+        dataFormat : 'application/x-git-bundle',
+        tags       : {
+          tipCommit  : gitCtx.headCommit,
+          baseCommit : gitCtx.baseCommit,
+          refCount,
+          size       : bundleSize,
+        },
+        parentContextId: revisionRecord.contextId,
+      } as any,
+    );
+
+    if (bundleStatus.code >= 300) {
+      console.error(`  Warning: failed to attach bundle: ${bundleStatus.code} ${bundleStatus.detail}`);
+      return;
+    }
+
+    console.log(`  Bundle: ${bundleSize} bytes, ${refCount} ref${refCount !== 1 ? 's' : ''}`);
+  } finally {
+    try { unlinkSync(bundlePath); } catch { /* ignore cleanup errors */ }
   }
 }
 
