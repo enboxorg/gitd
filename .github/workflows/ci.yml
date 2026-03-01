@@ -80,18 +80,21 @@ jobs:
 
       - name: Install dependencies (link SDK packages)
         run: |
-          # Point @enbox/* deps at the locally-built SDK so CI doesn't
-          # need them published to npm yet.
+          # Remove unpublished @enbox/* deps before install, then
+          # symlink them from the locally-built SDK checkout.
           node -e "
             const pkg = require('./package.json');
-            const sdk = '.enbox-sdk/packages';
             for (const name of ['agent','api','auth']) {
-              if (pkg.dependencies['@enbox/'+name])
-                pkg.dependencies['@enbox/'+name] = 'link:'+sdk+'/'+name;
+              delete pkg.dependencies['@enbox/'+name];
             }
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
           "
           bun install
+          # Symlink locally-built SDK packages into node_modules
+          for pkg in agent api auth; do
+            rm -rf "node_modules/@enbox/$pkg"
+            ln -s "$PWD/.enbox-sdk/packages/$pkg" "node_modules/@enbox/$pkg"
+          done
 
       - name: Lint
         run: bun run lint
@@ -154,14 +157,16 @@ jobs:
         run: |
           node -e "
             const pkg = require('./package.json');
-            const sdk = '.enbox-sdk/packages';
             for (const name of ['agent','api','auth']) {
-              if (pkg.dependencies['@enbox/'+name])
-                pkg.dependencies['@enbox/'+name] = 'link:'+sdk+'/'+name;
+              delete pkg.dependencies['@enbox/'+name];
             }
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
           "
           bun install
+          for pkg in agent api auth; do
+            rm -rf "node_modules/@enbox/$pkg"
+            ln -s "$PWD/.enbox-sdk/packages/$pkg" "node_modules/@enbox/$pkg"
+          done
 
       - name: Build
         run: bun run build
