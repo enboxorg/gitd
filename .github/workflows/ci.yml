@@ -67,18 +67,10 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Restore enbox SDK bun cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-enbox-sdk-${{ hashFiles('../enbox-sdk/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-enbox-sdk-
-
       - name: Install & build enbox SDK
         working-directory: ../enbox-sdk
         run: |
-          bun install --frozen-lockfile
+          bun install
           bun run build
 
       - name: Install dependencies (link SDK packages)
@@ -146,18 +138,10 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Restore enbox SDK bun cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-enbox-sdk-${{ hashFiles('../enbox-sdk/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-enbox-sdk-
-
       - name: Install & build enbox SDK
         working-directory: ../enbox-sdk
         run: |
-          bun install --frozen-lockfile
+          bun install
           bun run build
 
       - name: Install dependencies (link SDK packages)
