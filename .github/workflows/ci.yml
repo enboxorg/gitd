@@ -53,21 +53,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout enbox SDK
+        uses: actions/checkout@v4
+        with:
+          repository: enboxorg/enbox
+          path: .enbox-sdk
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Restore bun cache
+      - name: Restore enbox SDK bun cache
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-store-${{ hashFiles('**/bun.lock') }}
+          key: ${{ runner.os }}-bun-enbox-sdk-${{ hashFiles('.enbox-sdk/bun.lock') }}
           restore-keys: |
-            ${{ runner.os }}-bun-store-
+            ${{ runner.os }}-bun-enbox-sdk-
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Install & build enbox SDK
+        working-directory: .enbox-sdk
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Install dependencies (link SDK packages)
+        run: |
+          # Point @enbox/* deps at the locally-built SDK so CI doesn't
+          # need them published to npm yet.
+          node -e "
+            const pkg = require('./package.json');
+            const sdk = '.enbox-sdk/packages';
+            for (const name of ['agent','api','auth']) {
+              if (pkg.dependencies['@enbox/'+name])
+                pkg.dependencies['@enbox/'+name] = 'link:'+sdk+'/'+name;
+            }
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
+          "
+          bun install
 
       - name: Lint
         run: bun run lint
@@ -101,21 +125,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout enbox SDK
+        uses: actions/checkout@v4
+        with:
+          repository: enboxorg/enbox
+          path: .enbox-sdk
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Restore bun cache
+      - name: Restore enbox SDK bun cache
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-store-${{ hashFiles('**/bun.lock') }}
+          key: ${{ runner.os }}-bun-enbox-sdk-${{ hashFiles('.enbox-sdk/bun.lock') }}
           restore-keys: |
-            ${{ runner.os }}-bun-store-
+            ${{ runner.os }}-bun-enbox-sdk-
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Install & build enbox SDK
+        working-directory: .enbox-sdk
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Install dependencies (link SDK packages)
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const sdk = '.enbox-sdk/packages';
+            for (const name of ['agent','api','auth']) {
+              if (pkg.dependencies['@enbox/'+name])
+                pkg.dependencies['@enbox/'+name] = 'link:'+sdk+'/'+name;
+            }
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
+          "
+          bun install
 
       - name: Build
         run: bun run build
