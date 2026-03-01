@@ -21,9 +21,9 @@ import type { ProviderAuthParams, RegistrationTokenData, SyncOption } from '@enb
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
-import { AuthManager } from '@enbox/auth';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
+import { AuthManager, LevelStorage } from '@enbox/auth';
 
 import { createSqliteDwnApi } from './dwn-sqlite.js';
 import { profileDataPath } from '../profiles/config.js';
@@ -212,9 +212,12 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
   const agent = await EnboxUserAgent.create({ dataPath, dwnApi });
 
   // Create an AuthManager with the pre-built agent + registration config.
+  // Explicitly set the auth store inside the agent's dataPath so it doesn't
+  // fall back to the default CWD-relative 'DATA/AGENT/AUTH_STORE'.
   const auth = await AuthManager.create({
     agent,
     password,
+    storage      : new LevelStorage(join(dataPath, 'AUTH_STORE')),
     sync         : sync === 'off' ? 'off' : sync as SyncOption,
     dwnEndpoints : ['https://enbox-dwn.fly.dev'],
     registration : {
