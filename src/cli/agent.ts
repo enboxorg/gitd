@@ -15,8 +15,8 @@
  * @module
  */
 
-import type { ProviderAuthParams, RegistrationTokenData, SyncOption } from '@enbox/auth';
 import type { TypedEnbox } from '@enbox/api';
+import type { ProviderAuthParams, RegistrationTokenData, SyncOption } from '@enbox/auth';
 
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -215,14 +215,14 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
   const auth = await AuthManager.create({
     agent,
     password,
-    sync            : sync === 'off' ? 'off' : sync as SyncOption,
-    dwnEndpoints    : ['https://enbox-dwn.fly.dev'],
-    registration    : {
-      onSuccess             : () => { /* silent */ },
-      onFailure             : (err) => { console.error(`[dwn-registration] ${(err as Error).message}`); },
-      onProviderAuthRequired: handleProviderAuth,
-      registrationTokens    : loadRegistrationTokens(dataPath),
-      onRegistrationTokens  : (tokens) => { saveRegistrationTokens(dataPath, tokens); },
+    sync         : sync === 'off' ? 'off' : sync as SyncOption,
+    dwnEndpoints : ['https://enbox-dwn.fly.dev'],
+    registration : {
+      onSuccess              : () => { /* silent */ },
+      onFailure              : (err) => { console.error(`[dwn-registration] ${(err as Error).message}`); },
+      onProviderAuthRequired : handleProviderAuth,
+      registrationTokens     : loadRegistrationTokens(dataPath),
+      onRegistrationTokens   : (tokens) => { saveRegistrationTokens(dataPath, tokens); },
     },
   });
 
@@ -230,7 +230,7 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
   // subsequent launches unlock vault + restore identity.
   const session = await auth.connect({
     password,
-    recoveryPhrase : inputPhrase,
+    recoveryPhrase: inputPhrase,
   });
 
   // Build the Enbox API from the session.
