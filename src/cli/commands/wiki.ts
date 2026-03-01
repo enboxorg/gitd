@@ -70,6 +70,8 @@ async function wikiCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create wiki page record');}
+
   console.log(`Created wiki page: ${title} (/${slug})`);
   console.log(`  Record ID: ${record.id}`);
 }

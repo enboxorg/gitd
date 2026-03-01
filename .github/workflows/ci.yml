@@ -53,44 +53,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout enbox SDK
-        uses: actions/checkout@v4
-        with:
-          repository: enboxorg/enbox
-          path: enbox-sdk
-
-      - name: Move SDK out of working tree
-        run: mv enbox-sdk ..
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install & build enbox SDK
-        working-directory: ../enbox-sdk
-        run: |
-          bun install
-          bun run build
+      - name: Restore bun cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-store-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-store-
 
-      - name: Install dependencies (link SDK packages)
-        run: |
-          # Remove unpublished @enbox/* deps before install, then
-          # symlink them from the locally-built SDK checkout.
-          SDK="$(cd ../enbox-sdk && pwd)"
-          node -e "
-            const pkg = require('./package.json');
-            for (const name of ['agent','api','auth']) {
-              delete pkg.dependencies['@enbox/'+name];
-            }
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
-          "
-          bun install
-          # Symlink locally-built SDK packages into node_modules
-          for pkg in agent api auth; do
-            rm -rf "node_modules/@enbox/$pkg"
-            ln -s "$SDK/packages/$pkg" "node_modules/@enbox/$pkg"
-          done
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Lint
         run: bun run lint
@@ -124,41 +101,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout enbox SDK
-        uses: actions/checkout@v4
-        with:
-          repository: enboxorg/enbox
-          path: enbox-sdk
-
-      - name: Move SDK out of working tree
-        run: mv enbox-sdk ..
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install & build enbox SDK
-        working-directory: ../enbox-sdk
-        run: |
-          bun install
-          bun run build
+      - name: Restore bun cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-store-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-store-
 
-      - name: Install dependencies (link SDK packages)
-        run: |
-          SDK="$(cd ../enbox-sdk && pwd)"
-          node -e "
-            const pkg = require('./package.json');
-            for (const name of ['agent','api','auth']) {
-              delete pkg.dependencies['@enbox/'+name];
-            }
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');
-          "
-          bun install
-          for pkg in agent api auth; do
-            rm -rf "node_modules/@enbox/$pkg"
-            ln -s "$SDK/packages/$pkg" "node_modules/@enbox/$pkg"
-          done
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build
         run: bun run build

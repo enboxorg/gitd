@@ -118,6 +118,7 @@ async function registryPublish(ctx: AgentContext, args: string[]): Promise<void>
     console.error(`Failed to create version: ${verStatus.code} ${verStatus.detail}`);
     process.exit(1);
   }
+  if (!verRecord) {throw new Error('Failed to create version record');}
 
   // Step 4: Read and upload the tarball.
   try {

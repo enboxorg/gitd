@@ -176,6 +176,7 @@ export async function handleCreateRelease(
   if (status.code >= 300) {
     return jsonValidationError(`Failed to create release: ${status.detail}`);
   }
+  if (!record) {throw new Error('Failed to create release record');}
 
   const recTags = (record.tags as Record<string, unknown> | undefined) ?? {};
   const data = await record.data.json();

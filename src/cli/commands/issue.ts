@@ -66,6 +66,8 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create issue record');}
+
   const id = shortId(record.id);
   console.log(`Created issue ${id}: "${title}"`);
   console.log(`  Record ID: ${record.id}`);

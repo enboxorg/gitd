@@ -85,6 +85,8 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create repo record');}
+
   const remoteUrl = `did::${ctx.did}/${name}`;
 
   console.log(`Initialized forge repo "${name}" (branch: ${branch})`);

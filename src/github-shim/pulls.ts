@@ -363,6 +363,7 @@ export async function handleCreatePull(
   if (status.code >= 300) {
     return jsonValidationError(`Failed to create pull request: ${status.detail}`);
   }
+  if (!record) {throw new Error('Failed to create pull request record');}
 
   const recTags = (record.tags as Record<string, string> | undefined) ?? {};
   const data = await record.data.json();
@@ -538,6 +539,7 @@ export async function handleCreatePullReview(
   if (status.code >= 300) {
     return jsonValidationError(`Failed to create review: ${status.detail}`);
   }
+  if (!reviewRec) {throw new Error('Failed to create review record');}
 
   const owner = buildOwner(targetDid, baseUrl);
 

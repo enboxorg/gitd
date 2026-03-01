@@ -93,5 +93,5 @@ export async function createSqliteDwnApi(
     didResolver,
   });
 
-  return new AgentDwnApi({ dwn });
+  return new AgentDwnApi({ dwn } as any);
 }

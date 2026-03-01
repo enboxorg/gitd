@@ -93,6 +93,8 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create PR record');}
+
   const id = shortId(record.id);
 
   console.log(`Created PR ${id}: "${title}" (${base}${headBranch ? ` <- ${headBranch}` : ''})`);
@@ -775,6 +777,7 @@ async function createRevisionAndBundle(
     console.error(`  Warning: failed to create revision record: ${revStatus.code} ${revStatus.detail}`);
     return;
   }
+  if (!revisionRecord) {throw new Error('Failed to create revision record');}
 
   console.log(`  Revision: ${gitCtx.commitCount} commit${gitCtx.commitCount !== 1 ? 's' : ''} (${gitCtx.baseCommit.slice(0, 7)}..${gitCtx.headCommit.slice(0, 7)})`);
   console.log(`  DiffStat: +${gitCtx.diffStat.additions} -${gitCtx.diffStat.deletions} (${gitCtx.diffStat.filesChanged} file${gitCtx.diffStat.filesChanged !== 1 ? 's' : ''})`);

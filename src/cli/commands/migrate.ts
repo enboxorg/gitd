@@ -446,6 +446,8 @@ async function migrateRepoInner(ctx: AgentContext, owner: string, repo: string):
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create repo record');}
+
   console.log(`  Created repo "${gh.name}" (${gh.private ? 'private' : 'public'})`);
   console.log(`  Record ID: ${record.id}`);
   console.log(`  Source:    ${gh.html_url}`);
@@ -640,6 +642,7 @@ async function migrateIssuesInner(ctx: AgentContext, owner: string, repo: string
       console.error(`  Failed to import issue #${ghIssue.number}: ${issueStatus.code} ${issueStatus.detail}`);
       continue;
     }
+    if (!issueRecord) {throw new Error(`Failed to create issue record for #${ghIssue.number}`);}
 
     imported++;
 
@@ -755,6 +758,7 @@ async function migratePullsInner(ctx: AgentContext, owner: string, repo: string)
       console.error(`  Failed to import PR #${ghPull.number}: ${prSt.code} ${prSt.detail}`);
       continue;
     }
+    if (!prRecord) {throw new Error(`Failed to create PR record for #${ghPull.number}`);}
 
     imported++;
 
