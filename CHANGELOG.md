@@ -1,5 +1,51 @@
 # @enbox/gitd
 
+## 0.7.0
+
+### Minor Changes
+
+- [#106](https://github.com/enboxorg/gitd/pull/106) [`ac391b6`](https://github.com/enboxorg/gitd/commit/ac391b68ee93926acabb685905a9d85def7d9cf9) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add daemon lockfile (`~/.enbox/daemon.lock`) so `gitd serve` advertises its PID and port, and `git-remote-did` resolves `did::` remotes to the local daemon before attempting DID document resolution. This removes the DID-resolution round-trip for local development.
+
+- [#110](https://github.com/enboxorg/gitd/pull/110) [`978ff95`](https://github.com/enboxorg/gitd/commit/978ff952506b98a3a08e378ae9d8cfbebae5831c) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add auto-managed daemon lifecycle: `git-remote-did` now auto-starts `gitd serve` in the background when no daemon is running, with idle auto-shutdown after 1 hour. New lifecycle commands: `gitd serve status|stop|restart|logs`. The lockfile now includes the gitd version for upgrade detection.
+
+- [#109](https://github.com/enboxorg/gitd/pull/109) [`4724167`](https://github.com/enboxorg/gitd/commit/47241678193c8902983f079b9b83e1cbe33a8164) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add preflight git dependency check: all CLI commands (except `--version` and `help`) now verify that `git >= 2.28.0` is installed, with clear error messages when it is missing or outdated. Version and help commands print a warning instead of blocking.
+
+- [#103](https://github.com/enboxorg/gitd/pull/103) [`e6947c9`](https://github.com/enboxorg/gitd/commit/e6947c9800b365af3d6e957a28f83f54c4d10167) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `gitd pr checkout <number>` (alias `co`) to fetch a PR's bundle from DWN, import git objects, and create a local branch at the tip commit. Supports `--branch` to override the local branch name and `--detach` for a detached HEAD.
+
+- [#102](https://github.com/enboxorg/gitd/pull/102) [`de5dcf8`](https://github.com/enboxorg/gitd/commit/de5dcf8f14b1c0ad3dc8125eac5252064f2453a2) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Wire `gitd pr create` to automatically generate a revision record and attach a scoped git bundle when run from a git repo with commits ahead of the base branch. The command now computes merge-base, diff stats, commit count, and creates a `repo/patch/revision` + `repo/patch/revision/revisionBundle` in one shot. Use `--no-bundle` to skip git operations and create a metadata-only PR.
+
+- [#104](https://github.com/enboxorg/gitd/pull/104) [`98e04d5`](https://github.com/enboxorg/gitd/commit/98e04d51af4acd4ef800a46fffff0dc569e06dd7) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Replace metadata-only `gitd pr merge` with actual git merge. The command now checks out the base branch, performs the merge with `--merge` (default), `--squash`, or `--rebase` strategy, records the real merge commit SHA in a `mergeResult` record, creates a `statusChange` audit trail record, and deletes the local PR branch (use `--no-delete-branch` to keep it).
+
+- [#98](https://github.com/enboxorg/gitd/pull/98) [`18f310a`](https://github.com/enboxorg/gitd/commit/18f310afd55e093fc5b8c0b0e8eaaee0fd400bb1) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Rename `gitd patch` CLI command to `gitd pr` for a familiar GitHub-like UX. The `patch` subcommand is kept as an alias. All user-facing output now says "PR" instead of "patch". Internal protocol names (`repo/patch`, `ForgePatchesProtocol`) are unchanged.
+
+- [#100](https://github.com/enboxorg/gitd/pull/100) [`f01dab2`](https://github.com/enboxorg/gitd/commit/f01dab273dbb7dd8ee849b9eb01342306b2ef016) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `repo/patch/revision/bundle` path to ForgePatchesProtocol for carrying git bundle binaries with PR revisions. Each revision can have at most one bundle (`$recordLimit: { max: 1 }`), immutable, with `tipCommit`/`baseCommit`/`refCount`/`size` tags. This enables cross-DWN PR submissions where contributors attach scoped git bundles to their patch revisions.
+
+- [#105](https://github.com/enboxorg/gitd/pull/105) [`5865642`](https://github.com/enboxorg/gitd/commit/58656421d6f1bc8a694cd2b5fab2f049b074a50b) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Populate GitHub shim PR response fields from DWN revision and mergeResult records. `head.sha`, `base.sha`, `commits`, `additions`, `deletions`, `changed_files` now come from the latest revision record; `merge_commit_sha` comes from the mergeResult record. The `user` field uses `sourceDid` when available. Also add `statusChange` audit trail records to `pr close`, `pr reopen`, and the shim merge endpoint, and fix the migrate command's `CHANGES_REQUESTED` → `reject` verdict mapping.
+
+- [#136](https://github.com/enboxorg/gitd/pull/136) [`d10a031`](https://github.com/enboxorg/gitd/commit/d10a0318c2e7cb53805304f5ff407351c66ab875) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Replace sequential PR/issue numbers with short hash IDs derived from DWN record IDs (first 7 hex chars of SHA-256). Remove `number` from protocol tags and data types. CLI and web UI now use short hash IDs for display and lookup.
+
+- [#101](https://github.com/enboxorg/gitd/pull/101) [`7e3bbe4`](https://github.com/enboxorg/gitd/commit/7e3bbe4bc71b763370222a784f7345549b496953) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Open ForgePatchesProtocol to external contributors: anyone can now create patches, reviews, and review comments without needing a contributor role. All child paths (revision, revisionBundle, review, reviewComment, statusChange, mergeResult) are publicly readable. This enables open-source-style PR submissions from any DID.
+
+### Patch Changes
+
+- [#135](https://github.com/enboxorg/gitd/pull/135) [`baa4f0e`](https://github.com/enboxorg/gitd/commit/baa4f0e8d24269d55990b444cf61acf9eee86a81) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix audit findings: rebase merge logic, comment body parsing, issues protocol permissions, draft PR mapping, repo name validation, and enbox.repo git config
+
+- [#112](https://github.com/enboxorg/gitd/pull/112) [`6c46f8b`](https://github.com/enboxorg/gitd/commit/6c46f8ba5c70a0bd560ea9bb2e2646f70698d270) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add two-actor E2E collaboration test exercising the full maintainer + contributor workflow: repo creation, clone, feature branch, git bundle PR submission, review, merge, pull, and push authorization. Uses offline agent creation (DidDht with publish: false) to avoid DHT network dependency.
+
+- [#141](https://github.com/enboxorg/gitd/pull/141) [`d07aaf9`](https://github.com/enboxorg/gitd/commit/d07aaf9d86bbf0ac639450fd384cec32c490eb3f) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Support `--flag=value` syntax in CLI argument parsing so flags like `--port=8080` work in addition to `--port 8080`
+
+- [#137](https://github.com/enboxorg/gitd/pull/137) [`0a35619`](https://github.com/enboxorg/gitd/commit/0a356194ca090efc520d3deb24f6d4161f6577ba) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix potential deadlocks and unbounded memory growth in git subprocess management: drain unused stderr/stdout pipes across all spawn helpers, and handle stdin backpressure in spawnGitService
+
+- [#140](https://github.com/enboxorg/gitd/pull/140) [`53966f0`](https://github.com/enboxorg/gitd/commit/53966f0ac4b41fb0e075b3147e7d55f6f6284b1f) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Make issue and PR migration idempotent: store GitHub source number in the data payload and skip already-imported items on re-run
+
+- [#138](https://github.com/enboxorg/gitd/pull/138) [`ab5f671`](https://github.com/enboxorg/gitd/commit/ab5f6715d02600d975e410db1ef459b49b9a9073) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Guard onPushComplete behind git subprocess exit code so rejected pushes (non-fast-forward, hook failures) no longer trigger ref-sync and bundle-sync
+
+- [#139](https://github.com/enboxorg/gitd/pull/139) [`b23a762`](https://github.com/enboxorg/gitd/commit/b23a762dd9b396f221816bec56e0f3b62302833c) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Prevent silent ref deletion when git fails: ref-sync now aborts instead of deleting all DWN ref records when `git for-each-ref` exits with a non-zero code
+
+- [#144](https://github.com/enboxorg/gitd/pull/144) [`a8f9b1a`](https://github.com/enboxorg/gitd/commit/a8f9b1afecfd13a7679ccc786d2906d0d439556d) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix `setup --check` to report failure when symlinks point to the wrong target or when binaries exist as regular files instead of symlinks
+
+- [#143](https://github.com/enboxorg/gitd/pull/143) [`dc22a98`](https://github.com/enboxorg/gitd/commit/dc22a98321bf2ec6adc750a6d33b380390a69d77) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Validate port number in `gitd web` command using `parsePort` instead of raw `parseInt`, rejecting invalid values with a clear error
+
 ## 0.6.1
 
 ### Patch Changes
