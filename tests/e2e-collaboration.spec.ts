@@ -13,7 +13,7 @@
  * cross-DWN writes (`store: false` → `processRequest({ target })`)
  * and cross-DWN queries work without an HTTP DWN server.
  *
- * Agent creation bypasses `Web5UserAgent.initialize()` / `.start()` to avoid
+ * Agent creation bypasses `EnboxUserAgent.initialize()` / `.start()` to avoid
  * DHT network dependency.  Instead, we assign `agent.agentDid` directly using
  * `DidDht.create({ options: { publish: false } })`, which keeps all key
  * material in-memory and requires zero network access.
@@ -29,10 +29,11 @@ import { tmpdir } from 'node:os';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { DataStream } from '@enbox/dwn-sdk-js';
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 import { DidDht, DidJwk } from '@enbox/dids';
 
+import type { AgentContext } from '../src/cli/agent.js';
 import type { GitServer } from '../src/git-server/server.js';
 
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
@@ -73,17 +74,17 @@ const BOB_CLONE_PATH = `${BASE}/bob-clone`;
 //   1. Create the agent (optionally injecting a shared DWN)
 //   2. Assign `agent.agentDid` directly with `publish: false`
 //   3. Create an identity DID with `did:jwk` (purely local)
-//   4. Connect via `Web5.connect({ agent })` — skips vault flow
+//   4. Connect via `Enbox.connect({ agent })` — skips vault flow
 //
 // ---------------------------------------------------------------------------
 
 async function createOfflineAgent(dataPath: string): Promise<{
-  agent: Web5UserAgent;
-  web5: InstanceType<typeof Web5>;
+  agent: EnboxUserAgent;
+  enbox: InstanceType<typeof Enbox>;
   did: string;
   privateKey: Record<string, unknown>;
 }> {
-  const agent = await Web5UserAgent.create({ dataPath });
+  const agent = await EnboxUserAgent.create({ dataPath });
 
   // Assign the agent DID directly — no vault init, no DHT publish.
   // Both Ed25519 (signing) and X25519 (encryption) keys are required
@@ -113,17 +114,14 @@ async function createOfflineAgent(dataPath: string): Promise<{
     didOptions : { algorithm: 'Ed25519' },
   });
 
-  const { web5, did } = await Web5.connect({
-    agent,
-    connectedDid : identity.did.uri,
-    sync         : 'off',
-  });
+  const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+  const did = identity.did.uri;
 
   // Extract the private key for push credential signing.
   const portableDid = await identity.did.export();
   const privateKey = portableDid.privateKeys![0] as Record<string, unknown>;
 
-  return { agent, web5, did, privateKey };
+  return { agent, enbox, did, privateKey };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,23 +132,23 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   // Alice's state
   let aliceDid: string;
   let alicePrivateKey: Record<string, unknown>;
-  let aliceAgent: Web5UserAgent;
-  let aliceRepo: ReturnType<typeof Web5.prototype.using<typeof ForgeRepoProtocol>>;
-  let aliceRefs: ReturnType<typeof Web5.prototype.using<typeof ForgeRefsProtocol>>;
-  let alicePatches: ReturnType<typeof Web5.prototype.using<typeof ForgePatchesProtocol>>;
+  let aliceAgent: EnboxUserAgent;
+  let aliceRepo: AgentContext['repo'];
+  let aliceRefs: AgentContext['refs'];
+  let alicePatches: AgentContext['patches'];
   let repoContextId: string;
 
   // Bob's state
   let bobDid: string;
   let bobPrivateKey: Record<string, unknown>;
-  let bobPatches: ReturnType<typeof Web5.prototype.using<typeof ForgePatchesProtocol>>;
+  let bobPatches: AgentContext['patches'];
 
   // Shared infrastructure
   let server: GitServer;
   let cloneUrl: string;
 
   // =========================================================================
-  // Setup — create two independent Web5 agents (no DHT required)
+  // Setup — create two independent Enbox agents (no DHT required)
   // =========================================================================
 
   beforeAll(async () => {
@@ -162,9 +160,9 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     alicePrivateKey = alice.privateKey;
     aliceAgent = alice.agent;
 
-    aliceRepo = alice.web5.using(ForgeRepoProtocol);
-    aliceRefs = alice.web5.using(ForgeRefsProtocol);
-    alicePatches = alice.web5.using(ForgePatchesProtocol);
+    aliceRepo = alice.enbox.using(ForgeRepoProtocol);
+    aliceRefs = alice.enbox.using(ForgeRefsProtocol);
+    alicePatches = alice.enbox.using(ForgePatchesProtocol);
     await aliceRepo.configure();
     await aliceRefs.configure();
     await alicePatches.configure();
@@ -176,12 +174,12 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
     // Bob must install ForgeRepoProtocol before ForgePatchesProtocol
     // because the patches definition `uses` the repo protocol ($ref).
-    const bobRepo = bob.web5.using(ForgeRepoProtocol);
+    const bobRepo = bob.enbox.using(ForgeRepoProtocol);
     await bobRepo.configure();
 
     // Now Bob can install the patches protocol on his own DWN so he
     // can create properly signed records with `store: false`.
-    bobPatches = bob.web5.using(ForgePatchesProtocol);
+    bobPatches = bob.enbox.using(ForgePatchesProtocol);
     await bobPatches.configure();
 
     // ----- Create Alice's repo in DWN -----

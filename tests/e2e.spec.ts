@@ -15,8 +15,8 @@ import { promisify } from 'node:util';
 import { existsSync, rmSync } from 'node:fs';
 
 import { DidJwk } from '@enbox/dids';
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../src/cli/agent.js';
 import type { GitServer } from '../src/git-server/server.js';
@@ -68,8 +68,8 @@ describe('E2E: init → serve → clone → push → verify', () => {
     rmSync(REPOS_PATH, { recursive: true, force: true });
     rmSync(CLONE_PATH, { recursive: true, force: true });
 
-    // --- Step 1: Create Web5 agent (only install repo + refs protocols) ---
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    // --- Step 1: Create Enbox agent (only install repo + refs protocols) ---
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'e2e-test' });
     await agent.start({ password: 'e2e-test' });
 
@@ -82,15 +82,11 @@ describe('E2E: init → serve → clone → push → verify', () => {
       });
     }
 
-    const { web5, did: agentDid } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    did = agentDid;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    did = identity.did.uri;
 
-    const repoHandle = web5.using(ForgeRepoProtocol);
-    const refsHandle = web5.using(ForgeRefsProtocol);
+    const repoHandle = enbox.using(ForgeRepoProtocol);
+    const refsHandle = enbox.using(ForgeRefsProtocol);
     await repoHandle.configure();
     await refsHandle.configure();
     refs = refsHandle;
@@ -223,8 +219,8 @@ describe('E2E: init → serve → clone → push → verify', () => {
 describe('E2E: push → bundle sync → cold start → clone via restore', () => {
   let did: string;
   let repoContextId: string;
-  let repoHandle: ReturnType<typeof Web5.prototype.using<typeof ForgeRepoProtocol>>;
-  let refsHandle: ReturnType<typeof Web5.prototype.using<typeof ForgeRefsProtocol>>;
+  let repoHandle: AgentContext['repo'];
+  let refsHandle: AgentContext['refs'];
   let server: GitServer;
   let cloneUrl: string;
 
@@ -241,8 +237,8 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
     rmSync(BUNDLE_RESTORE_REPOS, { recursive: true, force: true });
     rmSync(BUNDLE_RESTORE_CLONE, { recursive: true, force: true });
 
-    // --- Step 1: Create Web5 agent ---
-    const agent = await Web5UserAgent.create({ dataPath: BUNDLE_DATA_PATH });
+    // --- Step 1: Create Enbox agent ---
+    const agent = await EnboxUserAgent.create({ dataPath: BUNDLE_DATA_PATH });
     await agent.initialize({ password: 'bundle-e2e' });
     await agent.start({ password: 'bundle-e2e' });
 
@@ -255,15 +251,11 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
       });
     }
 
-    const { web5, did: agentDid } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    did = agentDid;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    did = identity.did.uri;
 
-    repoHandle = web5.using(ForgeRepoProtocol);
-    refsHandle = web5.using(ForgeRefsProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
+    refsHandle = enbox.using(ForgeRefsProtocol);
     await repoHandle.configure();
     await refsHandle.configure();
 
@@ -385,8 +377,8 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
   let ownerDid: string;
   let ownerPrivateKey: Record<string, unknown>;
   let repoContextId: string;
-  let repoHandle: ReturnType<typeof Web5.prototype.using<typeof ForgeRepoProtocol>>;
-  let refsHandle: ReturnType<typeof Web5.prototype.using<typeof ForgeRefsProtocol>>;
+  let repoHandle: AgentContext['repo'];
+  let refsHandle: AgentContext['refs'];
   let server: GitServer;
   let cloneUrl: string;
 
@@ -399,8 +391,8 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     rmSync(AUTH_REPOS_PATH, { recursive: true, force: true });
     rmSync(AUTH_CLONE_PATH, { recursive: true, force: true });
 
-    // --- Step 1: Create Web5 agent ---
-    const agent = await Web5UserAgent.create({ dataPath: AUTH_DATA_PATH });
+    // --- Step 1: Create Enbox agent ---
+    const agent = await EnboxUserAgent.create({ dataPath: AUTH_DATA_PATH });
     await agent.initialize({ password: 'auth-e2e' });
     await agent.start({ password: 'auth-e2e' });
 
@@ -413,19 +405,15 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
       });
     }
 
-    const { web5, did: agentDid } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    ownerDid = agentDid;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    ownerDid = identity.did.uri;
 
     // Extract the owner's Ed25519 private key for signing push tokens.
     const portableDid = await identity.did.export();
     ownerPrivateKey = portableDid.privateKeys![0] as Record<string, unknown>;
 
-    repoHandle = web5.using(ForgeRepoProtocol);
-    refsHandle = web5.using(ForgeRefsProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
+    refsHandle = enbox.using(ForgeRefsProtocol);
     await repoHandle.configure();
     await refsHandle.configure();
 
@@ -696,7 +684,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
 
     // --- Step 1: Create agent at the profile's canonical data path ---
     const dataPath = profileDataPath(PROFILE_NAME);
-    const agent = await Web5UserAgent.create({ dataPath });
+    const agent = await EnboxUserAgent.create({ dataPath });
     await agent.initialize({ password: 'profile-e2e' });
     await agent.start({ password: 'profile-e2e' });
 
@@ -707,12 +695,8 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       didOptions : { algorithm: 'Ed25519' },
     });
 
-    const { web5, did } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    profileDid = did;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    profileDid = identity.did.uri;
 
     // Extract private key for credential signing.
     const portableDid = await identity.did.export();
@@ -726,8 +710,8 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
     });
 
     // --- Step 3: Set up repo + refs protocols ---
-    repoHandle = web5.using(ForgeRepoProtocol);
-    refsHandle = web5.using(ForgeRefsProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
+    refsHandle = enbox.using(ForgeRefsProtocol);
     await repoHandle.configure();
     await refsHandle.configure();
 
@@ -736,7 +720,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       data : { name: 'profile-e2e-repo', description: 'Profile E2E test', defaultBranch: 'main', dwnEndpoints: [] },
       tags : { name: 'profile-e2e-repo', visibility: 'public' },
     });
-    repoContextId = record.contextId!;
+    repoContextId = record!.contextId!;
 
     // --- Step 5: Init bare repo on disk ---
     const backend = new GitBackend({ basePath: PROFILE_REPOS_PATH });
@@ -960,8 +944,8 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
     rmSync(MR_CLONE_ALPHA, { recursive: true, force: true });
     rmSync(MR_CLONE_BETA, { recursive: true, force: true });
 
-    // --- Step 1: Create Web5 agent ---
-    const agent = await Web5UserAgent.create({ dataPath: MR_DATA_PATH });
+    // --- Step 1: Create Enbox agent ---
+    const agent = await EnboxUserAgent.create({ dataPath: MR_DATA_PATH });
     await agent.initialize({ password: 'multi-repo-e2e' });
     await agent.start({ password: 'multi-repo-e2e' });
 
@@ -974,15 +958,11 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
       });
     }
 
-    const { web5, did: agentDid } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    did = agentDid;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    did = identity.did.uri;
 
-    repoHandle = web5.using(ForgeRepoProtocol);
-    refsHandle = web5.using(ForgeRefsProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
+    refsHandle = enbox.using(ForgeRefsProtocol);
     await repoHandle.configure();
     await refsHandle.configure();
 

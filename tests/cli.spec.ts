@@ -1,7 +1,7 @@
 /**
- * CLI command tests — exercises command functions against a real Web5 agent.
+ * CLI command tests — exercises command functions against a real Enbox agent.
  *
- * Uses `Web5.connect()` with `sync: 'off'` to create an ephemeral agent,
+ * Uses `Enbox.connect()` to create an ephemeral agent,
  * then tests each command function directly.  The agent's data directory
  * (`__TESTDATA__/cli`) is cleaned before and after the suite.
  */
@@ -14,8 +14,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../src/cli/agent.js';
 
@@ -87,7 +87,7 @@ function captureError(fn: () => Promise<void>): Promise<{ errors: string[]; exit
 // ---------------------------------------------------------------------------
 
 describe('gitd CLI commands', () => {
-  let web5: Web5;
+  let enbox: Enbox;
   let did: string;
   let ctx: AgentContext;
 
@@ -97,11 +97,11 @@ describe('gitd CLI commands', () => {
     rmSync(REPOS_PATH, { recursive: true, force: true });
 
     // Create agent with isolated data path, initialize, and start.
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'test-password' });
     await agent.start({ password: 'test-password' });
 
-    // Create an identity (Web5.connect normally does this).
+    // Create an identity (Enbox.connect normally does this).
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
@@ -111,25 +111,20 @@ describe('gitd CLI commands', () => {
       });
     }
 
-    const result = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    web5 = result.web5;
-    did = result.did;
+    enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    did = identity.did.uri;
 
-    const repo = web5.using(ForgeRepoProtocol);
-    const refs = web5.using(ForgeRefsProtocol);
-    const issues = web5.using(ForgeIssuesProtocol);
-    const patches = web5.using(ForgePatchesProtocol);
-    const ci = web5.using(ForgeCiProtocol);
-    const releases = web5.using(ForgeReleasesProtocol);
-    const registry = web5.using(ForgeRegistryProtocol);
-    const social = web5.using(ForgeSocialProtocol);
-    const notifications = web5.using(ForgeNotificationsProtocol);
-    const wiki = web5.using(ForgeWikiProtocol);
-    const org = web5.using(ForgeOrgProtocol);
+    const repo = enbox.using(ForgeRepoProtocol);
+    const refs = enbox.using(ForgeRefsProtocol);
+    const issues = enbox.using(ForgeIssuesProtocol);
+    const patches = enbox.using(ForgePatchesProtocol);
+    const ci = enbox.using(ForgeCiProtocol);
+    const releases = enbox.using(ForgeReleasesProtocol);
+    const registry = enbox.using(ForgeRegistryProtocol);
+    const social = enbox.using(ForgeSocialProtocol);
+    const notifications = enbox.using(ForgeNotificationsProtocol);
+    const wiki = enbox.using(ForgeWikiProtocol);
+    const org = enbox.using(ForgeOrgProtocol);
 
     await repo.configure();
     await refs.configure();
@@ -145,7 +140,7 @@ describe('gitd CLI commands', () => {
 
     ctx = {
       did, repo, refs, issues, patches, ci, releases,
-      registry, social, notifications, wiki, org, web5,
+      registry, social, notifications, wiki, org, enbox,
     };
   });
 
@@ -269,7 +264,7 @@ describe('gitd CLI commands', () => {
   describe('getDwnEndpoints', () => {
     it('should return empty array for did:jwk (no DWN service)', () => {
       const { getDwnEndpoints } = require('../src/git-server/did-service.js');
-      const endpoints = getDwnEndpoints(web5);
+      const endpoints = getDwnEndpoints(enbox);
       // did:jwk doesn't have a DWN service entry in its DID document.
       expect(endpoints).toEqual([]);
     });
@@ -282,7 +277,7 @@ describe('gitd CLI commands', () => {
   describe('startDidRepublisher', () => {
     it('should return a no-op cleanup for non-dht DIDs', () => {
       const { startDidRepublisher } = require('../src/git-server/did-service.js');
-      const stop = startDidRepublisher(web5);
+      const stop = startDidRepublisher(enbox);
       expect(typeof stop).toBe('function');
       // Should not throw when called.
       stop();
