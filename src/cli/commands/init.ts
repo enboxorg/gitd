@@ -64,7 +64,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   // Resolve DWN endpoints: explicit flag > env > DID document > empty.
   const dwnEndpoints = dwnEndpointFlag
     ? [dwnEndpointFlag]
-    : getDwnEndpoints(ctx.web5);
+    : getDwnEndpoints(ctx.enbox);
 
   // Create the DWN repo record.
   const { status, record } = await ctx.repo.records.create('repo', {

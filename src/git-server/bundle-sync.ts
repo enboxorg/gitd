@@ -22,7 +22,7 @@
 import type { ForgeRepoProtocol } from '../repo.js';
 import type { ForgeRepoSchemaMap } from '../repo.js';
 import type { OnPushComplete } from './ref-sync.js';
-import type { TypedWeb5 } from '@enbox/api';
+import type { TypedEnbox } from '@enbox/api';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
 import { join } from 'node:path';
@@ -36,8 +36,8 @@ import { readFile, stat, unlink } from 'node:fs/promises';
 
 /** Options for creating a bundle syncer. */
 export type BundleSyncOptions = {
-  /** The typed ForgeRepoProtocol Web5 handle. */
-  repo: TypedWeb5<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
+  /** The typed ForgeRepoProtocol handle. */
+  repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
 
   /** The repo's contextId (from the ForgeRepoProtocol repo record). */
   repoContextId: string;

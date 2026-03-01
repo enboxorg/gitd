@@ -5,7 +5,7 @@
  * Git invokes this binary with a single argument: `get`, `store`, or `erase`.
  *
  * - **get**   — returns cached credentials if still valid, otherwise connects
- *               to the local Web5 agent and generates a fresh DID-signed
+ *               to the local Enbox agent and generates a fresh DID-signed
  *               push token.
  * - **store** — caches the credential so repeated operations within the
  *               token's TTL skip the expensive agent-connect + sign step.
@@ -14,7 +14,7 @@
  *
  * Credentials are cached at `~/.enbox/credential-cache.json` (mode 0o600).
  *
- * This helper creates a DID-signed push token using the local Web5 agent's
+ * This helper creates a DID-signed push token using the local Enbox agent's
  * identity, formatted as HTTP Basic auth credentials:
  *   username: did-auth
  *   password: <base64url-signature>.<base64url-token>
@@ -32,7 +32,7 @@
 
 import type { BearerDid } from '@enbox/dids';
 
-import { Web5UserAgent } from '@enbox/agent';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import {
   createPushTokenPayload,
@@ -192,7 +192,7 @@ function handleErase(request: { protocol?: string; host?: string; path?: string 
 // ---------------------------------------------------------------------------
 
 /**
- * Connect to the Web5 agent and return the identity DID and its BearerDid.
+ * Connect to the Enbox agent and return the identity DID and its BearerDid.
  *
  * Resolves the active profile (env, git config, global default, or single
  * fallback) and connects using the profile's agent data path.  Falls back
@@ -206,7 +206,7 @@ async function connectForCredentials(
   const profileName = resolveProfile();
   const dataPath = profileDataPath(profileName ?? 'default');
 
-  const agent = await Web5UserAgent.create({ dataPath });
+  const agent = await EnboxUserAgent.create({ dataPath });
   await agent.start({ password });
 
   const identities = await agent.identity.list();

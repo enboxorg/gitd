@@ -14,7 +14,7 @@
  * @module
  */
 
-import type { Web5 } from '@enbox/api';
+import type { Enbox } from '@enbox/api';
 
 import { DidDht } from '@enbox/dids';
 
@@ -48,11 +48,11 @@ const GIT_SERVICE_ID = '#git';
  * Otherwise, a new service entry is created. The updated DID document
  * is persisted in the agent store and (for did:dht) republished.
  *
- * @param web5 - The Web5 instance (provides agent DID and did API)
+ * @param web5 - The Enbox instance (provides agent DID and did API)
  * @param endpoint - The git transport HTTPS URL (e.g. `https://git.example.com`)
  * @throws If the agent does not support DID updates
  */
-export async function registerGitService(web5: Web5, endpoint: string): Promise<void> {
+export async function registerGitService(web5: Enbox, endpoint: string): Promise<void> {
   const agent = web5.agent as any;
 
   // Verify the agent supports DID updates.
@@ -97,9 +97,9 @@ export async function registerGitService(web5: Web5, endpoint: string): Promise<
  * Returns an array of endpoint URLs, or an empty array if no
  * `DecentralizedWebNode` service is found.
  *
- * @param web5 - The Web5 instance (provides agent DID document)
+ * @param web5 - The Enbox instance (provides agent DID document)
  */
-export function getDwnEndpoints(web5: Web5): string[] {
+export function getDwnEndpoints(web5: Enbox): string[] {
   const agent = web5.agent as any;
   const doc = agent?.agentDid?.document;
   if (!doc?.service) { return []; }
@@ -129,12 +129,12 @@ export function getDwnEndpoints(web5: Web5): string[] {
  * Only republishes `did:dht` DIDs.  For other methods (e.g. `did:jwk`)
  * this is a safe no-op.
  *
- * @param web5 - The Web5 instance (provides the agent's bearer DID)
+ * @param web5 - The Enbox instance (provides the agent's bearer DID)
  * @param intervalMs - Republish interval in ms (default: 1 hour)
  * @returns A cleanup function that stops the timer
  */
 export function startDidRepublisher(
-  web5: Web5,
+  web5: Enbox,
   intervalMs: number = DEFAULT_REPUBLISH_INTERVAL_MS,
 ): () => void {
   const agent = web5.agent as any;

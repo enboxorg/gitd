@@ -14,7 +14,7 @@
  * @module
  */
 
-import type { TypedWeb5 } from '@enbox/api';
+import type { TypedEnbox } from '@enbox/api';
 
 import type { ForgeRepoProtocol } from '../repo.js';
 import type { ForgeRepoSchemaMap } from '../repo.js';
@@ -27,8 +27,8 @@ import type { PushAuthorizer } from './auth.js';
 
 /** Options for creating a DWN-based push authorizer. */
 export type DwnPushAuthorizerOptions = {
-  /** The typed ForgeRepoProtocol Web5 handle. */
-  repo: TypedWeb5<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
+  /** The typed ForgeRepoProtocol handle. */
+  repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
   /** The DID of the DWN owner (server operator). */
   ownerDid: string;
 };

@@ -92,7 +92,9 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
-    "@enbox/api": "0.3.0",
+    "@enbox/agent": "^0.3.0",
+    "@enbox/api": "^0.4.0",
+    "@enbox/auth": "^0.3.0",
     "@enbox/crypto": "0.0.6",
     "@enbox/dids": "0.0.7",
     "@enbox/dwn-sdk-js": "0.1.0",

@@ -15,7 +15,7 @@
  * @module
  */
 
-import type { TypedWeb5 } from '@enbox/api';
+import type { TypedEnbox } from '@enbox/api';
 
 import { spawn } from 'node:child_process';
 
@@ -38,8 +38,8 @@ export type GitRef = {
 
 /** Options for syncing refs. */
 export type RefSyncOptions = {
-  /** The typed ForgeRefsProtocol Web5 handle. */
-  refs: TypedWeb5<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
+  /** The typed ForgeRefsProtocol handle. */
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
   /** The repo's contextId (from the ForgeRepoProtocol repo record). */
   repoContextId: string;
 };
