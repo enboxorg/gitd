@@ -78,12 +78,11 @@ jobs:
       - name: Test with coverage
         run: bun test .spec.ts --coverage --coverage-reporter=lcov --coverage-dir=coverage
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage to Coveralls
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: coverallsapp/github-action@v2
         with:
-          files: coverage/lcov.info
-          fail_ci_if_error: false
+          file: coverage/lcov.info
 
   # ---------------------------------------------------------------------------
   # DHT integration tests (non-blocking)

@@ -1,7 +1,7 @@
 # gitd
 
 [![CI](https://github.com/enboxorg/gitd/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/enboxorg/gitd/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/enboxorg/gitd/graph/badge.svg)](https://codecov.io/gh/enboxorg/gitd)
+[![Coverage](https://coveralls.io/repos/github/enboxorg/gitd/badge.svg?branch=main)](https://coveralls.io/github/enboxorg/gitd?branch=main)
 [![npm](https://img.shields.io/npm/v/@enbox/gitd)](https://www.npmjs.com/package/@enbox/gitd)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
