@@ -271,6 +271,7 @@ export async function handleCreateIssue(
   if (status.code >= 300) {
     return jsonValidationError(`Failed to create issue: ${status.detail}`);
   }
+  if (!record) {throw new Error('Failed to create issue record');}
 
   const tags = (record.tags as Record<string, string> | undefined) ?? {};
   const data = await record.data.json();
@@ -371,6 +372,7 @@ export async function handleCreateIssueComment(
   if (status.code >= 300) {
     return jsonValidationError(`Failed to create comment: ${status.detail}`);
   }
+  if (!commentRec) {throw new Error('Failed to create comment record');}
 
   const owner = buildOwner(targetDid, baseUrl);
 

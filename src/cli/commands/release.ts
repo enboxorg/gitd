@@ -70,6 +70,8 @@ async function releaseCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create release record');}
+
   console.log(`Created release ${tagName}${name !== tagName ? ` ("${name}")` : ''}`);
   console.log(`  Record ID: ${record.id}`);
   if (prerelease) { console.log('  Pre-release: yes'); }

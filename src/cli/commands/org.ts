@@ -83,6 +83,8 @@ async function orgCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create organization record');}
+
   console.log(`Created organization: ${name}`);
   console.log(`  Record ID: ${record.id}`);
 }
@@ -313,6 +315,8 @@ async function teamCreate(ctx: AgentContext, args: string[]): Promise<void> {
     console.error(`Failed to create team: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+
+  if (!record) {throw new Error('Failed to create team record');}
 
   console.log(`Created team: ${name}`);
   console.log(`  Team ID: ${record.id}`);

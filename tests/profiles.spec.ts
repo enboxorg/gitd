@@ -1,6 +1,6 @@
 /**
  * Profile management tests — exercises config I/O, profile resolution,
- * and the auth command against a real Web5 agent.
+ * and the auth command against a real Enbox agent.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 

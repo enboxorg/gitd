@@ -1,6 +1,6 @@
 /**
  * Indexer tests — exercises the IndexerStore, IndexerCrawler, and REST
- * API against a real Web5 agent with seeded DWN records.
+ * API against a real Enbox agent with seeded DWN records.
  *
  * The test agent is created once in `beforeAll`, records are seeded,
  * then the crawler indexes them and the API is verified.
@@ -9,8 +9,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import { rmSync } from 'node:fs';
 
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../src/cli/agent.js';
 
@@ -59,7 +59,7 @@ describe('gitd indexer', () => {
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
 
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'test-password' });
     await agent.start({ password: 'test-password' });
 
@@ -72,24 +72,20 @@ describe('gitd indexer', () => {
       });
     }
 
-    const result = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    const { web5, did } = result;
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const did = identity.did.uri;
 
-    const repo = web5.using(ForgeRepoProtocol);
-    const refs = web5.using(ForgeRefsProtocol);
-    const issues = web5.using(ForgeIssuesProtocol);
-    const patches = web5.using(ForgePatchesProtocol);
-    const ci = web5.using(ForgeCiProtocol);
-    const releases = web5.using(ForgeReleasesProtocol);
-    const registry = web5.using(ForgeRegistryProtocol);
-    const social = web5.using(ForgeSocialProtocol);
-    const notifications = web5.using(ForgeNotificationsProtocol);
-    const wiki = web5.using(ForgeWikiProtocol);
-    const org = web5.using(ForgeOrgProtocol);
+    const repo = enbox.using(ForgeRepoProtocol);
+    const refs = enbox.using(ForgeRefsProtocol);
+    const issues = enbox.using(ForgeIssuesProtocol);
+    const patches = enbox.using(ForgePatchesProtocol);
+    const ci = enbox.using(ForgeCiProtocol);
+    const releases = enbox.using(ForgeReleasesProtocol);
+    const registry = enbox.using(ForgeRegistryProtocol);
+    const social = enbox.using(ForgeSocialProtocol);
+    const notifications = enbox.using(ForgeNotificationsProtocol);
+    const wiki = enbox.using(ForgeWikiProtocol);
+    const org = enbox.using(ForgeOrgProtocol);
 
     await repo.configure();
     await refs.configure();
@@ -105,7 +101,7 @@ describe('gitd indexer', () => {
 
     ctx = {
       did, repo, refs, issues, patches, ci, releases,
-      registry, social, notifications, wiki, org, web5,
+      registry, social, notifications, wiki, org, enbox,
     };
 
     // -----------------------------------------------------------------------

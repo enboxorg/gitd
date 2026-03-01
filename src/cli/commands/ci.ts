@@ -208,6 +208,8 @@ async function ciCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create check suite record');}
+
   console.log(`Created check suite for ${commitSha.slice(0, 8)} (app: ${app})`);
   console.log(`  Suite ID: ${record.id}`);
 }
@@ -245,6 +247,8 @@ async function ciRun(ctx: AgentContext, args: string[]): Promise<void> {
     console.error(`Failed to create check run: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+
+  if (!record) {throw new Error('Failed to create check run record');}
 
   console.log(`Created check run "${name}" in suite ${suiteId.slice(0, 8)}...`);
   console.log(`  Run ID: ${record.id}`);

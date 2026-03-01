@@ -1,15 +1,15 @@
 /**
  * Tests for the DWN-based push authorizer.
  *
- * Tests the `createDwnPushAuthorizer()` function using a real Web5 agent
+ * Tests the `createDwnPushAuthorizer()` function using a real Enbox agent
  * with ForgeRepoProtocol installed, verifying role-based push authorization.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import { rmSync } from 'node:fs';
 
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import { createDwnPushAuthorizer } from '../src/git-server/push-authorizer.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
@@ -21,15 +21,15 @@ const DATA_PATH = '__TESTDATA__/push-auth';
 // ---------------------------------------------------------------------------
 
 describe('createDwnPushAuthorizer', () => {
-  let web5: Web5;
+  let enbox: Enbox;
   let did: string;
-  let repo: ReturnType<Web5['using']>;
+  let repo: ReturnType<Enbox['using']>;
   let repoContextId: string;
 
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
 
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'test-password' });
     await agent.start({ password: 'test-password' });
 
@@ -42,15 +42,10 @@ describe('createDwnPushAuthorizer', () => {
       });
     }
 
-    const result = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
-    web5 = result.web5;
-    did = result.did;
+    enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    did = identity.did.uri;
 
-    repo = web5.using(ForgeRepoProtocol);
+    repo = enbox.using(ForgeRepoProtocol);
     await repo.configure();
 
     // Create a repo record to get a contextId.

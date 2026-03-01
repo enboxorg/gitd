@@ -330,7 +330,7 @@ async function main(): Promise<void> {
   // All functional commands require git.
   requireGit();
 
-  // Commands that don't require the Web5 agent.
+  // Commands that don't require the Enbox agent.
   switch (command) {
     case 'setup':
       await setupCommand(rest);
@@ -354,7 +354,7 @@ async function main(): Promise<void> {
       break; // Fall through to agent-requiring path for `gitd serve`.
   }
 
-  // Commands that require the Web5 agent.
+  // Commands that require the Enbox agent.
   const password = await getPassword();
   const profileFlag = flagValue(rest, '--profile');
   const profileName = resolveProfile(profileFlag);
@@ -461,7 +461,7 @@ async function main(): Promise<void> {
       process.exit(1);
   }
 
-  // One-shot commands reach here after completing.  The Web5 agent keeps
+  // One-shot commands reach here after completing.  The Enbox agent keeps
   // LevelDB stores and other handles open, which prevents the process from
   // exiting naturally.  Long-running commands (serve, web, daemon, indexer,
   // github-api, shim) never reach this point because they block on an

@@ -3,7 +3,7 @@
  *
  * Tests the `createFullBundle`, `createIncrementalBundle`, and
  * `createBundleSyncer` functions against real bare git repos and a
- * live Web5 agent.
+ * live Enbox agent.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
@@ -12,8 +12,8 @@ import { promisify } from 'node:util';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import { ForgeRepoProtocol } from '../src/repo.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
@@ -171,15 +171,15 @@ describe('createIncrementalBundle', () => {
 describe('createBundleSyncer (DWN integration)', () => {
   let repoPath: string;
   let repoContextId: string;
-  let repoHandle: ReturnType<InstanceType<typeof Web5>['using']>;
+  let repoHandle: ReturnType<InstanceType<typeof Enbox>['using']>;
 
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
     rmSync(REPOS_PATH, { recursive: true, force: true });
     rmSync(WORK_PATH, { recursive: true, force: true });
 
-    // Create agent + Web5 instance.
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    // Create agent + Enbox instance.
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'bundle-test' });
     await agent.start({ password: 'bundle-test' });
 
@@ -192,13 +192,9 @@ describe('createBundleSyncer (DWN integration)', () => {
       });
     }
 
-    const { web5 } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
 
-    repoHandle = web5.using(ForgeRepoProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
     // Skip encryption: true — the test DID (did:jwk Ed25519) lacks X25519.
     // Production uses encryption: true for webhook support; bundle encryption
     // is tested separately with an appropriate DID.

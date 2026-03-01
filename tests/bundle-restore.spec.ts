@@ -1,7 +1,7 @@
 /**
  * Tests for restoring a bare git repo from DWN bundle records.
  *
- * Tests the `restoreFromBundles` function end-to-end: creates a Web5
+ * Tests the `restoreFromBundles` function end-to-end: creates an Enbox
  * agent, pushes commits, syncs bundles to DWN, then restores to a new
  * directory and verifies the repository content matches.
  */
@@ -11,8 +11,8 @@ import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, rmSync } from 'node:fs';
 
-import { Web5 } from '@enbox/api';
-import { Web5UserAgent } from '@enbox/agent';
+import { Enbox } from '@enbox/api';
+import { EnboxUserAgent } from '@enbox/agent';
 
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
@@ -38,7 +38,7 @@ const RESTORE_PATH = '__TESTDATA__/bundle-restore-output';
 describe('restoreFromBundles', () => {
   let repoPath: string;
   let repoContextId: string;
-  let repoHandle: ReturnType<InstanceType<typeof Web5>['using']>;
+  let repoHandle: ReturnType<InstanceType<typeof Enbox>['using']>;
 
   beforeAll(async () => {
     rmSync(DATA_PATH, { recursive: true, force: true });
@@ -46,8 +46,8 @@ describe('restoreFromBundles', () => {
     rmSync(WORK_PATH, { recursive: true, force: true });
     rmSync(RESTORE_PATH, { recursive: true, force: true });
 
-    // Create agent + Web5 instance.
-    const agent = await Web5UserAgent.create({ dataPath: DATA_PATH });
+    // Create agent + Enbox instance.
+    const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'restore-test' });
     await agent.start({ password: 'restore-test' });
 
@@ -60,13 +60,9 @@ describe('restoreFromBundles', () => {
       });
     }
 
-    const { web5 } = await Web5.connect({
-      agent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
 
-    repoHandle = web5.using(ForgeRepoProtocol);
+    repoHandle = enbox.using(ForgeRepoProtocol);
     // Skip encryption: true — the test DID (did:jwk Ed25519) lacks X25519.
     await repoHandle.configure();
 
@@ -168,11 +164,11 @@ describe('restoreFromBundles', () => {
   });
 
   it('should return failure when no bundles exist', async () => {
-    // Create a fresh Web5 agent with no bundle records.
+    // Create a fresh Enbox agent with no bundle records.
     const freshDataPath = `${DATA_PATH}-fresh`;
     rmSync(freshDataPath, { recursive: true, force: true });
 
-    const freshAgent = await Web5UserAgent.create({ dataPath: freshDataPath });
+    const freshAgent = await EnboxUserAgent.create({ dataPath: freshDataPath });
     await freshAgent.initialize({ password: 'fresh-test' });
     await freshAgent.start({ password: 'fresh-test' });
 
@@ -185,13 +181,9 @@ describe('restoreFromBundles', () => {
       });
     }
 
-    const { web5: freshWeb5 } = await Web5.connect({
-      agent        : freshAgent,
-      connectedDid : identity.did.uri,
-      sync         : 'off',
-    });
+    const freshEnbox = Enbox.connect({ agent: freshAgent, connectedDid: identity.did.uri });
 
-    const freshRepo = freshWeb5.using(ForgeRepoProtocol);
+    const freshRepo = freshEnbox.using(ForgeRepoProtocol);
     await freshRepo.configure();
 
     // Create a repo record (but no bundles).

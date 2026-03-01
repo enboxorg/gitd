@@ -17,7 +17,7 @@
 
 import type { ForgeRepoProtocol } from '../repo.js';
 import type { ForgeRepoSchemaMap } from '../repo.js';
-import type { TypedWeb5 } from '@enbox/api';
+import type { TypedEnbox } from '@enbox/api';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
 import { existsSync } from 'node:fs';
@@ -32,8 +32,8 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 
 /** Options for restoring a repository from DWN bundles. */
 export type BundleRestoreOptions = {
-  /** The typed ForgeRepoProtocol Web5 handle for the owner's DWN. */
-  repo: TypedWeb5<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
+  /** The typed ForgeRepoProtocol handle for the owner's DWN. */
+  repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
 
   /** Path where the bare repository should be created. */
   repoPath: string;

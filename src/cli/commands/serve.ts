@@ -205,7 +205,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   // Register the git endpoint in the DID document (if public URL is provided).
   if (publicUrl) {
     try {
-      await registerGitService(ctx.web5, publicUrl);
+      await registerGitService(ctx.enbox, publicUrl);
       console.log(`Registered GitTransport service: ${publicUrl}`);
     } catch (err) {
       console.warn(`Warning: Could not register git service: ${(err as Error).message}`);
@@ -213,7 +213,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   }
 
   // Ensure all repo records have up-to-date DWN and git endpoints.
-  const dwnEndpoints = getDwnEndpoints(ctx.web5);
+  const dwnEndpoints = getDwnEndpoints(ctx.enbox);
   const { records: allRepos } = await ctx.repo.records.query('repo');
   for (const record of allRepos) {
     const data = await record.data.json();
@@ -245,7 +245,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   }
 
   // Keep the DID document alive on the DHT network.
-  const stopRepublisher = startDidRepublisher(ctx.web5);
+  const stopRepublisher = startDidRepublisher(ctx.enbox);
 
   // Register the daemon so git-remote-did can discover it.
   writeLockfile(server.port, getVersion() ?? undefined);

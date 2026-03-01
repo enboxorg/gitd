@@ -64,7 +64,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   // Resolve DWN endpoints: explicit flag > env > DID document > empty.
   const dwnEndpoints = dwnEndpointFlag
     ? [dwnEndpointFlag]
-    : getDwnEndpoints(ctx.web5);
+    : getDwnEndpoints(ctx.enbox);
 
   // Create the DWN repo record.
   const { status, record } = await ctx.repo.records.create('repo', {
@@ -84,6 +84,8 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     console.error(`Failed to create repo: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+
+  if (!record) {throw new Error('Failed to create repo record');}
 
   const remoteUrl = `did::${ctx.did}/${name}`;
 

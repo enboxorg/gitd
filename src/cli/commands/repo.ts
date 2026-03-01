@@ -156,6 +156,8 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
     process.exit(1);
   }
 
+  if (!record) {throw new Error('Failed to create collaborator record');}
+
   console.log(`Added ${role}: ${did}`);
   console.log(`  Record ID: ${record.id}`);
 }
