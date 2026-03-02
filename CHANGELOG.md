@@ -1,5 +1,27 @@
 # @enbox/gitd
 
+## 0.9.1
+
+### Patch Changes
+
+- [#163](https://github.com/enboxorg/gitd/pull/163) [`6c63764`](https://github.com/enboxorg/gitd/commit/6c63764b400126f775aba4db182ae40da35782f4) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix TTY password prompt echo and eliminate double prompt during git push
+
+  The `/dev/tty` password prompt introduced in PR #153 was not disabling
+  terminal echo, so the vault password was visible as the user typed.
+  Now runs `stty -echo` before reading and `stty echo` after, matching
+  the behavior of `ssh`, `gpg`, and `sudo`.
+
+  Also fixes the double-prompt issue: `git-remote-did` was unconditionally
+  prompting for the vault password before resolving the DID, even when the
+  daemon was already running and the password wasn't needed. The prompt is
+  now deferred to `resolveLocalDaemon` and only triggered when a daemon
+  actually needs to be spawned. In the common case (daemon already running),
+  only the credential helper prompts — once.
+
+  Additionally switches from byte-at-a-time reads to cooked-mode line reads
+  on `/dev/tty`, which is more reliable across shells and lets the terminal
+  driver handle backspace and line editing natively.
+
 ## 0.9.0
 
 ### Minor Changes
