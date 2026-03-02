@@ -76,6 +76,7 @@ import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
 import { daemonCommand } from './commands/daemon.js';
+import { ensureDaemon } from '../daemon/lifecycle.js';
 import { flagValue } from './flags.js';
 import { githubApiCommand } from './commands/github-api.js';
 import { indexerCommand } from '../indexer/main.js';
@@ -371,6 +372,18 @@ async function main(): Promise<void> {
 
   const ctx = await connectAgent({ password, dataPath, sync: sync as any });
   ctx.profileName = profileName ?? undefined;
+
+  // For one-shot commands, ensure the background daemon is running so that
+  // `git push` (via git-remote-did) works immediately after.  Long-running
+  // commands either *are* the server or manage their own lifecycle.
+  if (!longRunning) {
+    try {
+      await ensureDaemon(password);
+    } catch {
+      // Non-fatal — warn but don't block the command.
+      console.error('[daemon] Could not start background server. Run `gitd serve` manually for push/clone.');
+    }
+  }
 
   switch (command) {
     case 'init':

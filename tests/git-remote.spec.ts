@@ -352,31 +352,25 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
     expect(result.source).toBe('GitTransport');
   });
 
-  it('should fall back to DWN service with /git suffix and DID in path', async () => {
-    const result = await resolveGitEndpoint(dwnOnlyDid);
-    expect(result.did).toBe(dwnOnlyDid);
-    expect(result.source).toBe('DecentralizedWebNode');
-    expect(result.url).toBe(`${dwnEndpointUrl}/git/${dwnOnlyDid}`);
+  it('should throw for DWN-only DID (no git server registered)', async () => {
+    await expect(
+      resolveGitEndpoint(dwnOnlyDid),
+    ).rejects.toThrow('No GitTransport service found');
   });
 
-  it('should append repo name after DID in DWN fallback endpoint', async () => {
-    const result = await resolveGitEndpoint(dwnOnlyDid, 'my-repo');
-    expect(result.url).toBe(`${dwnEndpointUrl}/git/${dwnOnlyDid}/my-repo`);
-  });
-
-  it('should throw when DID has no GitTransport or DWN services', async () => {
+  it('should throw when DID has no services', async () => {
     await expect(
       resolveGitEndpoint(noServicesDid),
-    ).rejects.toThrow('No GitTransport or DecentralizedWebNode service found');
+    ).rejects.toThrow('No GitTransport service found');
   });
 
-  it('should prefer GitTransport over DecentralizedWebNode when both exist', async () => {
+  it('should use GitTransport when both GitTransport and DWN services exist', async () => {
     const result = await resolveGitEndpoint(bothServicesDid);
     expect(result.source).toBe('GitTransport');
     expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}`);
   });
 
-  it('should prefer GitTransport over DWN even with repo appended', async () => {
+  it('should use GitTransport with repo appended when both services exist', async () => {
     const result = await resolveGitEndpoint(bothServicesDid, 'test-repo');
     expect(result.source).toBe('GitTransport');
     expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}/test-repo`);

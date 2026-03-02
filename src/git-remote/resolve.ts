@@ -3,9 +3,9 @@
  *
  * Resolves a DID document and extracts the git transport endpoint URL.
  * The resolution order is:
- *   1. Service of type `GitTransport` (preferred)
- *   2. Service of type `DecentralizedWebNode` with `/git` suffix appended
- *   3. Failure — no git endpoint found
+ *   0. Local daemon (auto-started if needed)
+ *   1. Service of type `GitTransport` in the DID document
+ *   2. Failure — no git endpoint found
  *
  * @module
  */
@@ -30,7 +30,7 @@ export type GitEndpoint = {
   did: string;
 
   /** How the endpoint was discovered. */
-  source: 'LocalDaemon' | 'GitTransport' | 'DecentralizedWebNode';
+  source: 'LocalDaemon' | 'GitTransport';
 };
 
 // ---------------------------------------------------------------------------
@@ -94,21 +94,20 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
     };
   }
 
-  // Priority 2: Fall back to DWN endpoint + /git suffix.
+  // No git-capable endpoint found.  Build a helpful error message.
   const dwnService = services.find((s) => s.type === 'DecentralizedWebNode');
   if (dwnService) {
-    const baseUrl = extractEndpointUrl(dwnService);
-    const gitUrl = baseUrl.replace(/\/$/, '') + '/git';
-    return {
-      url    : buildUrl(gitUrl, did, repo),
-      did,
-      source : 'DecentralizedWebNode',
-    };
+    throw new Error(
+      `No GitTransport service found for ${did}. `
+      + 'The DID has a DecentralizedWebNode service but no git server is registered.\n'
+      + 'Hint: start a local server with `gitd serve`, or register a public '
+      + 'GitTransport endpoint with `gitd serve --public-url <url>`.',
+    );
   }
 
   throw new Error(
-    `No GitTransport or DecentralizedWebNode service found in DID document for ${did}. ` +
-    `Services: ${services.map((s) => s.type).join(', ') || '(none)'}`,
+    `No GitTransport service found in DID document for ${did}. `
+    + `Services: ${services.map((s) => s.type).join(', ') || '(none)'}`,
   );
 }
 
@@ -158,9 +157,13 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
       did,
       source : 'LocalDaemon',
     };
-  } catch {
-    // Could not start daemon (no profile, no password, etc.) — fall through
-    // to DID document resolution.
+  } catch (err) {
+    // Could not start daemon — warn clearly so the user knows why
+    // push/clone will fail if no remote GitTransport service exists.
+    console.error(
+      `git-remote-did: could not start local daemon: ${(err as Error).message}\n`
+      + 'Hint: run `gitd serve` in another terminal, or set GITD_PASSWORD and retry.',
+    );
     return null;
   }
 }
