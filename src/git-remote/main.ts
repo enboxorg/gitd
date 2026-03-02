@@ -22,7 +22,6 @@
 
 import { spawn } from 'node:child_process';
 
-import { getVaultPassword } from './tty-prompt.js';
 import { parseDidUrl } from './parse-url.js';
 import { resolveGitEndpoint } from './resolve.js';
 
@@ -48,15 +47,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Get the vault password (env var or TTY prompt) so the daemon can
-  // auto-start if needed.  A null password is fine — ensureDaemon will
-  // just skip spawning if it can't authenticate.
-  const password = getVaultPassword() ?? undefined;
-
   // Resolve DID → HTTPS endpoint.
+  // The password for daemon auto-start is obtained lazily inside
+  // resolveLocalDaemon → ensureDaemon only when a daemon actually needs
+  // to be spawned.  This avoids prompting when the daemon is already
+  // running (the common case).
   let endpoint;
   try {
-    endpoint = await resolveGitEndpoint(parsed.did, parsed.repo, password);
+    endpoint = await resolveGitEndpoint(parsed.did, parsed.repo);
   } catch (err: unknown) {
     console.error(`git-remote-did: ${(err as Error).message}`);
     process.exit(1);
