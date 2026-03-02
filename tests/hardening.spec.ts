@@ -706,6 +706,30 @@ describe('Push authenticator — nonce replay protection', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /pulls/:number/files — route and method validation
+// ---------------------------------------------------------------------------
+
+describe('GitHub shim — pulls/:number/files route', () => {
+  it('should reject non-GET methods on /pulls/:n/files', async () => {
+    const mockCtx = {} as any;
+    const u = new URL('/repos/did:dht:abc/myrepo/pulls/1/files', 'http://localhost:8181');
+    const result = await handleShimRequest(mockCtx, u, 'POST', {}, null);
+    expect(result.status).toBe(405);
+    expect(result.body).toContain('not allowed');
+  });
+
+  it('should route GET /pulls/:n/files to the handler (returns 502 with mock ctx)', async () => {
+    // With a bare mock ctx, the handler will throw a DWN error and return 502.
+    // The important thing is it does NOT return 404 (route exists).
+    const mockCtx = {} as any;
+    const u = new URL('/repos/did:dht:abc/myrepo/pulls/1/files', 'http://localhost:8181');
+    const result = await handleShimRequest(mockCtx, u, 'GET', {}, null);
+    // 502 means the route was matched but the handler failed (no real agent).
+    expect(result.status).toBe(502);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix 9: Health endpoints (web UI)
 // ---------------------------------------------------------------------------
 
