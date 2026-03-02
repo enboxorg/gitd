@@ -64,9 +64,9 @@ describe('@enbox/gitd/git-server exports', () => {
   it('should export exactly the expected number of symbols', async () => {
     const mod = await import('../src/git-server/index.js');
     const exported = Object.keys(mod);
-    // 19 functions + 1 constant + 1 class = 21 runtime exports
+    // 20 functions + 1 constant + 1 class = 22 runtime exports
     // (types are erased at runtime)
-    expect(exported.length).toBe(21);
+    expect(exported.length).toBe(22);
   });
 });
 

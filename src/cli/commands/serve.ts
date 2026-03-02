@@ -32,6 +32,7 @@ import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
 import { getVersion } from '../../version.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
+import { withRepoLock } from '../../git-server/repo-mutex.js';
 import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
 import {
   getDwnEndpoints,
@@ -121,55 +122,64 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   });
 
   // Post-push callback — resolves repo context dynamically per-push,
-  // then runs ref sync and bundle sync.
+  // then runs ref sync and bundle sync.  Serialized per-repo via mutex
+  // to prevent concurrent pushes from racing on DWN record updates.
   const onPushComplete = async (_did: string, repoName: string, repoPath: string): Promise<void> => {
-    let repoCtx;
-    try {
-      repoCtx = await getRepoContext(ctx, repoName);
-    } catch {
-      console.error(`push-sync: repo "${repoName}" not found in DWN — skipping ref/bundle sync.`);
-      return;
-    }
+    const lockKey = `${_did}/${repoName}`;
+    await withRepoLock(lockKey, async () => {
+      let repoCtx;
+      try {
+        repoCtx = await getRepoContext(ctx, repoName);
+      } catch {
+        console.error(`push-sync: repo "${repoName}" not found in DWN — skipping ref/bundle sync.`);
+        return;
+      }
 
-    const syncRefs = createRefSyncer({
-      refs          : ctx.refs,
-      repoContextId : repoCtx.contextId,
+      const syncRefs = createRefSyncer({
+        refs          : ctx.refs,
+        repoContextId : repoCtx.contextId,
+      });
+
+      const syncBundle = createBundleSyncer({
+        repo          : ctx.repo,
+        repoContextId : repoCtx.contextId,
+        visibility    : repoCtx.visibility,
+      });
+
+      await Promise.all([
+        syncRefs(_did, repoName, repoPath),
+        syncBundle(_did, repoName, repoPath),
+      ]);
     });
-
-    const syncBundle = createBundleSyncer({
-      repo          : ctx.repo,
-      repoContextId : repoCtx.contextId,
-      visibility    : repoCtx.visibility,
-    });
-
-    await Promise.all([
-      syncRefs(_did, repoName, repoPath),
-      syncBundle(_did, repoName, repoPath),
-    ]);
   };
 
   // Auto-restore repos from DWN bundles when not found on disk.
+  // Serialized per-repo via mutex to prevent concurrent fetches from
+  // racing on the same restore.
   const onRepoNotFound = async (_did: string, repoName: string, repoPath: string): Promise<boolean> => {
-    let repoCtx;
-    try {
-      repoCtx = await getRepoContext(ctx, repoName);
-    } catch {
-      console.error(`restore: repo "${repoName}" not found in DWN — cannot restore.`);
-      return false;
-    }
+    const lockKey = `${_did}/${repoName}`;
+    return withRepoLock(lockKey, async () => {
+      let repoCtx;
+      try {
+        repoCtx = await getRepoContext(ctx, repoName);
+      } catch {
+        console.error(`restore: repo "${repoName}" not found in DWN — cannot restore.`);
+        return false;
+      }
 
-    console.log(`Restoring repo "${repoName}" from DWN bundles → ${repoPath}`);
-    const result = await restoreFromBundles({
-      repo          : ctx.repo,
-      repoPath,
-      repoContextId : repoCtx.contextId,
+      console.log(`Restoring repo "${repoName}" from DWN bundles → ${repoPath}`);
+      const result = await restoreFromBundles({
+        repo          : ctx.repo,
+        repoPath,
+        repoContextId : repoCtx.contextId,
+      });
+      if (result.success) {
+        console.log(`Restored ${result.bundlesApplied} bundle(s), tip: ${result.tipCommit}`);
+      } else {
+        console.error(`Bundle restore failed: ${result.error}`);
+      }
+      return result.success;
     });
-    if (result.success) {
-      console.log(`Restored ${result.bundlesApplied} bundle(s), tip: ${result.tipCommit}`);
-    } else {
-      console.error(`Bundle restore failed: ${result.error}`);
-    }
-    return result.success;
   };
 
   // Idle auto-shutdown — when running as a background daemon, shut down
