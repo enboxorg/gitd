@@ -35,9 +35,11 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const reposPath = resolveReposPath(args, ctx.profileName);
   const dwnEndpointFlag = flagValue(args, '--dwn-endpoint') ?? process.env.GITD_DWN_ENDPOINT;
   const skipLocal = hasFlag(args, '--no-local');
+  const isPrivate = hasFlag(args, '--private');
+  const visibility = isPrivate ? 'private' : 'public';
 
   if (!name) {
-    console.error('Usage: gitd init <name> [--description <text>] [--branch <name>] [--repos <path>] [--dwn-endpoint <url>] [--no-local]');
+    console.error('Usage: gitd init <name> [--private] [--description <text>] [--branch <name>] [--repos <path>] [--dwn-endpoint <url>] [--no-local]');
     process.exit(1);
   }
 
@@ -76,7 +78,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
     },
     tags: {
       name,
-      visibility: 'public',
+      visibility,
     },
   });
 
@@ -89,7 +91,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
 
   const remoteUrl = `did::${ctx.did}/${name}`;
 
-  console.log(`Initialized forge repo "${name}" (branch: ${branch})`);
+  console.log(`Initialized forge repo "${name}" (branch: ${branch}, ${visibility})`);
   console.log(`  DID:       ${ctx.did}`);
   console.log(`  Record ID: ${record.id}`);
   console.log(`  Context:   ${record.contextId}`);
