@@ -1,5 +1,18 @@
 # @enbox/gitd
 
+## 0.9.2
+
+### Patch Changes
+
+- [#165](https://github.com/enboxorg/gitd/pull/165) [`3adf6ad`](https://github.com/enboxorg/gitd/commit/3adf6ad87efff3933811a6118da330ffaaff7461) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix push authentication deadlock when daemon is running
+
+  The credential helper (`git-remote-did-credential`) was opening the agent's
+  LevelDB stores directly, which deadlocked when the daemon (`gitd serve`)
+  already held the exclusive lock. The helper now calls the daemon's new
+  `POST /auth/token` endpoint to request credentials without touching LevelDB.
+
+  Falls back to direct agent connection when no daemon is running.
+
 ## 0.9.1
 
 ### Patch Changes
