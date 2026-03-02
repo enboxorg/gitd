@@ -12,7 +12,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
 import { DidJwk } from '@enbox/dids';
 import { Enbox } from '@enbox/api';
@@ -35,8 +36,11 @@ import { GitBackend } from '../src/git-server/git-backend.js';
 import { readGitRefs } from '../src/git-server/ref-sync.js';
 import { restoreFromBundles } from '../src/git-server/bundle-restore.js';
 import {
+  createPushTokenPayload,
   decodePushToken,
   DID_AUTH_USERNAME,
+  encodePushToken,
+  formatAuthPassword,
   parseAuthPassword,
 } from '../src/git-server/auth.js';
 import { profileDataPath, upsertProfile } from '../src/profiles/config.js';
@@ -1202,4 +1206,215 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
       rmSync(restoreBeta, { recursive: true, force: true });
     }
   }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// E2E: credential helper via daemon /auth/token (LevelDB lock contention fix)
+// ---------------------------------------------------------------------------
+
+describe('E2E: credential helper via daemon /auth/token endpoint', () => {
+  let ownerDid: string;
+  let server: GitServer;
+  let cloneUrl: string;
+
+  const TOKEN_DATA_PATH = '__TESTDATA__/token-e2e-agent';
+  const TOKEN_REPOS_PATH = '__TESTDATA__/token-e2e-repos';
+  const TOKEN_CLONE_PATH = '__TESTDATA__/token-e2e-clone';
+  const TOKEN_ENBOX_HOME = '__TESTDATA__/token-e2e-home';
+
+  beforeAll(async () => {
+    rmSync(TOKEN_DATA_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_REPOS_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_CLONE_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_ENBOX_HOME, { recursive: true, force: true });
+
+    // --- Step 1: Create Enbox agent (holds the LevelDB lock) ---
+    const agent = await EnboxUserAgent.create({ dataPath: TOKEN_DATA_PATH });
+    await agent.initialize({ password: 'token-e2e' });
+    await agent.start({ password: 'token-e2e' });
+
+    const identities = await agent.identity.list();
+    let identity = identities[0];
+    if (!identity) {
+      identity = await agent.identity.create({
+        didMethod : 'jwk',
+        metadata  : { name: 'Token E2E Test' },
+      });
+    }
+
+    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    ownerDid = identity.did.uri;
+
+    const repoHandle = enbox.using(ForgeRepoProtocol);
+    const refsHandle = enbox.using(ForgeRefsProtocol);
+    await repoHandle.configure();
+    await refsHandle.configure();
+
+    // --- Step 2: Create repo record ---
+    await repoHandle.records.create('repo', {
+      data : { name: 'token-repo', description: 'Token E2E test repo', defaultBranch: 'main', dwnEndpoints: [] },
+      tags : { name: 'token-repo', visibility: 'public' },
+    });
+
+    // --- Step 3: Init bare git repo ---
+    const backend = new GitBackend({ basePath: TOKEN_REPOS_PATH });
+    await backend.initRepo(ownerDid, 'token-repo');
+
+    // --- Step 4: Set up server with generateToken callback ---
+    //
+    // Build a custom authenticator without nonce replay tracking (same as
+    // the other auth tests — git reuses credentials for both ref discovery
+    // and receive-pack within a single push).
+    const verifySignature = createDidSignatureVerifier();
+    const authorizePush = createDwnPushAuthorizer({
+      repo     : repoHandle,
+      ownerDid : ownerDid,
+    });
+
+    const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Basic ')) { return false; }
+
+      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+      const colonIdx = decoded.indexOf(':');
+      if (colonIdx === -1) { return false; }
+
+      const username = decoded.slice(0, colonIdx);
+      const password = decoded.slice(colonIdx + 1);
+      if (username !== DID_AUTH_USERNAME) { return false; }
+
+      let signed;
+      try { signed = parseAuthPassword(password); } catch { return false; }
+
+      let payload;
+      try { payload = decodePushToken(signed.token); } catch { return false; }
+
+      if (payload.owner !== did || payload.repo !== repo) { return false; }
+      if (payload.exp < Math.floor(Date.now() / 1000)) { return false; }
+
+      const tokenBytes = new TextEncoder().encode(signed.token);
+      const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
+      if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
+
+      return authorizePush(payload.did, did, repo);
+    };
+
+    // The generateToken callback — this is what the credential helper calls
+    // via POST /auth/token instead of opening the agent's LevelDB directly.
+    const generateToken = async (owner: string, repo: string): Promise<{ username: string; password: string } | null> => {
+      const payload = createPushTokenPayload(identity.did.uri, owner, repo);
+      const token = encodePushToken(payload);
+
+      const signer = await identity.did.getSigner();
+      const tokenBytes = new TextEncoder().encode(token);
+      const signature = await signer.sign({ data: tokenBytes });
+      const signatureBase64url = Buffer.from(signature).toString('base64url');
+
+      return {
+        username : DID_AUTH_USERNAME,
+        password : formatAuthPassword({ signature: signatureBase64url, token }),
+      };
+    };
+
+    server = await createGitServer({
+      basePath : TOKEN_REPOS_PATH,
+      port     : 0,
+      authenticatePush,
+      generateToken,
+    });
+
+    cloneUrl = `http://localhost:${server.port}/${ownerDid}/token-repo`;
+
+    // --- Step 5: Write a daemon lockfile so the credential helper discovers this server ---
+    mkdirSync(TOKEN_ENBOX_HOME, { recursive: true });
+    const lockData = {
+      pid       : process.pid,
+      port      : server.port,
+      startedAt : new Date().toISOString(),
+    };
+    writeFileSync(
+      `${TOKEN_ENBOX_HOME}/daemon.lock`,
+      JSON.stringify(lockData, null, 2) + '\n',
+      { mode: 0o644 },
+    );
+  }, 30000);
+
+  afterAll(async () => {
+    try { if (server) { await server.stop(); } } catch { /* may already be stopped */ }
+    rmSync(TOKEN_DATA_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_REPOS_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_CLONE_PATH, { recursive: true, force: true });
+    rmSync(TOKEN_ENBOX_HOME, { recursive: true, force: true });
+  });
+
+  it('should serve the /auth/token endpoint', async () => {
+    const res = await fetch(`http://localhost:${server.port}/auth/token`, {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ owner: ownerDid, repo: 'token-repo' }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { username: string; password: string };
+    expect(body.username).toBe(DID_AUTH_USERNAME);
+    expect(body.password).toContain('.');
+  });
+
+  it('should reject /auth/token with missing owner', async () => {
+    const res = await fetch(`http://localhost:${server.port}/auth/token`, {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ repo: 'token-repo' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('should clone the empty repo (clone is unauthenticated)', async () => {
+    rmSync(TOKEN_CLONE_PATH, { recursive: true, force: true });
+    await exec(`git clone "${cloneUrl}" "${TOKEN_CLONE_PATH}"`);
+    expect(existsSync(`${TOKEN_CLONE_PATH}/.git`)).toBe(true);
+  });
+
+  it('should push via git using the real credential helper binary', async () => {
+    // Prepare a commit in the clone.
+    await exec('git config user.email "token@test.com"', { cwd: TOKEN_CLONE_PATH });
+    await exec('git config user.name "Token Test"', { cwd: TOKEN_CLONE_PATH });
+    await exec('git checkout -b main', { cwd: TOKEN_CLONE_PATH });
+    await exec('echo "token test content" > README.md', { cwd: TOKEN_CLONE_PATH });
+    await exec('git add README.md', { cwd: TOKEN_CLONE_PATH });
+    await exec('git commit -m "token test commit"', { cwd: TOKEN_CLONE_PATH });
+
+    // Configure git to use the REAL git-remote-did-credential binary.
+    // The credential helper runs as a child process, so we pass ENBOX_HOME
+    // via the environment to point it at our test lockfile.
+    const credentialBin = resolve('dist/esm/git-remote/credential-main.js');
+    const enboxHome = resolve(TOKEN_ENBOX_HOME);
+
+    // The credential helper wrapper script:
+    // - Sets ENBOX_HOME so the helper reads our test lockfile
+    // - Runs the actual compiled credential helper with bun
+    // - GITD_DEBUG=1 for stderr diagnostics if something goes wrong
+    const helperCmd = `!f() { ENBOX_HOME='${enboxHome}' GITD_DEBUG=1 bun '${credentialBin}' "$@"; }; f`;
+    await exec(`git config --replace-all credential.helper '${helperCmd}'`, { cwd: TOKEN_CLONE_PATH });
+    await exec('git config credential.useHttpPath true', { cwd: TOKEN_CLONE_PATH });
+
+    // Push — the credential helper must call POST /auth/token on the
+    // daemon (our test server) instead of opening the agent's LevelDB.
+    // GIT_TERMINAL_PROMPT=0 ensures git doesn't prompt for username/password
+    // interactively if the credential helper fails.
+    const { stderr } = await exec(
+      'GIT_TERMINAL_PROMPT=0 git push -u origin main',
+      { cwd: TOKEN_CLONE_PATH },
+    );
+
+    // The credential helper should NOT have prompted for a vault password
+    // (it used the daemon endpoint instead).
+    expect(stderr ?? '').not.toContain('Vault password');
+  }, 30000);
+
+  it('should have the pushed commit in the bare repo', async () => {
+    const repoPath = server.backend.repoPath(ownerDid, 'token-repo');
+    const { stdout } = await exec('git log --oneline main', { cwd: repoPath });
+    expect(stdout).toContain('token test commit');
+  });
 });
