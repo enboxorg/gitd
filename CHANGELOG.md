@@ -1,5 +1,112 @@
 # @enbox/gitd
 
+## 0.9.0
+
+### Minor Changes
+
+- [#159](https://github.com/enboxorg/gitd/pull/159) [`4def353`](https://github.com/enboxorg/gitd/commit/4def353089cc4a9e5e43fd320ba401632e9c9fbc) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `--private` flag to `gitd init`
+
+  Repos are public by default. Pass `--private` to create a private repo
+  whose bundles are encrypted during sync. The visibility is stored in the
+  DWN repo record's `visibility` tag and is already handled downstream by
+  `bundle-sync.ts` and `migrate.ts`.
+
+- [#158](https://github.com/enboxorg/gitd/pull/158) [`13c9954`](https://github.com/enboxorg/gitd/commit/13c9954f284c500103507589b58bc8d641486d67) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add `GET /repos/:did/:repo/pulls/:number/files` endpoint to GitHub shim
+
+  Returns the list of changed files for a pull request. Since DWN revision
+  records store only aggregate diff stats (additions, deletions, files
+  changed), the response includes a summary entry with the totals. This
+  unblocks tools like `gh pr diff --name-only` that require this endpoint.
+
+- [#160](https://github.com/enboxorg/gitd/pull/160) [`2214566`](https://github.com/enboxorg/gitd/commit/221456663ba63f4667a27caf43337f42a91cf63b) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Protocol audit fixes
+
+  1. **refs.ts**: `target` tag is now required on ref records (a ref without
+     a commit SHA is meaningless).
+
+  2. **patches.ts**: `statusChange` records now require `from`/`to` tags
+     (matching the issues protocol) so transitions can be queried — e.g.
+     "all transitions that closed a PR". All callers (shim merge, CLI merge,
+     close, reopen) updated.
+
+  3. **patches.ts**: Renamed `tipCommit` → `headCommit` in the
+     `revisionBundle` schema and its callers for consistency with the
+     `revision` record which already uses `headCommit`.
+
+  4. **releases.ts**: `target_commitish` now reads the `commitSha` tag from
+     the release record instead of always returning `'main'`.
+
+  5. **credential-cache.ts**: `writeCache` now creates the parent directory
+     (`mkdirSync` with `{ recursive: true }`) before writing, preventing
+     ENOENT when `~/.enbox` doesn't exist yet.
+
+### Patch Changes
+
+- [#155](https://github.com/enboxorg/gitd/pull/155) [`5055816`](https://github.com/enboxorg/gitd/commit/50558166ac0feabc9d217dae415fafcd619a5eb5) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix daemon lifecycle UX: bun spawn crash, auto-backgrounding, port conflicts
+
+  - **Fix bun spawn crash**: Replace `createWriteStream` with `openSync` fd in
+    `spawnDaemon()`. Bun does not support `stream.Writable` as stdio — only raw
+    file descriptors, `'pipe'`, `'ignore'`, and `'inherit'`.
+
+  - **Auto-background `gitd serve`**: Running `gitd serve` now forks a background
+    daemon and exits immediately (Ollama pattern). Use `gitd serve --foreground`
+    to block the terminal for debugging. Status is available via `gitd serve status`.
+
+  - **EADDRINUSE handling**: When the server port is already in use, show a clear
+    error message with hints (`gitd serve status`, `gitd serve stop`, `--port`)
+    instead of a raw stack trace.
+
+  - **Fast-fail on spawn errors**: `spawnDaemon` now detects child process errors
+    (e.g. ENOENT when gitd binary is missing) immediately instead of polling for
+    15 seconds before timing out.
+
+- [#156](https://github.com/enboxorg/gitd/pull/156) [`34e42fa`](https://github.com/enboxorg/gitd/commit/34e42faca4f17a50105d1d8461c74a4bc7961c8b) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix `findGitdBin()` dev path heuristic
+
+  The function used `lockfilePath()` (`~/.enbox/daemon.lock`) to derive the
+  source tree location, resolving to `~/src/cli/main.ts` — completely wrong.
+
+  Now uses `import.meta.url` to resolve relative to the module file itself,
+  correctly finding `src/cli/main.ts` in the project tree.
+
+- [#157](https://github.com/enboxorg/gitd/pull/157) [`298e7ca`](https://github.com/enboxorg/gitd/commit/298e7ca0e64a49dd279e37c184db7a553d77cc41) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix GitHub shim author fields to use record author instead of repo owner
+
+  All `user` fields in the GitHub shim (issues, comments, PRs, reviews) now
+  reflect the actual DWN record author (`record.author`) instead of always
+  showing the repository owner. The `merged_by` field on pull requests now
+  reads the `mergedBy` DID from the merge result data payload instead of
+  hardcoding the owner. The `author_association` field is dynamically set
+  to `'OWNER'` or `'CONTRIBUTOR'` based on whether the author matches the
+  repository owner.
+
+- [#162](https://github.com/enboxorg/gitd/pull/162) [`0cc5f63`](https://github.com/enboxorg/gitd/commit/0cc5f63132b5689c5bf806e8a5e0e3e9e2f738d3) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Add per-repo mutex to serialize post-push sync operations
+
+  Concurrent pushes to the same repository could race on DWN record
+  updates (ref-sync, bundle-sync) or bundle restores, causing data
+  corruption. A lightweight promise-chain mutex keyed by `did/repoName`
+  now serializes these operations per repository while allowing different
+  repos to proceed concurrently.
+
+- [#161](https://github.com/enboxorg/gitd/pull/161) [`c1b863a`](https://github.com/enboxorg/gitd/commit/c1b863ae549532e91010236f8697b62607c3d178) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Harden SSRF protection against DNS rebinding attacks
+
+  `assertNotPrivateUrl` now resolves hostnames via DNS (A + AAAA) and
+  checks the resulting IP addresses against private ranges. Previously,
+  only the hostname string was checked, allowing DNS names that resolve to
+  `127.0.0.1` to bypass the filter.
+
+  Also blocks IPv6-mapped IPv4 addresses (`::ffff:127.0.0.1`) and the
+  unspecified address (`::`).
+
+- [#153](https://github.com/enboxorg/gitd/pull/153) [`ee6b661`](https://github.com/enboxorg/gitd/commit/ee6b66163b0608d453395979e7954e75e0c9390b) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Prompt for vault password on /dev/tty in git helpers when GITD_PASSWORD is not set
+
+  Both `git-remote-did` and `git-remote-did-credential` now open `/dev/tty` directly
+  to prompt for the vault password when `GITD_PASSWORD` is not set in the environment.
+  This is the same technique used by `ssh`, `gpg`, and `sudo` to prompt the user when
+  stdin/stdout are claimed by a parent process (in this case, git).
+
+  Previously, `git push` would silently fail if `GITD_PASSWORD` was not pre-set because
+  the credential helper had no way to obtain the password and the remote helper could not
+  auto-start the daemon. Now the user sees a "Vault password:" prompt and everything
+  just works.
+
 ## 0.8.0
 
 ### Minor Changes
