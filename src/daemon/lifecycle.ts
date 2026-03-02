@@ -11,13 +11,14 @@
  * @module
  */
 
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { enboxHome } from '../profiles/config.js';
 import { getVersion } from '../version.js';
-import { lockfilePath, readLockfile, removeLockfile } from './lockfile.js';
+import { readLockfile, removeLockfile } from './lockfile.js';
 
 import type { DaemonLock } from './lockfile.js';
 
@@ -293,9 +294,12 @@ export function daemonStatus(): DaemonStatus {
 // ---------------------------------------------------------------------------
 
 /** Find the gitd binary path. */
-function findGitdBin(): string {
-  // In development: use the source entry point via bun.
-  const devPath = join(dirname(lockfilePath()), '..', 'src', 'cli', 'main.ts');
+export function findGitdBin(): string {
+  // In development: use the source entry point relative to this module.
+  // This file lives at src/daemon/lifecycle.ts, so ../../cli/main.ts
+  // resolves to src/cli/main.ts.
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  const devPath = join(thisDir, '..', '..', 'src', 'cli', 'main.ts');
   if (existsSync(devPath)) {
     return devPath;
   }
