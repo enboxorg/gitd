@@ -24,7 +24,8 @@
  *     helper = /path/to/git-remote-did-credential
  *
  * Environment:
- *   GITD_PASSWORD    — vault password for the local agent
+ *   GITD_PASSWORD    — vault password for the local agent (prompted
+ *                      on /dev/tty if not set and a terminal is available)
  *   ENBOX_PROFILE    — (optional) profile name override
  *
  * @module
@@ -34,6 +35,7 @@ import type { BearerDid } from '@enbox/dids';
 
 import { EnboxUserAgent } from '@enbox/agent';
 
+import { getVaultPassword } from './tty-prompt.js';
 import {
   createPushTokenPayload,
   decodePushToken,
@@ -107,10 +109,12 @@ async function handleGet(request: { protocol?: string; host?: string; path?: str
   }
 
   // Connect to the local agent to get the DID and signing key.
-  const password = process.env.GITD_PASSWORD;
+  // Try the env var first, then prompt on /dev/tty (same technique as
+  // ssh-askpass / gpg pinentry).  Only bail if neither source works.
+  const password = getVaultPassword();
   if (!password) {
-    // Credential helpers must be non-interactive. If no password is set,
-    // silently exit and let git fall back to another credential helper.
+    // No password available (no env var, no controlling terminal).
+    // Silently exit and let git fall back to another credential helper.
     return;
   }
 
