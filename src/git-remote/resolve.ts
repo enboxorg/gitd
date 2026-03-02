@@ -12,6 +12,8 @@
 
 import type { DidService } from '@enbox/dids';
 
+import { promises as dns } from 'node:dns';
+
 import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 
 import { ensureDaemon } from '../daemon/lifecycle.js';
@@ -87,7 +89,7 @@ export async function resolveGitEndpoint(did: string, repo?: string, password?: 
   // Priority 1: Look for a GitTransport service.
   const gitService = services.find((s) => s.type === 'GitTransport');
   if (gitService) {
-    const baseUrl = extractEndpointUrl(gitService);
+    const baseUrl = await extractEndpointUrl(gitService);
     return {
       url    : buildUrl(baseUrl, did, repo),
       did,
@@ -174,7 +176,7 @@ async function resolveLocalDaemon(did: string, repo?: string, password?: string)
 // ---------------------------------------------------------------------------
 
 /** Extract a URL string from a service endpoint (handles string and array forms). */
-function extractEndpointUrl(service: DidService): string {
+async function extractEndpointUrl(service: DidService): Promise<string> {
   const ep = service.serviceEndpoint;
 
   let url: string | undefined;
@@ -191,7 +193,7 @@ function extractEndpointUrl(service: DidService): string {
     throw new Error(`Cannot extract URL from service endpoint: ${JSON.stringify(ep)}`);
   }
 
-  assertNotPrivateUrl(url);
+  await assertNotPrivateUrl(url);
   return url;
 }
 
@@ -214,6 +216,8 @@ const PRIVATE_IP_PATTERNS: RegExp[] = [
 
 const PRIVATE_IPV6_PATTERNS: RegExp[] = [
   /^::1$/, // IPv6 loopback
+  /^::$/, // Unspecified address
+  /^::ffff:/i, // IPv6-mapped IPv4 (e.g. ::ffff:127.0.0.1)
   /^fc/i, // fc00::/7 unique local
   /^fd/i, // fc00::/7 unique local
   /^fe80:/i, // fe80::/10 link-local
@@ -225,14 +229,21 @@ let allowPrivateWarned = false;
 /**
  * Assert that a URL does not resolve to a private/loopback address.
  *
+ * Checks both the hostname string and (for non-IP hostnames) the
+ * resolved IP addresses via DNS lookup. This prevents DNS rebinding
+ * attacks where `evil.example.com` resolves to `127.0.0.1`.
+ *
+ * Also rejects IPv6-mapped IPv4 addresses (`::ffff:127.0.0.1`) and
+ * the unspecified address (`::`).
+ *
  * When `GITD_ALLOW_PRIVATE=1` is set, the check is skipped and a
  * warning is printed to stderr on first use.  This is intended solely
  * for local development and testing with `did:web:localhost` or other
  * local DID methods.
  *
- * @throws If the URL hostname is a private or loopback IP (unless bypassed)
+ * @throws If the URL hostname resolves to a private/loopback address (unless bypassed)
  */
-export function assertNotPrivateUrl(urlString: string): void {
+export async function assertNotPrivateUrl(urlString: string): Promise<void> {
   if (process.env.GITD_ALLOW_PRIVATE === '1') {
     if (!allowPrivateWarned) {
       console.error(
@@ -263,16 +274,44 @@ export function assertNotPrivateUrl(urlString: string): void {
     throw new Error(`SSRF blocked: resolved endpoint points to localhost: ${urlString}`);
   }
 
+  // Check the hostname itself against IP patterns.
+  assertNotPrivateIp(bare, urlString);
+
+  // If hostname is not an IP literal, resolve via DNS and check the results.
+  const isIpLiteral = PRIVATE_IP_PATTERNS.some((p) => p.test(bare))
+    || PRIVATE_IPV6_PATTERNS.some((p) => p.test(bare))
+    || /^\d+\.\d+\.\d+\.\d+$/.test(bare)
+    || bare.includes(':');
+
+  if (!isIpLiteral) {
+    // Resolve A and AAAA records concurrently.
+    const [ipv4Addrs, ipv6Addrs] = await Promise.all([
+      dns.resolve4(bare).catch(() => [] as string[]),
+      dns.resolve6(bare).catch(() => [] as string[]),
+    ]);
+
+    for (const ip of [...ipv4Addrs, ...ipv6Addrs]) {
+      assertNotPrivateIp(ip, urlString);
+    }
+  }
+}
+
+/**
+ * Throw if an IP address falls within private, loopback, or link-local ranges.
+ *
+ * Handles IPv4, IPv6, IPv6-mapped IPv4, and the unspecified address.
+ */
+function assertNotPrivateIp(ip: string, urlString: string): void {
   // Check IPv4 private ranges.
   for (const pattern of PRIVATE_IP_PATTERNS) {
-    if (pattern.test(bare)) {
+    if (pattern.test(ip)) {
       throw new Error(`SSRF blocked: resolved endpoint points to private IP: ${urlString}`);
     }
   }
 
   // Check IPv6 private ranges.
   for (const pattern of PRIVATE_IPV6_PATTERNS) {
-    if (pattern.test(bare)) {
+    if (pattern.test(ip)) {
       throw new Error(`SSRF blocked: resolved endpoint points to private IPv6: ${urlString}`);
     }
   }
