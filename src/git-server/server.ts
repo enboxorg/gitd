@@ -192,7 +192,19 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
   });
 
   // Start listening.
-  const actualPort = await new Promise<number>((resolve) => {
+  const actualPort = await new Promise<number>((resolve, reject) => {
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        reject(new Error(
+          `Port ${port} is already in use.\n`
+          + 'Hint: another gitd instance or service may be running on this port.\n'
+          + 'Run `gitd serve status` to check, `gitd serve stop` to stop it,\n'
+          + 'or use `--port <number>` to pick a different port.',
+        ));
+      } else {
+        reject(err);
+      }
+    });
     server.listen(port, hostname, () => {
       const addr = server.address();
       const boundPort = typeof addr === 'object' && addr !== null ? addr.port : port;

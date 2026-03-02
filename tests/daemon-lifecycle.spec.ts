@@ -3,6 +3,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
+import { createGitServer } from '../src/git-server/server.js';
 import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { getVersion } from '../src/version.js';
@@ -161,5 +162,44 @@ describe('GitServer onRequest callback', () => {
     expect(requestCount).toBe(1);
     await fetch(`http://localhost:${port}/health`);
     expect(requestCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EADDRINUSE — graceful port conflict error
+// ---------------------------------------------------------------------------
+
+describe('createGitServer EADDRINUSE', () => {
+  let blocker: ReturnType<typeof createServer>;
+  let blockedPort: number;
+
+  beforeAll(async () => {
+    // Occupy a port so createGitServer will hit EADDRINUSE.
+    blocker = createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('occupied');
+    });
+    await new Promise<void>((resolve) => {
+      blocker.listen(0, () => {
+        blockedPort = (blocker.address() as any).port;
+        resolve();
+      });
+    });
+  });
+
+  afterAll(() => {
+    blocker.close();
+  });
+
+  it('should throw a helpful error when the port is already in use', async () => {
+    await expect(
+      createGitServer({ basePath: '__TESTDATA__/eaddrinuse', port: blockedPort }),
+    ).rejects.toThrow(/Port \d+ is already in use/);
+  });
+
+  it('should include a hint about gitd serve status', async () => {
+    await expect(
+      createGitServer({ basePath: '__TESTDATA__/eaddrinuse', port: blockedPort }),
+    ).rejects.toThrow(/gitd serve status/);
   });
 });

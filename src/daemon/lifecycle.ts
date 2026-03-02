@@ -12,7 +12,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { enboxHome } from '../profiles/config.js';
@@ -139,7 +139,10 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
   const logPath = daemonLogPath();
   mkdirSync(dirname(logPath), { recursive: true });
 
-  const logStream = createWriteStream(logPath, { flags: 'a' });
+  // Open a raw file descriptor for the log file.  Bun's `spawn()` does not
+  // support `stream.Writable` objects as stdio (throws "TODO: stream.Readable
+  // stdio @ 1").  A raw fd works on both Node.js and Bun.
+  const logFd = openSync(logPath, 'a');
 
   // Find the gitd binary.  In development this is the source entry point;
   // when installed globally it's on $PATH.
@@ -159,15 +162,30 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
 
   const child = spawn(gitdBin, ['serve'], {
     detached : true,
-    stdio    : ['ignore', logStream, logStream],
+    stdio    : ['ignore', logFd, logFd],
     env,
+  });
+
+  // Capture spawn errors (e.g. ENOENT when gitd binary is missing) so
+  // we can fail fast instead of polling for 15 seconds.
+  const spawnError = new Promise<never>((_, reject) => {
+    child.on('error', (err) => {
+      reject(new Error(
+        `Failed to spawn daemon: ${err.message}\n`
+        + 'Hint: ensure gitd is installed and on your PATH, or run from the project directory.',
+      ));
+    });
   });
 
   // Detach the child so it survives after we exit.
   child.unref();
 
-  // Poll the health endpoint until the daemon is ready.
-  const port = await waitForDaemon();
+  // Close the fd in the parent process — the child inherited it.
+  closeSync(logFd);
+
+  // Poll the health endpoint until the daemon is ready, but fail fast
+  // if the spawn itself errored (e.g. binary not found).
+  const port = await Promise.race([waitForDaemon(), spawnError]);
   return { port, spawned: true };
 }
 

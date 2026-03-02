@@ -56,7 +56,7 @@
  *   gitd shim go  [--port 4874]             Start Go module proxy (GOPROXY)
  *   gitd shim oci [--port 5555]             Start OCI/Docker registry proxy
  *   gitd log                                Show recent activity
- *   gitd serve [--port <port>] [--check]    Start the git transport server
+ *   gitd serve [--port <port>] [--foreground]  Start the git transport server
  *   gitd whoami                             Show connected DID
  *
  * Environment:
@@ -77,7 +77,6 @@ import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
 import { daemonCommand } from './commands/daemon.js';
 import { ensureDaemon } from '../daemon/lifecycle.js';
-import { flagValue } from './flags.js';
 import { githubApiCommand } from './commands/github-api.js';
 import { indexerCommand } from '../indexer/main.js';
 import { initCommand } from './commands/init.js';
@@ -98,6 +97,7 @@ import { socialCommand } from './commands/social.js';
 import { webCommand } from './commands/web.js';
 import { wikiCommand } from './commands/wiki.js';
 import { checkGit, requireGit, warnGit } from './preflight.js';
+import { flagValue, hasFlag } from './flags.js';
 import { profileDataPath, resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ function printUsage(): void {
   console.log('  setup [--check | --uninstall]                Configure git for DID-based remotes');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
-  console.log('  serve [--port <port>] [--check]              Start the git transport server');
+  console.log('  serve [--port <port>] [--foreground]         Start the git transport server');
   console.log('  serve status                                Show daemon status');
   console.log('  serve stop                                  Stop the background daemon');
   console.log('  serve restart                               Restart the daemon');
@@ -352,7 +352,29 @@ async function main(): Promise<void> {
         await serveDaemonCommand(rest);
         return;
       }
-      break; // Fall through to agent-requiring path for `gitd serve`.
+
+      // Auto-background: unless --foreground is passed or we ARE the
+      // background daemon, fork a background process and exit.  This
+      // follows the Ollama pattern — `gitd serve` returns immediately
+      // with a one-liner status, and only `gitd serve --foreground`
+      // blocks the terminal.
+      if (!hasFlag(rest, '--foreground') && process.env.GITD_DAEMON_BACKGROUND !== '1') {
+        const pw = await getPassword();
+        try {
+          const result = await ensureDaemon(pw);
+          if (result.spawned) {
+            console.log(`gitd server started in the background on port ${result.port}.`);
+          } else {
+            console.log(`gitd server is already running on port ${result.port}.`);
+          }
+          console.log('Run `gitd serve status` for details, `gitd serve logs` to tail output.');
+        } catch (err) {
+          console.error(`Failed to start daemon: ${(err as Error).message}`);
+          process.exit(1);
+        }
+        return;
+      }
+      break; // Fall through to agent-requiring path for foreground serve.
   }
 
   // Commands that require the Enbox agent.
