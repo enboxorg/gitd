@@ -7,9 +7,9 @@ import { createGitServer } from '../src/git-server/server.js';
 import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { getVersion } from '../src/version.js';
-import { daemonLogPath, daemonStatus, stopDaemon } from '../src/daemon/lifecycle.js';
+import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
-import { mkdirSync, unlinkSync } from 'node:fs';
 
 // ---------------------------------------------------------------------------
 // Lockfile version field
@@ -112,6 +112,27 @@ describe('daemonLogPath', () => {
     const logPath = daemonLogPath();
     expect(logPath).toContain('gitd');
     expect(logPath).toContain('daemon.log');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findGitdBin
+// ---------------------------------------------------------------------------
+
+describe('findGitdBin', () => {
+  it('should resolve to src/cli/main.ts when running from source', () => {
+    const bin = findGitdBin();
+    expect(bin).toEndWith('src/cli/main.ts');
+  });
+
+  it('should resolve a path that actually exists on disk', () => {
+    const bin = findGitdBin();
+    expect(existsSync(bin)).toBe(true);
+  });
+
+  it('should NOT resolve to a path under ~/.enbox', () => {
+    const bin = findGitdBin();
+    expect(bin).not.toContain('.enbox');
   });
 });
 
