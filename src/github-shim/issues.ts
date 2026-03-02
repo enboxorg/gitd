@@ -43,7 +43,8 @@ function buildIssueResponse(
   rec: any, data: any, tags: Record<string, string>,
   targetDid: string, repoName: string, baseUrl: string,
 ): Record<string, unknown> {
-  const owner = buildOwner(targetDid, baseUrl);
+  const authorDid = rec.author ?? targetDid;
+  const user = buildOwner(authorDid, baseUrl);
   const number = numericId(rec.id ?? '');
   const state = tags.status === 'closed' ? 'closed' : 'open';
 
@@ -63,8 +64,8 @@ function buildIssueResponse(
     created_at         : toISODate(rec.dateCreated),
     updated_at         : toISODate(rec.timestamp),
     closed_at          : state === 'closed' ? toISODate(rec.timestamp) : null,
-    user               : owner,
-    author_association : 'OWNER',
+    user,
+    author_association : authorDid === targetDid ? 'OWNER' : 'CONTRIBUTOR',
     labels             : [],
     assignees          : [],
     milestone          : null,
@@ -202,8 +203,6 @@ export async function handleListIssueComments(
     return jsonNotFound(`Issue #${number} not found.`);
   }
 
-  const owner = buildOwner(targetDid, baseUrl);
-
   // Fetch comments.
   const { records: comments } = await ctx.issues.records.query('repo/issue/comment' as any, {
     from,
@@ -216,6 +215,7 @@ export async function handleListIssueComments(
   const items: Record<string, unknown>[] = [];
   for (const comment of paged) {
     const cData = await comment.data.json();
+    const commentAuthor = comment.author ?? targetDid;
     items.push({
       id                 : numericId(comment.id ?? ''),
       node_id            : comment.id ?? '',
@@ -225,8 +225,8 @@ export async function handleListIssueComments(
       body               : cData.body ?? '',
       created_at         : toISODate(comment.dateCreated),
       updated_at         : toISODate(comment.timestamp),
-      user               : owner,
-      author_association : 'OWNER',
+      user               : buildOwner(commentAuthor, baseUrl),
+      author_association : commentAuthor === targetDid ? 'OWNER' : 'CONTRIBUTOR',
       reactions          : { url: '', total_count: 0 },
     });
   }
@@ -374,7 +374,7 @@ export async function handleCreateIssueComment(
   }
   if (!commentRec) {throw new Error('Failed to create comment record');}
 
-  const owner = buildOwner(targetDid, baseUrl);
+  const commentAuthor = commentRec.author ?? targetDid;
 
   return jsonCreated({
     id                 : numericId(commentRec.id ?? ''),
@@ -385,8 +385,8 @@ export async function handleCreateIssueComment(
     body,
     created_at         : toISODate(commentRec.dateCreated),
     updated_at         : toISODate(commentRec.dateCreated),
-    user               : owner,
-    author_association : 'OWNER',
+    user               : buildOwner(commentAuthor, baseUrl),
+    author_association : commentAuthor === targetDid ? 'OWNER' : 'CONTRIBUTOR',
     reactions          : { url: '', total_count: 0 },
   });
 }
