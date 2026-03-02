@@ -377,94 +377,104 @@ describe('SSRF protection — assertNotPrivateUrl', () => {
     delete process.env.GITD_ALLOW_PRIVATE;
   });
 
-  it('blocks localhost', () => {
-    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
-      .toThrow('SSRF blocked');
+  it('blocks localhost', async () => {
+    await expect(assertNotPrivateUrl('http://localhost:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks subdomain of localhost', () => {
-    expect(() => assertNotPrivateUrl('http://foo.localhost:8080/git'))
-      .toThrow('SSRF blocked');
+  it('blocks subdomain of localhost', async () => {
+    await expect(assertNotPrivateUrl('http://foo.localhost:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 127.x.x.x loopback', () => {
-    expect(() => assertNotPrivateUrl('http://127.0.0.1:9418/git'))
-      .toThrow('SSRF blocked');
-    expect(() => assertNotPrivateUrl('http://127.255.255.255/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 127.x.x.x loopback', async () => {
+    await expect(assertNotPrivateUrl('http://127.0.0.1:9418/git'))
+      .rejects.toThrow('SSRF blocked');
+    await expect(assertNotPrivateUrl('http://127.255.255.255/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 10.x.x.x private range', () => {
-    expect(() => assertNotPrivateUrl('http://10.0.0.1/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 10.x.x.x private range', async () => {
+    await expect(assertNotPrivateUrl('http://10.0.0.1/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 172.16-31.x.x private range', () => {
-    expect(() => assertNotPrivateUrl('http://172.16.0.1/git'))
-      .toThrow('SSRF blocked');
-    expect(() => assertNotPrivateUrl('http://172.31.255.255/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 172.16-31.x.x private range', async () => {
+    await expect(assertNotPrivateUrl('http://172.16.0.1/git'))
+      .rejects.toThrow('SSRF blocked');
+    await expect(assertNotPrivateUrl('http://172.31.255.255/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 192.168.x.x private range', () => {
-    expect(() => assertNotPrivateUrl('http://192.168.1.1/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 192.168.x.x private range', async () => {
+    await expect(assertNotPrivateUrl('http://192.168.1.1/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 169.254.x.x link-local', () => {
-    expect(() => assertNotPrivateUrl('http://169.254.0.1/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 169.254.x.x link-local', async () => {
+    await expect(assertNotPrivateUrl('http://169.254.0.1/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks 0.x.x.x', () => {
-    expect(() => assertNotPrivateUrl('http://0.0.0.0/git'))
-      .toThrow('SSRF blocked');
+  it('blocks 0.x.x.x', async () => {
+    await expect(assertNotPrivateUrl('http://0.0.0.0/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks IPv6 loopback', () => {
-    expect(() => assertNotPrivateUrl('http://[::1]:8080/git'))
-      .toThrow('SSRF blocked');
+  it('blocks IPv6 loopback', async () => {
+    await expect(assertNotPrivateUrl('http://[::1]:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks IPv6 unique-local (fc/fd)', () => {
-    expect(() => assertNotPrivateUrl('http://[fc00::1]/git'))
-      .toThrow('SSRF blocked');
-    expect(() => assertNotPrivateUrl('http://[fd12::1]/git'))
-      .toThrow('SSRF blocked');
+  it('blocks IPv6 unique-local (fc/fd)', async () => {
+    await expect(assertNotPrivateUrl('http://[fc00::1]/git'))
+      .rejects.toThrow('SSRF blocked');
+    await expect(assertNotPrivateUrl('http://[fd12::1]/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('blocks IPv6 link-local (fe80)', () => {
-    expect(() => assertNotPrivateUrl('http://[fe80::1]/git'))
-      .toThrow('SSRF blocked');
+  it('blocks IPv6 link-local (fe80)', async () => {
+    await expect(assertNotPrivateUrl('http://[fe80::1]/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('allows public URLs', () => {
-    expect(() => assertNotPrivateUrl('https://enbox-dwn.fly.dev/git')).not.toThrow();
-    expect(() => assertNotPrivateUrl('https://example.com/git')).not.toThrow();
-    expect(() => assertNotPrivateUrl('https://8.8.8.8/git')).not.toThrow();
+  it('blocks IPv6-mapped IPv4 (::ffff:127.0.0.1)', async () => {
+    await expect(assertNotPrivateUrl('http://[::ffff:127.0.0.1]:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('throws on invalid URL', () => {
-    expect(() => assertNotPrivateUrl('not-a-url'))
-      .toThrow('Invalid URL');
+  it('blocks unspecified address (::)', async () => {
+    await expect(assertNotPrivateUrl('http://[::]:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 
-  it('bypasses SSRF check when GITD_ALLOW_PRIVATE=1', () => {
+  it('allows public URLs', async () => {
+    await expect(assertNotPrivateUrl('https://enbox-dwn.fly.dev/git')).resolves.toBeUndefined();
+    await expect(assertNotPrivateUrl('https://example.com/git')).resolves.toBeUndefined();
+    await expect(assertNotPrivateUrl('https://8.8.8.8/git')).resolves.toBeUndefined();
+  });
+
+  it('throws on invalid URL', async () => {
+    await expect(assertNotPrivateUrl('not-a-url'))
+      .rejects.toThrow('Invalid URL');
+  });
+
+  it('bypasses SSRF check when GITD_ALLOW_PRIVATE=1', async () => {
     process.env.GITD_ALLOW_PRIVATE = '1';
-    expect(() => assertNotPrivateUrl('http://localhost:8080/git')).not.toThrow();
-    expect(() => assertNotPrivateUrl('http://127.0.0.1/git')).not.toThrow();
-    expect(() => assertNotPrivateUrl('http://10.0.0.1/git')).not.toThrow();
-    expect(() => assertNotPrivateUrl('http://[::1]:8080/git')).not.toThrow();
+    await expect(assertNotPrivateUrl('http://localhost:8080/git')).resolves.toBeUndefined();
+    await expect(assertNotPrivateUrl('http://127.0.0.1/git')).resolves.toBeUndefined();
+    await expect(assertNotPrivateUrl('http://10.0.0.1/git')).resolves.toBeUndefined();
+    await expect(assertNotPrivateUrl('http://[::1]:8080/git')).resolves.toBeUndefined();
   });
 
-  it('does not bypass when GITD_ALLOW_PRIVATE is not "1"', () => {
+  it('does not bypass when GITD_ALLOW_PRIVATE is not "1"', async () => {
     process.env.GITD_ALLOW_PRIVATE = 'true';
-    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
-      .toThrow('SSRF blocked');
+    await expect(assertNotPrivateUrl('http://localhost:8080/git'))
+      .rejects.toThrow('SSRF blocked');
 
     process.env.GITD_ALLOW_PRIVATE = '0';
-    expect(() => assertNotPrivateUrl('http://localhost:8080/git'))
-      .toThrow('SSRF blocked');
+    await expect(assertNotPrivateUrl('http://localhost:8080/git'))
+      .rejects.toThrow('SSRF blocked');
   });
 });
 
