@@ -103,8 +103,9 @@ async function buildPullResponse(
     } catch { /* revision may not have parseable JSON body */ }
   }
 
-  // Fetch merge result to populate merge_commit_sha.
+  // Fetch merge result to populate merge_commit_sha and merged_by.
   let mergeCommitSha: string | null = null;
+  let mergedByDid: string | null = null;
   if (merged) {
     const { records: mergeResults } = await ctx.patches.records.query('repo/patch/mergeResult' as any, {
       from,
@@ -113,6 +114,13 @@ async function buildPullResponse(
     if (mergeResults.length > 0) {
       const mrTags = (mergeResults[0].tags as Record<string, string> | undefined) ?? {};
       mergeCommitSha = mrTags.mergeCommit ?? null;
+
+      try {
+        const mrData = await mergeResults[0].data.json();
+        mergedByDid = mrData.mergedBy ?? mergeResults[0].author ?? null;
+      } catch {
+        mergedByDid = mergeResults[0].author ?? null;
+      }
     }
   }
 
@@ -136,7 +144,7 @@ async function buildPullResponse(
     mergeable           : state === 'open' ? true : null,
     merge_commit_sha    : mergeCommitSha,
     merged_at           : merged ? toISODate(rec.timestamp) : null,
-    merged_by           : merged ? owner : null,
+    merged_by           : mergedByDid ? buildOwner(mergedByDid, baseUrl) : null,
     created_at          : toISODate(rec.dateCreated),
     updated_at          : toISODate(rec.timestamp),
     closed_at           : state === 'closed' ? toISODate(rec.timestamp) : null,
@@ -284,8 +292,6 @@ export async function handleListPullReviews(
     return jsonNotFound(`Pull request #${number} not found.`);
   }
 
-  const owner = buildOwner(targetDid, baseUrl);
-
   // Fetch reviews.
   const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
     from,
@@ -300,18 +306,19 @@ export async function handleListPullReviews(
     const rData = await review.data.json();
     const rTags = (review.tags as Record<string, string> | undefined) ?? {};
     const verdict = rTags.verdict ?? 'comment';
+    const reviewAuthor = review.author ?? targetDid;
 
     items.push({
       id                 : numericId(review.id ?? ''),
       node_id            : review.id ?? '',
-      user               : owner,
+      user               : buildOwner(reviewAuthor, baseUrl),
       body               : rData.body ?? '',
       state              : VERDICT_MAP[verdict] ?? 'COMMENTED',
       html_url           : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}#pullrequestreview-${numericId(review.id ?? '')}`,
       pull_request_url   : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}`,
       submitted_at       : toISODate(review.dateCreated),
       commit_id          : '',
-      author_association : 'OWNER',
+      author_association : reviewAuthor === targetDid ? 'OWNER' : 'CONTRIBUTOR',
     });
   }
 
@@ -541,18 +548,18 @@ export async function handleCreatePullReview(
   }
   if (!reviewRec) {throw new Error('Failed to create review record');}
 
-  const owner = buildOwner(targetDid, baseUrl);
+  const reviewAuthor = reviewRec.author ?? targetDid;
 
   return jsonCreated({
     id                 : numericId(reviewRec.id ?? ''),
     node_id            : reviewRec.id ?? '',
-    user               : owner,
+    user               : buildOwner(reviewAuthor, baseUrl),
     body               : reviewBody,
     state              : VERDICT_MAP[verdict] ?? 'COMMENTED',
     html_url           : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}#pullrequestreview-${numericId(reviewRec.id ?? '')}`,
     pull_request_url   : `${baseUrl}/repos/${targetDid}/${repoName}/pulls/${number}`,
     submitted_at       : toISODate(reviewRec.dateCreated),
     commit_id          : '',
-    author_association : 'OWNER',
+    author_association : reviewAuthor === targetDid ? 'OWNER' : 'CONTRIBUTOR',
   });
 }
