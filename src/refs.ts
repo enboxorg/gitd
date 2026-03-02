@@ -72,7 +72,7 @@ export const ForgeRefsDefinition = {
           { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
         ],
         $tags: {
-          $requiredTags       : ['name', 'type'],
+          $requiredTags       : ['name', 'type', 'target'],
           $allowUndefinedTags : false,
           name                : { type: 'string' },
           type                : { type: 'string', enum: ['branch', 'tag'] },

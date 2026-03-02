@@ -56,7 +56,7 @@ function buildReleaseResponse(
     tarball_url      : `${baseUrl}/repos/${targetDid}/${repoName}/tarball/${tagName}`,
     zipball_url      : `${baseUrl}/repos/${targetDid}/${repoName}/zipball/${tagName}`,
     tag_name         : tagName,
-    target_commitish : 'main',
+    target_commitish : (tags.commitSha as string) ?? 'main',
     name             : data.name ?? tagName,
     body             : data.body ?? '',
     draft,

@@ -547,10 +547,10 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
         data       : bundleBytes,
         dataFormat : 'application/x-git-bundle',
         tags       : {
-          tipCommit : headCommit,
+          headCommit,
           baseCommit,
-          refCount  : 1,
-          size      : bundleBytes.length,
+          refCount : 1,
+          size     : bundleBytes.length,
         },
         parentContextId : revisionRecord.contextId,
         store           : false,

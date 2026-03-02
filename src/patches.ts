@@ -36,7 +36,7 @@ export type RevisionData = {
  * Data shape for a revision bundle record.
  *
  * The record payload is the raw git bundle binary (`application/x-git-bundle`).
- * Queryable metadata (tipCommit, baseCommit, etc.) is stored in record tags.
+ * Queryable metadata (headCommit, baseCommit, etc.) is stored in record tags.
  */
 export type RevisionBundleData = Uint8Array;
 
@@ -156,9 +156,9 @@ export const ForgePatchesDefinition = {
               { who: 'author', of: 'repo/patch', can: ['create'] },
             ],
             $tags: {
-              $requiredTags       : ['tipCommit', 'baseCommit'],
+              $requiredTags       : ['headCommit', 'baseCommit'],
               $allowUndefinedTags : false,
-              tipCommit           : { type: 'string' },
+              headCommit          : { type: 'string' },
               baseCommit          : { type: 'string' },
               refCount            : { type: 'integer' },
               size                : { type: 'integer' },
@@ -200,6 +200,12 @@ export const ForgePatchesDefinition = {
             { role: 'repo:repo/maintainer', can: ['create'] },
             { who: 'author', of: 'repo/patch', can: ['create'] },
           ],
+          $tags: {
+            $requiredTags       : ['from', 'to'],
+            $allowUndefinedTags : false,
+            from                : { type: 'string', enum: ['open', 'closed', 'merged', 'draft'] },
+            to                  : { type: 'string', enum: ['open', 'closed', 'merged', 'draft'] },
+          },
         },
 
         mergeResult: {
