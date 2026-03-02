@@ -10,8 +10,11 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
+import type { ChildProcess } from 'node:child_process';
+
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolve } from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 
 import { DidJwk } from '@enbox/dids';
@@ -1202,4 +1205,175 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
       rmSync(restoreBeta, { recursive: true, force: true });
     }
   }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// E2E: real daemon process + credential helper (LevelDB lock contention fix)
+//
+// This test reproduces the exact bug: two separate OS processes competing
+// for the same LevelDB lock.  The daemon (gitd serve) holds the lock as
+// process A.  The credential helper (git-remote-did-credential) is process B,
+// spawned by git during push.  Before the fix, process B would deadlock
+// trying to open the same LevelDB.  After the fix, process B calls the
+// daemon's POST /auth/token endpoint instead.
+// ---------------------------------------------------------------------------
+
+describe('E2E: real daemon + credential helper (LevelDB lock fix)', () => {
+  let ownerDid: string;
+  let daemonPort: number;
+  let daemonProc: ChildProcess | null = null;
+  let cloneUrl: string;
+
+  const ENBOX_HOME = resolve('__TESTDATA__/daemon-e2e-home');
+  const REPOS_PATH = resolve('__TESTDATA__/daemon-e2e-repos');
+  const CLONE_PATH = '__TESTDATA__/daemon-e2e-clone';
+  const PASSWORD = 'daemon-e2e-test';
+  const REPO_NAME = 'daemon-repo';
+
+  beforeAll(async () => {
+    rmSync(ENBOX_HOME, { recursive: true, force: true });
+    rmSync(REPOS_PATH, { recursive: true, force: true });
+    rmSync(CLONE_PATH, { recursive: true, force: true });
+
+    // --- Start a test daemon as a SEPARATE process ---
+    // This process opens the agent LevelDB (holding the exclusive lock) and
+    // starts the git server with /auth/token.  It's a stripped-down version
+    // of `gitd serve` that skips AuthManager/DHT/DWN-registration — but it
+    // holds the same LevelDB lock that the real daemon would.
+    //
+    // The credential helper (process 3) must NOT try to open this LevelDB
+    // or it will deadlock — it must call /auth/token instead.
+    const { spawn: spawnChild } = await import('node:child_process');
+
+    const daemonScript = resolve('tests/helpers/test-daemon.ts');
+    daemonProc = spawnChild('bun', [daemonScript], {
+      env: {
+        ...process.env,
+        ENBOX_HOME     : ENBOX_HOME,
+        GITD_PASSWORD  : PASSWORD,
+        GITD_REPOS     : REPOS_PATH,
+        GITD_REPO_NAME : REPO_NAME,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // The daemon prints JSON with { port, did } to stdout when ready.
+    let daemonStdout = '';
+    let daemonStderr = '';
+    daemonProc.stderr?.on('data', (chunk: Buffer) => { daemonStderr += chunk.toString(); });
+
+    const ready = new Promise<{ port: number; did: string }>((res, rej) => {
+      const timeout = setTimeout(() => {
+        rej(new Error(`Daemon did not start in time.\nstderr: ${daemonStderr}\nstdout: ${daemonStdout}`));
+      }, 20_000);
+
+      daemonProc!.stdout?.on('data', (chunk: Buffer) => {
+        daemonStdout += chunk.toString();
+        // Look for the JSON readiness signal.
+        try {
+          const parsed = JSON.parse(daemonStdout.trim()) as { port: number; did: string };
+          clearTimeout(timeout);
+          res(parsed);
+        } catch {
+          // Not complete JSON yet — keep reading.
+        }
+      });
+
+      daemonProc!.on('exit', (code) => {
+        clearTimeout(timeout);
+        rej(new Error(`Daemon exited with code ${code}.\nstderr: ${daemonStderr}`));
+      });
+    });
+
+    const result = await ready;
+    daemonPort = result.port;
+    ownerDid = result.did;
+
+    cloneUrl = `http://localhost:${daemonPort}/${ownerDid}/daemon-repo`;
+  }, 45000);
+
+  afterAll(async () => {
+    if (daemonProc && !daemonProc.killed) {
+      daemonProc.kill('SIGTERM');
+      // Wait briefly for graceful shutdown.
+      await new Promise((r) => setTimeout(r, 500));
+      if (!daemonProc.killed) { daemonProc.kill('SIGKILL'); }
+    }
+    rmSync(ENBOX_HOME, { recursive: true, force: true });
+    rmSync(REPOS_PATH, { recursive: true, force: true });
+    rmSync(CLONE_PATH, { recursive: true, force: true });
+  });
+
+  it('should have the daemon holding the LevelDB lock (separate process)', () => {
+    // The daemon is a separate OS process — not our test process.
+    expect(daemonProc?.pid).toBeDefined();
+    expect(daemonProc!.pid).not.toBe(process.pid);
+  });
+
+  it('should serve /health from the real daemon', async () => {
+    const res = await fetch(`http://127.0.0.1:${daemonPort}/health`);
+    expect(res.status).toBe(200);
+  });
+
+  it('should serve /auth/token from the real daemon', async () => {
+    const res = await fetch(`http://127.0.0.1:${daemonPort}/auth/token`, {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ owner: ownerDid, repo: 'daemon-repo' }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { username: string; password: string };
+    expect(body.username).toBe(DID_AUTH_USERNAME);
+    expect(body.password).toContain('.');
+  });
+
+  it('should clone the repo from the real daemon', async () => {
+    rmSync(CLONE_PATH, { recursive: true, force: true });
+    await exec(`git clone "${cloneUrl}" "${CLONE_PATH}"`);
+    expect(existsSync(`${CLONE_PATH}/.git`)).toBe(true);
+  });
+
+  it('should push via git with the real credential helper (no deadlock)', async () => {
+    // Prepare a commit.
+    await exec('git config user.email "daemon@test.com"', { cwd: CLONE_PATH });
+    await exec('git config user.name "Daemon Test"', { cwd: CLONE_PATH });
+    await exec('git checkout -b main', { cwd: CLONE_PATH });
+    await exec('echo "daemon e2e content" > README.md', { cwd: CLONE_PATH });
+    await exec('git add README.md', { cwd: CLONE_PATH });
+    await exec('git commit -m "daemon e2e commit"', { cwd: CLONE_PATH });
+
+    // Configure git to use the REAL git-remote-did-credential binary.
+    // ENBOX_HOME points to the same test dir so the credential helper
+    // reads the daemon's lockfile and calls POST /auth/token.
+    //
+    // CRITICAL: We do NOT set GITD_PASSWORD for the credential helper.
+    // If the helper tried to open the agent directly, it would deadlock
+    // because the daemon (a separate process) holds the LevelDB lock.
+    // The fix makes the helper call the daemon's HTTP endpoint instead.
+    const credentialBin = resolve('dist/esm/git-remote/credential-main.js');
+
+    const helperCmd = `!f() { ENBOX_HOME='${ENBOX_HOME}' GITD_DEBUG=1 bun '${credentialBin}' "$@"; }; f`;
+    await exec(`git config --replace-all credential.helper '${helperCmd}'`, { cwd: CLONE_PATH });
+    await exec('git config credential.useHttpPath true', { cwd: CLONE_PATH });
+
+    // Push.  The credential helper is a THIRD process (spawned by git).
+    // Process 1: this test (released the LevelDB lock after setup)
+    // Process 2: the daemon (holds the LevelDB lock)
+    // Process 3: git-remote-did-credential (must NOT open LevelDB)
+    const { stderr } = await exec(
+      'GIT_TERMINAL_PROMPT=0 git push -u origin main',
+      { cwd: CLONE_PATH },
+    );
+
+    // The credential helper must NOT have prompted for a vault password.
+    expect(stderr ?? '').not.toContain('Vault password');
+  }, 30000);
+
+  it('should have the pushed commit in the bare repo', async () => {
+    const backend = new GitBackend({ basePath: REPOS_PATH });
+    const repoPath = backend.repoPath(ownerDid, 'daemon-repo');
+    const { stdout } = await exec('git log --oneline main', { cwd: repoPath });
+    expect(stdout).toContain('daemon e2e commit');
+  });
 });

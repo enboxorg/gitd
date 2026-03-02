@@ -21,18 +21,26 @@
  * @module
  */
 
+import type { EnboxPlatformAgent } from '@enbox/agent';
+
 import type { AgentContext } from '../agent.js';
 
 import { createBundleSyncer } from '../../git-server/bundle-sync.js';
 import { createDidSignatureVerifier } from '../../git-server/verify.js';
 import { createDwnPushAuthorizer } from '../../git-server/push-authorizer.js';
 import { createGitServer } from '../../git-server/server.js';
-import { createPushAuthenticator } from '../../git-server/auth.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
 import { getRepoContext } from '../repo-context.js';
 import { getVersion } from '../../version.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
 import { withRepoLock } from '../../git-server/repo-mutex.js';
+import {
+  createPushAuthenticator,
+  createPushTokenPayload,
+  DID_AUTH_USERNAME,
+  encodePushToken,
+  formatAuthPassword,
+} from '../../git-server/auth.js';
 import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
 import {
   getDwnEndpoints,
@@ -202,6 +210,34 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     }
     : undefined;
 
+  // Token generation callback — the credential helper calls POST /auth/token
+  // instead of opening the agent's LevelDB (which would deadlock while the
+  // daemon holds the lock).  Uses the identity's BearerDid to sign tokens.
+  const generateToken = async (owner: string, repo: string): Promise<{ username: string; password: string } | null> => {
+    try {
+      const agent = ctx.enbox.agent as EnboxPlatformAgent;
+      const identities = await agent.identity.list();
+      const identity = identities[0];
+      if (!identity) { return null; }
+
+      const payload = createPushTokenPayload(identity.did.uri, owner, repo);
+      const token = encodePushToken(payload);
+
+      const signer = await identity.did.getSigner();
+      const tokenBytes = new TextEncoder().encode(token);
+      const signature = await signer.sign({ data: tokenBytes });
+      const signatureBase64url = Buffer.from(signature).toString('base64url');
+
+      return {
+        username : DID_AUTH_USERNAME,
+        password : formatAuthPassword({ signature: signatureBase64url, token }),
+      };
+    } catch (err) {
+      console.error(`[auth/token] Token generation failed: ${(err as Error).message}`);
+      return null;
+    }
+  };
+
   const server = await createGitServer({
     basePath,
     port,
@@ -210,6 +246,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     onPushComplete,
     onRepoNotFound,
     onRequest,
+    generateToken,
   });
 
   // Register the git endpoint in the DID document (if public URL is provided).

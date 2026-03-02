@@ -80,6 +80,19 @@ export type GitServerOptions = {
    * Useful for idle-timeout tracking in background daemon mode.
    */
   onRequest?: OnRequestCallback;
+
+  /**
+   * Optional callback that generates DID-signed push credentials.
+   *
+   * When provided, the server exposes a `POST /auth/token` endpoint that
+   * the credential helper can call instead of opening the agent's LevelDB
+   * stores directly (which would deadlock — the daemon holds the lock).
+   *
+   * @param owner - The repo owner's DID
+   * @param repo - The repo name
+   * @returns Push credentials (username + password) or null if generation fails
+   */
+  generateToken?: (owner: string, repo: string) => Promise<{ username: string; password: string } | null>;
 };
 
 /** A running git server instance. */
@@ -115,6 +128,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     onRepoNotFound,
     maxBodySize = DEFAULT_MAX_BODY_GIT,
     onRequest,
+    generateToken,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -134,6 +148,47 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', service: 'git-server' }));
+      return;
+    }
+
+    // Token generation endpoint — the credential helper calls this instead
+    // of opening the agent's LevelDB (which would deadlock while the
+    // daemon holds the lock).
+    if (req.url === '/auth/token' && req.method === 'POST') {
+      if (!generateToken) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'token generation not configured' }));
+        return;
+      }
+
+      try {
+        const bodyBuf = await collectRequestBody(req, 4096);
+        if (!bodyBuf) {
+          res.writeHead(413, { 'Content-Type': 'text/plain' });
+          res.end('Payload Too Large');
+          return;
+        }
+
+        const { owner, repo } = JSON.parse(new TextDecoder().decode(bodyBuf)) as { owner?: string; repo?: string };
+        if (!owner || !repo) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'missing owner or repo' }));
+          return;
+        }
+
+        const creds = await generateToken(owner, repo);
+        if (!creds) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'token generation failed' }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(creds));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: (err as Error).message }));
+      }
       return;
     }
 
