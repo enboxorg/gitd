@@ -504,6 +504,7 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   // Create a status change record (audit trail).
   await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: `Merged via ${strategy} strategy` },
+    tags            : { from: tags?.status ?? 'open', to: 'merged' },
     parentContextId : patch.contextId,
   } as any);
 
@@ -569,6 +570,7 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
   // Audit trail.
   await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: 'Closed by maintainer' },
+    tags            : { from: tags?.status ?? 'open', to: 'closed' },
     parentContextId : patch.contextId,
   } as any);
 
@@ -619,6 +621,7 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
   // Audit trail.
   await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: 'Reopened by maintainer' },
+    tags            : { from: tags?.status ?? 'closed', to: 'open' },
     parentContextId : patch.contextId,
   } as any);
 
@@ -804,7 +807,7 @@ async function createRevisionAndBundle(
         data       : bundleBytes,
         dataFormat : 'application/x-git-bundle',
         tags       : {
-          tipCommit  : gitCtx.headCommit,
+          headCommit : gitCtx.headCommit,
           baseCommit : gitCtx.baseCommit,
           refCount,
           size       : bundleSize,

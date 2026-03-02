@@ -492,6 +492,7 @@ export async function handleMergePull(
   // Audit trail.
   await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: `Merged via ${mergeStrategy} strategy` },
+    tags            : { from: tags.status ?? 'open', to: 'merged' },
     parentContextId : rec.contextId,
   } as any);
 

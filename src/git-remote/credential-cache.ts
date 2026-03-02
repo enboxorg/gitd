@@ -15,8 +15,8 @@
  * @module
  */
 
-import { join } from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { enboxHome } from '../profiles/config.js';
 
@@ -93,6 +93,7 @@ function readCache(): CacheFile {
 
 function writeCache(cache: CacheFile): void {
   const path = cachePath();
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(cache, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
 }
 
