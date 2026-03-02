@@ -255,6 +255,30 @@ describe('gitd CLI commands', () => {
         delete process.env.GITD_DWN_ENDPOINT;
       }
     });
+
+    it('should default to public visibility', async () => {
+      const { records } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      expect(records.length).toBe(1);
+      const tags = records[0].tags as Record<string, string>;
+      expect(tags.visibility).toBe('public');
+    });
+
+    it('should create a private repo with --private flag', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const logs = await captureLog(() =>
+        initCommand(ctx, ['private-repo', '--private', '--repos', REPOS_PATH]),
+      );
+      expect(logs.some((l) => l.includes('private'))).toBe(true);
+
+      const { records } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'private-repo' } },
+      });
+      expect(records.length).toBe(1);
+      const tags = records[0].tags as Record<string, string>;
+      expect(tags.visibility).toBe('private');
+    });
   });
 
   // =========================================================================
