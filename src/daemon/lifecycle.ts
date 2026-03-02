@@ -91,10 +91,12 @@ export type EnsureDaemonResult = {
  * 4. Spawns a new `gitd serve` process in the background.
  * 5. Polls the health endpoint until the daemon is ready.
  *
+ * @param password - Optional vault password to pass to the spawned daemon.
+ *                   When omitted, the daemon relies on `GITD_PASSWORD` env var.
  * @returns The port of the running daemon.
  * @throws If the daemon cannot be started within the timeout.
  */
-export async function ensureDaemon(): Promise<EnsureDaemonResult> {
+export async function ensureDaemon(password?: string): Promise<EnsureDaemonResult> {
   const lock = readLockfile();
 
   if (lock) {
@@ -118,7 +120,7 @@ export async function ensureDaemon(): Promise<EnsureDaemonResult> {
   }
 
   // Spawn a new daemon in the background.
-  return spawnDaemon();
+  return spawnDaemon(password);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +135,7 @@ export async function ensureDaemon(): Promise<EnsureDaemonResult> {
  * Polls the health endpoint with exponential backoff until the daemon
  * is ready or the timeout is exceeded.
  */
-async function spawnDaemon(): Promise<EnsureDaemonResult> {
+async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
   const logPath = daemonLogPath();
   mkdirSync(dirname(logPath), { recursive: true });
 
@@ -143,15 +145,22 @@ async function spawnDaemon(): Promise<EnsureDaemonResult> {
   // when installed globally it's on $PATH.
   const gitdBin = findGitdBin();
 
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    GITD_DAEMON_BACKGROUND: '1',
+  };
+
+  // Pass the vault password so the background daemon can unlock without
+  // a TTY prompt.  Prefer the explicit env var; fall back to the password
+  // injected by the caller (e.g. main.ts sets it after prompting).
+  if (!env.GITD_PASSWORD && password) {
+    env.GITD_PASSWORD = password;
+  }
+
   const child = spawn(gitdBin, ['serve'], {
     detached : true,
     stdio    : ['ignore', logStream, logStream],
-    env      : {
-      ...process.env,
-      // Pass through the current password so the daemon can unlock the vault.
-      // This is safe because the daemon is a child of the current process.
-      GITD_DAEMON_BACKGROUND: '1',
-    },
+    env,
   });
 
   // Detach the child so it survives after we exit.
