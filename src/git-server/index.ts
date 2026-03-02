@@ -12,5 +12,6 @@ export * from './git-backend.js';
 export * from './http-handler.js';
 export * from './push-authorizer.js';
 export * from './ref-sync.js';
+export * from './repo-mutex.js';
 export * from './server.js';
 export * from './verify.js';
