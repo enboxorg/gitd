@@ -1,5 +1,11 @@
 # @enbox/gitd
 
+## 0.8.0
+
+### Minor Changes
+
+- [#150](https://github.com/enboxorg/gitd/pull/150) [`b9d500b`](https://github.com/enboxorg/gitd/commit/b9d500bec9e5296d62d740715262e3c01092096b) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Auto-start the background daemon during `gitd init` and other CLI commands so `git push` works immediately without manually running `gitd serve`
+
 ## 0.7.0
 
 ### Minor Changes
