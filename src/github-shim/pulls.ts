@@ -556,3 +556,81 @@ export async function handleCreatePullReview(
     author_association : 'OWNER',
   });
 }
+
+// ---------------------------------------------------------------------------
+// GET /repos/:did/:repo/pulls/:number/files — list changed files
+// ---------------------------------------------------------------------------
+
+export async function handleListPullFiles(
+  ctx: AgentContext, targetDid: string, repoName: string, number: string, url: URL,
+): Promise<JsonResponse> {
+  const repo = await getRepoRecord(ctx, targetDid, repoName);
+  if (!repo) {
+    return jsonNotFound(`Repository '${repoName}' not found for DID '${targetDid}'.`);
+  }
+
+  const from = fromOpt(ctx, targetDid);
+  const baseUrl = buildApiUrl(url);
+
+  // Find the patch.
+  const num = parseInt(number, 10);
+  const { records: patches } = await ctx.patches.records.query('repo/patch', {
+    from,
+    filter: { contextId: repo.contextId },
+  });
+
+  const patchRec = patches.find(r => numericId(r.id ?? '') === num);
+  if (!patchRec) {
+    return jsonNotFound(`Pull request #${number} not found.`);
+  }
+
+  // Fetch latest revision for diff stats.
+  const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
+    from,
+    filter   : { contextId: patchRec.contextId },
+    dateSort : DateSort.CreatedDescending,
+  });
+
+  if (revisions.length === 0) {
+    return jsonOk([]);
+  }
+
+  const rev = revisions[0];
+  const revTags = (rev.tags as Record<string, string> | undefined) ?? {};
+  const headSha = revTags.headCommit ?? '';
+
+  let additions = 0;
+  let deletions = 0;
+  let filesChanged = 0;
+
+  try {
+    const revData = await rev.data.json();
+    if (revData.diffStat) {
+      additions = revData.diffStat.additions ?? 0;
+      deletions = revData.diffStat.deletions ?? 0;
+      filesChanged = revData.diffStat.filesChanged ?? 0;
+    }
+  } catch { /* revision may not have parseable JSON body */ }
+
+  // DWN revisions store only aggregate diff stats, not per-file details.
+  // Return a summary entry so tools like `gh pr diff --name-only` get
+  // useful output while the per-file breakdown is not yet available.
+  if (filesChanged === 0 && additions === 0 && deletions === 0) {
+    return jsonOk([]);
+  }
+
+  const files: Record<string, unknown>[] = [{
+    sha          : headSha,
+    filename     : `(${filesChanged} file${filesChanged !== 1 ? 's' : ''} changed)`,
+    status       : 'modified',
+    additions,
+    deletions,
+    changes      : additions + deletions,
+    blob_url     : `${baseUrl}/repos/${targetDid}/${repoName}/blob/${headSha}`,
+    raw_url      : `${baseUrl}/repos/${targetDid}/${repoName}/raw/${headSha}`,
+    contents_url : `${baseUrl}/repos/${targetDid}/${repoName}/contents?ref=${headSha}`,
+    patch        : '',
+  }];
+
+  return jsonOk(files);
+}

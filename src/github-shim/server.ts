@@ -13,6 +13,7 @@
  *   GET  /repos/:did/:repo/issues/:number/comments  Issue comments
  *   GET  /repos/:did/:repo/pulls                    List pull requests
  *   GET  /repos/:did/:repo/pulls/:number            Pull request detail
+ *   GET  /repos/:did/:repo/pulls/:number/files      Pull request files
  *   GET  /repos/:did/:repo/pulls/:number/reviews    Pull request reviews
  *   GET  /repos/:did/:repo/releases                 List releases
  *   GET  /repos/:did/:repo/releases/tags/:tag       Release by tag
@@ -43,7 +44,7 @@ import { handleGetUser } from './users.js';
 
 import { baseHeaders, jsonMethodNotAllowed, jsonNotFound, jsonUnauthorized, validateBearerToken } from './helpers.js';
 import { handleCreateIssue, handleCreateIssueComment, handleGetIssue, handleListIssueComments, handleListIssues, handleUpdateIssue } from './issues.js';
-import { handleCreatePull, handleCreatePullReview, handleGetPull, handleListPullReviews, handleListPulls, handleMergePull, handleUpdatePull } from './pulls.js';
+import { handleCreatePull, handleCreatePullReview, handleGetPull, handleListPullFiles, handleListPullReviews, handleListPulls, handleMergePull, handleUpdatePull } from './pulls.js';
 import { handleCreateRelease, handleGetReleaseByTag, handleListReleases } from './releases.js';
 
 // ---------------------------------------------------------------------------
@@ -205,6 +206,13 @@ async function dispatchRepoRoute(
     return jsonMethodNotAllowed(`${method} not allowed on /pulls/:number/merge.`);
   }
 
+  // /repos/:did/:repo/pulls/:number/files
+  const pullFilesMatch = rest.match(/^\/pulls\/(\d+)\/files$/);
+  if (pullFilesMatch) {
+    if (method !== 'GET') { return jsonMethodNotAllowed(`${method} not allowed on /pulls/:number/files.`); }
+    return handleListPullFiles(ctx, targetDid, repoName, pullFilesMatch[1], url);
+  }
+
   // /repos/:did/:repo/pulls/:number/reviews
   const pullReviewsMatch = rest.match(/^\/pulls\/(\d+)\/reviews$/);
   if (pullReviewsMatch) {
@@ -314,6 +322,7 @@ export function startShimServer(options: ShimServerOptions): Server {
     console.log('  GET  /repos/:did/:repo/issues/:n/comments  Issue comments');
     console.log('  GET  /repos/:did/:repo/pulls            List pull requests');
     console.log('  GET  /repos/:did/:repo/pulls/:number    Pull request detail');
+    console.log('  GET  /repos/:did/:repo/pulls/:n/files   Pull request files');
     console.log('  GET  /repos/:did/:repo/pulls/:n/reviews Pull request reviews');
     console.log('  GET  /repos/:did/:repo/releases         List releases');
     console.log('  GET  /repos/:did/:repo/releases/tags/:t Release by tag');
