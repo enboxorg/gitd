@@ -354,11 +354,11 @@ describe('@enbox/gitd', () => {
       expect(rb.$recordLimit).toEqual({ max: 1, strategy: 'reject' });
     });
 
-    it('should require tipCommit and baseCommit tags on revisionBundle', () => {
+    it('should require headCommit and baseCommit tags on revisionBundle', () => {
       const tags = ForgePatchesDefinition.structure.repo.patch.revision.revisionBundle.$tags;
-      expect(tags?.$requiredTags).toContain('tipCommit');
+      expect(tags?.$requiredTags).toContain('headCommit');
       expect(tags?.$requiredTags).toContain('baseCommit');
-      expect(tags?.tipCommit).toEqual({ type: 'string' });
+      expect(tags?.headCommit).toEqual({ type: 'string' });
       expect(tags?.baseCommit).toEqual({ type: 'string' });
       expect(tags?.refCount).toEqual({ type: 'integer' });
       expect(tags?.size).toEqual({ type: 'integer' });
