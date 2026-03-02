@@ -17,6 +17,7 @@ import { promises as dns } from 'node:dns';
 import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 
 import { ensureDaemon } from '../daemon/lifecycle.js';
+import { getVaultPassword } from './tty-prompt.js';
 import { readLockfile } from '../daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
@@ -60,13 +61,12 @@ const DID_RESOLUTION_TIMEOUT_MS = 30_000;
  *
  * @param did - Full DID URI (e.g. `did:dht:abc123xyz`)
  * @param repo - Optional repo name to append to the endpoint path
- * @param password - Optional vault password for daemon auto-start
  * @returns The resolved git transport endpoint
  * @throws If resolution fails, times out, or no git-compatible service is found
  */
-export async function resolveGitEndpoint(did: string, repo?: string, password?: string): Promise<GitEndpoint> {
+export async function resolveGitEndpoint(did: string, repo?: string): Promise<GitEndpoint> {
   // Priority 0: Check for a running local daemon.
-  const local = await resolveLocalDaemon(did, repo, password);
+  const local = await resolveLocalDaemon(did, repo);
   if (local) { return local; }
 
   const { didDocument, didResolutionMetadata } = await Promise.race([
@@ -130,7 +130,7 @@ const LOCAL_PROBE_TIMEOUT_MS = 2_000;
  *
  * @returns A `GitEndpoint` pointing to `http://localhost:<port>/...`, or `null`.
  */
-async function resolveLocalDaemon(did: string, repo?: string, password?: string): Promise<GitEndpoint | null> {
+async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoint | null> {
   // Fast path: check for an already-running daemon.
   const lock = readLockfile();
   if (lock) {
@@ -152,8 +152,11 @@ async function resolveLocalDaemon(did: string, repo?: string, password?: string)
     }
   }
 
-  // Slow path: try to auto-start a daemon.
+  // Slow path: try to auto-start a daemon.  Prompt for the vault
+  // password lazily — only when we actually need to spawn.  This avoids
+  // prompting when the daemon is already running (the common case).
   try {
+    const password = getVaultPassword() ?? undefined;
     const result = await ensureDaemon(password);
     return {
       url    : buildUrl(`http://localhost:${result.port}`, did, repo),
@@ -165,6 +168,7 @@ async function resolveLocalDaemon(did: string, repo?: string, password?: string)
     // push/clone will fail if no remote GitTransport service exists.
     console.error(
       `git-remote-did: could not start local daemon: ${(err as Error).message}\n`
+      + 'Hint: ensure gitd is installed and on your PATH, or run from the project directory.\n'
       + 'Hint: run `gitd serve` in another terminal, or set GITD_PASSWORD and retry.',
     );
     return null;

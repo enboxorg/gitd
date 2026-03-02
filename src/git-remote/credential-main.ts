@@ -237,8 +237,11 @@ function readStdin(): Promise<string> {
   });
 }
 
-main().catch(() => {
-  // Credential helpers must never crash loudly — silent exit on error
-  // lets git fall back to the next configured credential helper.
+main().catch((err: unknown) => {
+  // Credential helpers must not crash loudly to stdout — but logging
+  // to stderr helps debugging.  Git ignores stderr from credential helpers.
+  if (process.env.GITD_DEBUG === '1') {
+    console.error(`git-remote-did-credential: ${(err as Error).message ?? err}`);
+  }
   process.exit(0);
 });

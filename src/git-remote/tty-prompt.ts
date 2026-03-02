@@ -13,6 +13,7 @@
  * @module
  */
 
+import { execSync } from 'node:child_process';
 import { closeSync, openSync, readSync, writeSync } from 'node:fs';
 
 // ---------------------------------------------------------------------------
@@ -43,10 +44,15 @@ export function getVaultPassword(): string | null {
 /**
  * Prompt for a password on `/dev/tty` with hidden input.
  *
- * Opens `/dev/tty` for both reading and writing, prints the prompt,
- * reads one line of input character-by-character (no echo), and returns
+ * Opens `/dev/tty` for both reading and writing, disables terminal echo
+ * via `stty -echo`, reads one line of input, restores echo, and returns
  * the result.  Returns `null` if `/dev/tty` cannot be opened (e.g.
  * headless CI, Windows without ConPTY).
+ *
+ * The terminal is left in cooked (line-buffered) mode — only the echo
+ * flag is toggled.  This lets the terminal driver handle backspace and
+ * line editing natively, which is more reliable across shells than
+ * reading raw bytes.
  *
  * @param prompt - The prompt string to display (e.g. "Vault password: ")
  * @returns The entered string, or `null` if no TTY is available.
@@ -64,50 +70,57 @@ function promptTtyPassword(prompt: string): string | null {
   }
 
   try {
+    // Disable echo on the controlling terminal.  We shell out to `stty`
+    // because Node/Bun don't expose `tcsetattr` and FFI adds complexity.
+    // The `< /dev/tty` redirect ensures stty targets the right device
+    // even when our stdin is owned by git.
+    try {
+      execSync('stty -echo < /dev/tty', { stdio: 'ignore' });
+    } catch {
+      // If stty fails (e.g. not available), continue anyway — the user
+      // will see their password but at least the flow won't break.
+    }
+
     // Write the prompt.
     writeSync(writeFd, prompt);
 
-    // Read character-by-character with no echo.
-    // We use raw fd reads — one byte at a time — which avoids requiring
-    // Node readline or setRawMode (neither works reliably on an fd that
-    // isn't process.stdin).
-    const buf = Buffer.alloc(1);
+    // Read in cooked mode — the terminal driver handles line editing
+    // (backspace, etc.) and delivers a complete line on Enter.
+    const buf = Buffer.alloc(256);
     let password = '';
 
     while (true) {
-      const bytesRead = readSync(readFd, buf, 0, 1, null);
+      const bytesRead = readSync(readFd, buf, 0, buf.length, null);
       if (bytesRead === 0) { break; } // EOF
 
-      const ch = buf[0];
+      password += buf.toString('utf8', 0, bytesRead);
 
-      // Enter (LF or CR) — done.
-      if (ch === 0x0A || ch === 0x0D) {
-        writeSync(writeFd, '\n');
+      // Stop at the first newline.
+      const nlIdx = password.indexOf('\n');
+      if (nlIdx !== -1) {
+        password = password.slice(0, nlIdx);
         break;
       }
 
-      // Ctrl-C — abort.
-      if (ch === 0x03) {
-        writeSync(writeFd, '\n');
-        process.exit(130);
-      }
-
-      // Backspace / Delete.
-      if (ch === 0x7F || ch === 0x08) {
-        if (password.length > 0) {
-          password = password.slice(0, -1);
-        }
-        continue;
-      }
-
-      // Printable ASCII.
-      if (ch >= 0x20) {
-        password += String.fromCharCode(ch);
+      const crIdx = password.indexOf('\r');
+      if (crIdx !== -1) {
+        password = password.slice(0, crIdx);
+        break;
       }
     }
 
+    // Move to a new line (echo was off so Enter wasn't visible).
+    writeSync(writeFd, '\n');
+
     return password;
   } finally {
+    // Restore echo — critical to avoid leaving the terminal broken.
+    try {
+      execSync('stty echo < /dev/tty', { stdio: 'ignore' });
+    } catch {
+      // Best-effort restore.
+    }
+
     closeSync(readFd);
     closeSync(writeFd);
   }
