@@ -155,8 +155,12 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
   // Slow path: try to auto-start a daemon.  Prompt for the vault
   // password lazily — only when we actually need to spawn.  This avoids
   // prompting when the daemon is already running (the common case).
+  // Skip auto-start entirely when no password is available — spawning
+  // a daemon without a password will always fail (vault can't unlock).
+  const password = getVaultPassword() ?? undefined;
+  if (!password) { return null; }
+
   try {
-    const password = getVaultPassword() ?? undefined;
     const result = await ensureDaemon(password);
     return {
       url    : buildUrl(`http://localhost:${result.port}`, did, repo),
