@@ -43,8 +43,7 @@ export async function getRepoContext(
     });
 
     if (records.length === 0) {
-      console.error(`Repository "${repoName}" not found. Run \`gitd init ${repoName}\` first.`);
-      process.exit(1);
+      throw new Error(`Repository "${repoName}" not found. Run \`gitd init ${repoName}\` first.`);
     }
 
     return extractContext(records[0], repoName);
@@ -54,13 +53,11 @@ export async function getRepoContext(
   const { records } = await ctx.repo.records.query('repo');
 
   if (records.length === 0) {
-    console.error('No repository found. Run `gitd init <name>` first.');
-    process.exit(1);
+    throw new Error('No repository found. Run `gitd init <name>` first.');
   }
 
   if (records.length > 1) {
-    console.error('Multiple repositories exist. Specify one with --repo <name>, GITD_REPO env, or `git config enbox.repo <name>`.');
-    process.exit(1);
+    throw new Error('Multiple repositories exist. Specify one with --repo <name>, GITD_REPO env, or `git config enbox.repo <name>`.');
   }
 
   const data = await records[0].data.json();
@@ -85,8 +82,7 @@ export async function getRepoContextId(
 function extractContext(record: any, name: string): RepoContext {
   const contextId = record.contextId;
   if (!contextId) {
-    console.error('Repository record has no contextId — this should not happen.');
-    process.exit(1);
+    throw new Error('Repository record has no contextId — this should not happen.');
   }
 
   const visibility = (record.tags?.visibility as 'public' | 'private') ?? 'public';
