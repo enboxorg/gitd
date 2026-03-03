@@ -20,10 +20,18 @@
  * @module
  */
 
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import { parseDidUrl } from './parse-url.js';
 import { resolveGitEndpoint } from './resolve.js';
+
+/** Resolve the absolute path to the credential helper binary (sibling file). */
+function resolveCredentialHelper(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  return resolve(thisFile, '..', 'credential-main.js');
+}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -67,8 +75,12 @@ async function main(): Promise<void> {
     ? 'remote-https'
     : 'remote-http';
 
+  // The credential helper is a sibling .js file with a bun shebang.
+  // Use git's `!<command>` syntax to invoke it via bun, which avoids
+  // needing the file to be +x or on PATH.
+  const credHelper = resolveCredentialHelper();
   const child = spawn('git', [
-    '-c', 'credential.helper=git-remote-did-credential',
+    '-c', `credential.helper=!bun '${credHelper}'`,
     '-c', 'credential.useHttpPath=true',
     helper, remoteName, endpoint.url,
   ], {
