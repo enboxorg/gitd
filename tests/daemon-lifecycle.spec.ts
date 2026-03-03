@@ -120,19 +120,20 @@ describe('daemonLogPath', () => {
 // ---------------------------------------------------------------------------
 
 describe('findGitdBin', () => {
-  it('should resolve to src/cli/main.ts when running from source', () => {
+  it('should resolve to bun + src/cli/main.ts when running from source', () => {
     const bin = findGitdBin();
-    expect(bin).toEndWith('src/cli/main.ts');
+    expect(bin.command).toBe('bun');
+    expect(bin.prefix[0]).toEndWith('src/cli/main.ts');
   });
 
   it('should resolve a path that actually exists on disk', () => {
     const bin = findGitdBin();
-    expect(existsSync(bin)).toBe(true);
+    expect(existsSync(bin.prefix[0])).toBe(true);
   });
 
   it('should NOT resolve to a path under ~/.enbox', () => {
     const bin = findGitdBin();
-    expect(bin).not.toContain('.enbox');
+    expect(bin.prefix[0]).not.toContain('.enbox');
   });
 });
 

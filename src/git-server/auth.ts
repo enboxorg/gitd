@@ -215,18 +215,6 @@ export function createPushAuthenticator(
 ): (request: Request, did: string, repo: string) => Promise<boolean> {
   const { verifySignature, authorizePush, maxTokenAge = 300 } = options;
 
-  // Nonce replay protection: track used nonces with timestamps for TTL eviction.
-  const usedNonces = new Map<string, number>();
-  const nonceMaxAge = (maxTokenAge + 60) * 1000; // ms — token TTL + clock skew
-
-  /** Evict expired nonces to prevent unbounded growth. */
-  function evictExpiredNonces(): void {
-    const cutoff = Date.now() - nonceMaxAge;
-    for (const [nonce, ts] of usedNonces) {
-      if (ts < cutoff) { usedNonces.delete(nonce); }
-    }
-  }
-
   return async (request: Request, ownerDid: string, repo: string): Promise<boolean> => {
     // Extract HTTP Basic auth credentials.
     // Username is fixed to "did-auth" (DIDs contain colons, which conflict
@@ -291,12 +279,11 @@ export function createPushAuthenticator(
       return false;
     }
 
-    // Nonce replay protection — reject already-used nonces.
-    evictExpiredNonces();
-    if (usedNonces.has(payload.nonce)) {
-      return false;
-    }
-    usedNonces.set(payload.nonce, Date.now());
+    // NOTE: Nonce replay protection is intentionally omitted.
+    // Git's smart HTTP transport reuses the same credentials for both
+    // the GET ref discovery and POST receive-pack within a single push.
+    // Rejecting reused nonces would break every push.  The token's
+    // expiry (default 5 min) provides sufficient replay protection.
 
     // Optional: Check role-based push authorization.
     if (authorizePush) {
