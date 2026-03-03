@@ -1,5 +1,13 @@
 # @enbox/gitd
 
+## 0.9.3
+
+### Patch Changes
+
+- [#167](https://github.com/enboxorg/gitd/pull/167) [`3ae9b29`](https://github.com/enboxorg/gitd/commit/3ae9b2928d903af6db7cf8316370326b994946d0) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Wire credential helper automatically in git-remote-did so push auth works without running `gitd setup`. Fail loudly with actionable hints when authentication cannot proceed.
+
+- [#169](https://github.com/enboxorg/gitd/pull/169) [`347f53f`](https://github.com/enboxorg/gitd/commit/347f53f7e3e6a10bcbd0f2031fa1ca8c9ef06328) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Show actionable error hints when git clone/push fails via a DID remote, instead of leaving the user with git's opaque error message.
+
 ## 0.9.2
 
 ### Patch Changes
