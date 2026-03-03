@@ -76,6 +76,14 @@ async function main(): Promise<void> {
   });
 
   child.on('exit', (code) => {
+    if (code !== 0) {
+      console.error('');
+      console.error(`git-remote-did: operation failed for ${parsed!.did}/${parsed!.repo ?? ''}`);
+      console.error('Please make sure:');
+      console.error('  - The repository exists (create it with `gitd init <name>`)');
+      console.error('  - The DID is correct and resolvable');
+      console.error('  - The daemon is running (`gitd serve`)');
+    }
     process.exit(code ?? 128);
   });
 }
