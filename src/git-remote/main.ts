@@ -67,7 +67,11 @@ async function main(): Promise<void> {
     ? 'remote-https'
     : 'remote-http';
 
-  const child = spawn('git', [helper, remoteName, endpoint.url], {
+  const child = spawn('git', [
+    '-c', 'credential.helper=git-remote-did-credential',
+    '-c', 'credential.useHttpPath=true',
+    helper, remoteName, endpoint.url,
+  ], {
     stdio: 'inherit',
   });
 

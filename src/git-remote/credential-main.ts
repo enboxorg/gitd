@@ -130,7 +130,11 @@ async function handleGet(request: { protocol?: string; host?: string; path?: str
   }
 
   const parsed = extractOwnerAndRepo(request.path);
-  if (!parsed) { return; }
+  if (!parsed) {
+    console.error('git-remote-did-credential: cannot extract DID/repo from path — is credential.useHttpPath set?');
+    console.error('Hint: run `git config --global credential.useHttpPath true`');
+    process.exit(1);
+  }
 
   // --- Primary path: ask the running daemon ---
   const creds = await requestTokenFromDaemon(parsed.owner, parsed.repo);
@@ -142,8 +146,9 @@ async function handleGet(request: { protocol?: string; host?: string; path?: str
   // --- Fallback: direct agent connection (no daemon running) ---
   const password = getVaultPassword();
   if (!password) {
-    // No password available and no daemon — can't generate credentials.
-    return;
+    console.error('git-remote-did-credential: no running daemon and no vault password available.');
+    console.error('Hint: run `gitd serve` in another terminal, or set GITD_PASSWORD and retry.');
+    process.exit(1);
   }
 
   const fallbackCreds = await generateTokenDirectly(password, parsed.owner, parsed.repo);
