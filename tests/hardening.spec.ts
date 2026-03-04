@@ -692,10 +692,12 @@ describe('Push authenticator — nonce replay protection', () => {
     const result1 = await authenticator(req1, OWNER_DID, TEST_REPO);
     expect(result1).toBe(true);
 
-    // Same nonce — replay should be rejected.
+    // Same nonce — should be accepted (nonce replay protection is disabled
+    // because git reuses credentials for GET ref-discovery and POST
+    // receive-pack within a single push).
     const req2 = makeAuthRequest(signed);
     const result2 = await authenticator(req2, OWNER_DID, TEST_REPO);
-    expect(result2).toBe(false);
+    expect(result2).toBe(true);
   });
 
   it('should accept different nonces', async () => {

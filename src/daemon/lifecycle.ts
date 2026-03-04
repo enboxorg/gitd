@@ -161,7 +161,7 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
     env.GITD_PASSWORD = password;
   }
 
-  const child = spawn(gitdBin, ['serve'], {
+  const child = spawn(gitdBin.command, [...gitdBin.prefix, 'serve'], {
     detached : true,
     stdio    : ['ignore', logFd, logFd],
     env,
@@ -293,19 +293,27 @@ export function daemonStatus(): DaemonStatus {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Find the gitd binary path. */
-export function findGitdBin(): string {
-  // In development: use the source entry point relative to this module.
-  // This file lives at src/daemon/lifecycle.ts, so ../../cli/main.ts
-  // resolves to src/cli/main.ts.
+/** Resolved gitd binary and how to invoke it. */
+export type GitdBin = {
+  /** The binary or runtime to spawn. */
+  command: string;
+  /** Arguments to pass before `['serve']` etc. */
+  prefix: string[];
+};
+
+/** Find the gitd binary path and determine how to invoke it. */
+export function findGitdBin(): GitdBin {
+  // In development: use bun to run the source entry point.
+  // This file lives at src/daemon/lifecycle.ts (or dist/esm/daemon/lifecycle.js),
+  // so we check for the sibling src/cli/main.ts.
   const thisDir = dirname(fileURLToPath(import.meta.url));
   const devPath = join(thisDir, '..', '..', 'src', 'cli', 'main.ts');
   if (existsSync(devPath)) {
-    return devPath;
+    return { command: 'bun', prefix: [devPath] };
   }
 
   // When installed: `gitd` should be on PATH.
-  return 'gitd';
+  return { command: 'gitd', prefix: [] };
 }
 
 function sleep(ms: number): Promise<void> {
