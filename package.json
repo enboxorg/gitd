@@ -25,6 +25,10 @@
     "version": "changeset version && bun install",
     "release": "bun run build && changeset publish"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enboxorg/gitd"
+  },
   "license": "Apache-2.0",
   "files": [
     "dist",
