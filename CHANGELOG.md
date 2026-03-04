@@ -1,5 +1,11 @@
 # @enbox/gitd
 
+## 0.9.5
+
+### Patch Changes
+
+- [#172](https://github.com/enboxorg/gitd/pull/172) [`7108123`](https://github.com/enboxorg/gitd/commit/7108123d28d4e87afdd2af2b8cabe1b471299a61) Thanks [@LiranCohen](https://github.com/LiranCohen)! - Fix daemon crash when cloning nonexistent repos (process.exit in server context) and resolve credential helper by absolute path so push auth works without PATH setup.
+
 ## 0.9.4
 
 ### Patch Changes
