@@ -295,7 +295,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const stopRepublisher = startDidRepublisher(ctx.enbox);
 
   // Register the daemon so git-remote-did can discover it.
-  writeLockfile(server.port, getVersion() ?? undefined);
+  writeLockfile(server.port, getVersion() ?? undefined, ctx.did);
 
   // Wire up the idle shutdown function now that we have all the pieces.
   shutdown.fn = async (): Promise<void> => {

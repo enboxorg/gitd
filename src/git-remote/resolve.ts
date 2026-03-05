@@ -134,6 +134,15 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
   // Fast path: check for an already-running daemon.
   const lock = readLockfile();
   if (lock) {
+    // Only use the local daemon when the requested DID matches the
+    // daemon's owner.  Cloning someone else's repo must fall through
+    // to DID document resolution so the request reaches the correct
+    // remote server.  Lockfiles without `ownerDid` (written by older
+    // versions) are treated as matching for backwards compatibility.
+    if (lock.ownerDid && lock.ownerDid !== did) {
+      return null;
+    }
+
     const healthUrl = `http://localhost:${lock.port}/health`;
     try {
       const controller = new AbortController();
