@@ -41,6 +41,22 @@ describe('lockfile version field', () => {
     expect(lock!.version).toBeUndefined();
     removeLockfile();
   });
+
+  it('should write ownerDid to lockfile when provided', () => {
+    writeLockfile(9418, '1.0.0', 'did:dht:owner123');
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.ownerDid).toBe('did:dht:owner123');
+    removeLockfile();
+  });
+
+  it('should omit ownerDid when not provided', () => {
+    writeLockfile(9418, '1.0.0');
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.ownerDid).toBeUndefined();
+    removeLockfile();
+  });
 });
 
 // ---------------------------------------------------------------------------

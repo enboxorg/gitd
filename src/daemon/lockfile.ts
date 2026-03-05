@@ -2,7 +2,7 @@
  * Daemon lockfile — discovery mechanism for the local gitd server.
  *
  * When `gitd serve` starts, it writes a JSON lockfile to
- * `~/.enbox/daemon.lock` containing `{ pid, port, startedAt }`.
+ * `~/.enbox/daemon.lock` containing `{ pid, port, startedAt, ownerDid }`.
  * `git-remote-did` reads this file to discover a running local daemon
  * and resolve `did::` remotes to `http://localhost:<port>/...` instead
  * of performing DID document resolution.
@@ -35,6 +35,9 @@ export type DaemonLock = {
 
   /** The gitd version that started this daemon (for upgrade detection). */
   version?: string;
+
+  /** The DID of the identity that owns this daemon. */
+  ownerDid?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,12 +54,13 @@ export function lockfilePath(): string {
 // ---------------------------------------------------------------------------
 
 /** Write the daemon lockfile. Overwrites any existing file. */
-export function writeLockfile(port: number, version?: string): void {
+export function writeLockfile(port: number, version?: string, ownerDid?: string): void {
   const lock: DaemonLock = {
     pid       : process.pid,
     port,
     startedAt : new Date().toISOString(),
     ...(version ? { version } : {}),
+    ...(ownerDid ? { ownerDid } : {}),
   };
   const path = lockfilePath();
   mkdirSync(dirname(path), { recursive: true });

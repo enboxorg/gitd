@@ -462,7 +462,7 @@ describe('resolveGitEndpoint with local daemon', () => {
     server.close();
   });
 
-  it('should resolve via local daemon when lockfile exists', async () => {
+  it('should resolve via local daemon when lockfile has no ownerDid (backwards compat)', async () => {
     const result = await resolveGitEndpoint('did:dht:abc123', 'my-repo');
     expect(result.source).toBe('LocalDaemon');
     expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123/my-repo`);
@@ -472,5 +472,50 @@ describe('resolveGitEndpoint with local daemon', () => {
     const result = await resolveGitEndpoint('did:dht:abc123');
     expect(result.source).toBe('LocalDaemon');
     expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local daemon DID ownership check
+// ---------------------------------------------------------------------------
+
+describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  const ownerDid = 'did:dht:localowner';
+  const remoteDid = 'did:dht:remoteuser';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+    // Write a lockfile with ownerDid set.
+    writeLockfile(port, '1.0.0', ownerDid);
+  });
+
+  afterAll(() => {
+    removeLockfile();
+    server.close();
+  });
+
+  it('should use local daemon when requested DID matches ownerDid', async () => {
+    const result = await resolveGitEndpoint(ownerDid, 'my-repo');
+    expect(result.source).toBe('LocalDaemon');
+    expect(result.url).toBe(`http://localhost:${port}/${ownerDid}/my-repo`);
+  });
+
+  it('should skip local daemon when requested DID differs from ownerDid', async () => {
+    // The remote DID is not resolvable, so this should throw after
+    // skipping the local daemon — confirming it didn't short-circuit.
+    await expect(resolveGitEndpoint(remoteDid, 'their-repo'))
+      .rejects.toThrow();
   });
 });
