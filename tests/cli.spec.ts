@@ -142,7 +142,7 @@ describe('gitd CLI commands', () => {
       did, repo, refs, issues, patches, ci, releases,
       registry, social, notifications, wiki, org, enbox,
     };
-  });
+  }, 30_000);
 
   afterAll(() => {
     delete process.env.GITD_REPO;

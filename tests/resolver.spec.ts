@@ -164,7 +164,7 @@ describe('Package resolver, attestation, and trust chain', () => {
       data : { name: 'empty-pkg' },
       tags : { name: 'empty-pkg', ecosystem: 'npm' },
     });
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

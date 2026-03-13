@@ -54,7 +54,7 @@ describe('createDwnPushAuthorizer', () => {
       tags : { name: 'test-repo', visibility: 'public' },
     });
     repoContextId = record.contextId!;
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

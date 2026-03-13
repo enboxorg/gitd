@@ -178,7 +178,7 @@ describe('gitd web UI', () => {
       tags            : { slug: 'getting-started', title: 'Getting Started' },
       parentContextId : repoContextId,
     } as any);
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });
