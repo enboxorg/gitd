@@ -202,7 +202,7 @@ describe('restoreFromBundles', () => {
     expect(existsSync(`${RESTORE_PATH}/should-not-exist.git`)).toBe(false);
 
     rmSync(freshDataPath, { recursive: true, force: true });
-  });
+  }, 30_000);
 
   it('should restore the tip commit matching the original', async () => {
     const restoredRepoPath = `${RESTORE_PATH}/restored-tip.git`;

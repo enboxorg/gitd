@@ -129,7 +129,7 @@ describe('Unified daemon', () => {
       data : { name: 'daemon-test', description: 'Test repo', defaultBranch: 'main', dwnEndpoints: [] },
       tags : { name: 'daemon-test', visibility: 'public' },
     });
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

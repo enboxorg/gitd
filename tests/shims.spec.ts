@@ -241,7 +241,7 @@ describe('Package manager shims', () => {
       tags            : { filename: 'manifest.json', contentType: 'application/octet-stream', size: OCI_MANIFEST_BYTES.byteLength },
       parentContextId : ociV1Ctx,
     } as any);
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

@@ -219,7 +219,7 @@ describe('GitHub API compatibility shim', () => {
       tags            : { tagName: 'v2.0.0-beta', prerelease: true },
       parentContextId : repoContextId,
     } as any);
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

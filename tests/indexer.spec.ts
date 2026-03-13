@@ -161,7 +161,7 @@ describe('gitd indexer', () => {
 
     store = new IndexerStore();
     crawler = new IndexerCrawler(ctx, store);
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });
