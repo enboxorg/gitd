@@ -10,6 +10,9 @@
     },
     "alias": {
       "type": "string"
+    },
+    "public": {
+      "type": "boolean"
     }
   },
   "required": ["did"],

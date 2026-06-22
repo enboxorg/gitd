@@ -17,6 +17,8 @@ import type { AgentContext } from './agent.js';
 
 /** Repo context returned by {@link getRepoContext}. */
 export type RepoContext = {
+  /** The repo record ID (stable identifier used by indexers and cross-DWN submissions). */
+  recordId: string;
   /** The repo record's contextId (used as parentContextId for child records). */
   contextId: string;
   /** Repo visibility — controls encryption of bundle records. */
@@ -86,5 +88,5 @@ function extractContext(record: any, name: string): RepoContext {
   }
 
   const visibility = (record.tags?.visibility as 'public' | 'private') ?? 'public';
-  return { contextId, visibility, name };
+  return { recordId: record.id, contextId, visibility, name };
 }

@@ -7,6 +7,8 @@
  *   gitd issue comment <id> <body>
  *   gitd issue close <id> [--reason <text>]
  *   gitd issue reopen <id>
+ *   gitd issue accept <submitter-did> <id>
+ *   gitd issue ignore <submitter-did> <id> [--reason <text>]
  *   gitd issue list [--status <open|closed>]
  *
  * @module
@@ -14,9 +16,10 @@
 
 import type { AgentContext } from '../agent.js';
 
-import { getRepoContextId } from '../repo-context.js';
+import { recordIgnoredSubmission } from '../submission-decisions.js';
 import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, resolveRepoName } from '../flags.js';
+import { getRepoContext, getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -32,10 +35,12 @@ export async function issueCommand(ctx: AgentContext, args: string[]): Promise<v
     case 'comment': return issueComment(ctx, rest);
     case 'close': return issueClose(ctx, rest);
     case 'reopen': return issueReopen(ctx, rest);
+    case 'accept': return issueAccept(ctx, rest);
+    case 'ignore': return issueIgnore(ctx, rest);
     case 'list':
     case 'ls': return issueList(ctx, rest);
     default:
-      console.error('Usage: gitd issue <create|show|comment|close|reopen|list>');
+      console.error('Usage: gitd issue <create|show|comment|close|reopen|accept|ignore|list>');
       process.exit(1);
   }
 }
@@ -171,6 +176,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
     console.error('Usage: gitd issue close <id>');
     process.exit(1);
   }
+  const reason = flagValue(args, '--reason') ?? flagValue(args, '-m');
 
   const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   const issue = await findById(ctx, repoContextId, idStr);
@@ -194,6 +200,16 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
 
   if (status.code >= 300) {
     console.error(`Failed to close issue: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+
+  const event = await ctx.issues.records.create('repo/issue/statusChange' as any, {
+    data            : reason ? { reason } : {},
+    tags            : { from: tags?.status ?? 'open', to: 'closed' },
+    parentContextId : issue.contextId,
+  } as any);
+  if (event.status.code >= 300) {
+    console.error(`Failed to record issue status change: ${event.status.code} ${event.status.detail}`);
     process.exit(1);
   }
 
@@ -236,7 +252,133 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const event = await ctx.issues.records.create('repo/issue/statusChange' as any, {
+    data            : {},
+    tags            : { from: tags?.status ?? 'closed', to: 'open' },
+    parentContextId : issue.contextId,
+  } as any);
+  if (event.status.code >= 300) {
+    console.error(`Failed to record issue status change: ${event.status.code} ${event.status.detail}`);
+    process.exit(1);
+  }
+
   console.log(`Reopened issue ${idStr}: "${data.title}"`);
+}
+
+// ---------------------------------------------------------------------------
+// issue accept
+// ---------------------------------------------------------------------------
+
+async function issueAccept(ctx: AgentContext, args: string[]): Promise<void> {
+  const submitterDid = args[0];
+  const idStr = args[1];
+
+  if (!submitterDid || !idStr) {
+    console.error('Usage: gitd issue accept <submitter-did> <id> [--repo <name>]');
+    process.exit(1);
+  }
+
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
+  const { records } = await ctx.issues.records.query('repo/issue', {
+    from   : submitterDid,
+    filter : { tags: { repoDid: ctx.did, repoRecordId: repo.recordId } },
+  });
+
+  const externalIssue = findExternalRecord(records, idStr);
+  if (!externalIssue) {
+    console.error(`External issue ${idStr} from ${submitterDid} not found for ${repo.name}.`);
+    process.exit(1);
+  }
+
+  const externalTags = externalIssue.tags as Record<string, string> | undefined;
+  if (externalTags?.repoDid !== ctx.did || externalTags?.repoRecordId !== repo.recordId) {
+    console.error(`External issue ${idStr} does not target ${ctx.did}/${repo.name}.`);
+    process.exit(1);
+  }
+
+  const data = await externalIssue.data.json();
+  const title = typeof data.title === 'string' ? data.title : 'Untitled issue';
+  const body = typeof data.body === 'string' ? data.body : '';
+  const statusTag = externalTags?.status === 'closed' ? 'closed' : 'open';
+  const tags: Record<string, string> = {
+    status              : statusTag,
+    submitterDid,
+    submissionRecordId  : externalIssue.id,
+    submissionContextId : externalIssue.contextId ?? '',
+  };
+
+  const { status, record } = await ctx.issues.records.create('repo/issue', {
+    data            : { title, body },
+    tags,
+    parentContextId : repo.contextId,
+  });
+
+  if (status.code >= 300) {
+    console.error(`Failed to accept issue: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+  if (!record) {throw new Error('Failed to create accepted issue record');}
+
+  const copied = await copyExternalIssueThread(ctx, submitterDid, externalIssue, record);
+
+  console.log(`Accepted external issue ${shortId(externalIssue.id)} as ${shortId(record.id)}: "${title}"`);
+  console.log(`  Submitter: ${submitterDid}`);
+  console.log(`  Source record: ${externalIssue.id}`);
+  console.log(`  Record ID: ${record.id}`);
+  const copiedParts = [
+    copied.comments > 0 ? `${copied.comments} comment${copied.comments !== 1 ? 's' : ''}` : '',
+    copied.statusChanges > 0 ? `${copied.statusChanges} status change${copied.statusChanges !== 1 ? 's' : ''}` : '',
+  ].filter(Boolean);
+  if (copiedParts.length > 0) {
+    console.log(`  Copied: ${copiedParts.join(', ')}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// issue ignore
+// ---------------------------------------------------------------------------
+
+async function issueIgnore(ctx: AgentContext, args: string[]): Promise<void> {
+  const submitterDid = args[0];
+  const idStr = args[1];
+  const reason = flagValue(args, '--reason') ?? flagValue(args, '-m');
+
+  if (!submitterDid || !idStr) {
+    console.error('Usage: gitd issue ignore <submitter-did> <id> [--repo <name>] [--reason <text>]');
+    process.exit(1);
+  }
+
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
+  const { records } = await ctx.issues.records.query('repo/issue', {
+    from   : submitterDid,
+    filter : { tags: { repoDid: ctx.did, repoRecordId: repo.recordId } },
+  });
+
+  const externalIssue = findExternalRecord(records, idStr);
+  if (!externalIssue) {
+    console.error(`External issue ${idStr} from ${submitterDid} not found for ${repo.name}.`);
+    process.exit(1);
+  }
+
+  const externalTags = externalIssue.tags as Record<string, string> | undefined;
+  if (externalTags?.repoDid !== ctx.did || externalTags?.repoRecordId !== repo.recordId) {
+    console.error(`External issue ${idStr} does not target ${ctx.did}/${repo.name}.`);
+    process.exit(1);
+  }
+
+  const decision = await recordIgnoredSubmission(ctx, repo, 'issue', submitterDid, externalIssue, reason);
+  if (decision.status && decision.status.code >= 300) {
+    console.error(`Failed to ignore issue: ${decision.status.code} ${decision.status.detail}`);
+    process.exit(1);
+  }
+
+  if (!decision.created) {
+    console.log(`External issue ${shortId(externalIssue.id)} is already ignored.`);
+    return;
+  }
+
+  console.log(`Ignored external issue ${shortId(externalIssue.id)} from ${submitterDid}.`);
+  console.log(`  Decision record: ${decision.record?.id ?? 'unknown'}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,4 +441,57 @@ async function findById(
   });
 
   return findByShortId(records, idStr);
+}
+
+function findExternalRecord(records: any[], idStr: string): any | undefined {
+  return records.find(record => record.id === idStr || shortId(record.id).startsWith(idStr.toLowerCase()));
+}
+
+async function copyExternalIssueThread(
+  ctx: AgentContext,
+  submitterDid: string,
+  externalIssue: any,
+  acceptedIssue: any,
+): Promise<{ comments: number; statusChanges: number }> {
+  const { records: comments } = await ctx.issues.records.query('repo/issue/comment' as any, {
+    from   : submitterDid,
+    filter : { contextId: externalIssue.contextId },
+  });
+
+  let copiedComments = 0;
+  for (const comment of comments) {
+    const commentData = await comment.data.json();
+    const { status } = await ctx.issues.records.create('repo/issue/comment' as any, {
+      data            : commentData,
+      parentContextId : acceptedIssue.contextId,
+    } as any);
+    if (status.code >= 300) {
+      console.error(`  Warning: failed to copy issue comment ${comment.id}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    copiedComments++;
+  }
+
+  const { records: statusChanges } = await ctx.issues.records.query('repo/issue/statusChange' as any, {
+    from   : submitterDid,
+    filter : { contextId: externalIssue.contextId },
+  });
+
+  let copiedStatusChanges = 0;
+  for (const statusChange of statusChanges) {
+    const statusData = await statusChange.data.json();
+    const statusTags = (statusChange.tags ?? {}) as Record<string, unknown>;
+    const { status } = await ctx.issues.records.create('repo/issue/statusChange' as any, {
+      data            : statusData,
+      tags            : statusTags,
+      parentContextId : acceptedIssue.contextId,
+    } as any);
+    if (status.code >= 300) {
+      console.error(`  Warning: failed to copy issue status change ${statusChange.id}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    copiedStatusChanges++;
+  }
+
+  return { comments: copiedComments, statusChanges: copiedStatusChanges };
 }

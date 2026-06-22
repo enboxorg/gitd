@@ -130,7 +130,7 @@ function printUsage(): void {
   console.log('  serve logs                                  Tail daemon log file');
   console.log('');
   console.log('  repo info                                   Show repo metadata');
-  console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|triager|contributor)');
+  console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|triager|contributor|viewer)');
   console.log('  repo remove-collaborator <did>              Revoke a collaborator role');
   console.log('');
   console.log('  issue create <title> [--body <text>]        File an issue');
@@ -138,6 +138,8 @@ function printUsage(): void {
   console.log('  issue comment <number> <body>               Add a comment to an issue');
   console.log('  issue close <number>                        Close an issue');
   console.log('  issue reopen <number>                       Reopen a closed issue');
+  console.log('  issue accept <did> <id>                     Accept an external issue submission');
+  console.log('  issue ignore <did> <id>                     Ignore an external issue submission');
   console.log('  issue list [--status <open|closed>]         List issues');
   console.log('');
   console.log('  pr create <title> [--base ...] [--head ...]     Open a pull request');
@@ -146,6 +148,8 @@ function printUsage(): void {
   console.log('  pr merge <number> [--squash|--rebase]           Merge a PR with actual git merge');
   console.log('  pr close <number>                              Close a PR');
   console.log('  pr reopen <number>                             Reopen a closed PR');
+  console.log('  pr accept <did> <id>                           Accept an external PR submission');
+  console.log('  pr ignore <did> <id>                           Ignore an external PR submission');
   console.log('  pr list [--status <status>]                    List PRs');
   console.log('');
   console.log('  release create <tag> [--name ...] [--body ...]  Create a release');

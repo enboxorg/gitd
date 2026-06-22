@@ -71,6 +71,28 @@ describe('createDidSignatureVerifier', () => {
     expect(result).toBe(false);
   });
 
+  it('should verify against a trusted local DID document before resolver lookup', async () => {
+    const bearerDid = await DidJwk.create({ options: { algorithm: 'Ed25519' } });
+    const localDid = 'did:dht:local-verifier';
+    const localDocument = structuredClone(bearerDid.document) as any;
+    localDocument.id = localDid;
+    localDocument.verificationMethod = localDocument.verificationMethod.map((method: any) => ({
+      ...method,
+      id         : `${localDid}#sig`,
+      controller : localDid,
+    }));
+    localDocument.authentication = [`${localDid}#sig`];
+
+    const verifier = createDidSignatureVerifier({ didDocuments: [localDocument] });
+    const data = new TextEncoder().encode('local document data');
+    const portableDid = await bearerDid.export();
+    const privateKey = portableDid.privateKeys?.[0];
+    const signature = await sign(privateKey as Record<string, unknown>, data);
+
+    const result = await verifier(localDid, data, signature);
+    expect(result).toBe(true);
+  });
+
   it('should reject when DID cannot be resolved', async () => {
     const verifier = createDidSignatureVerifier();
     const data = new TextEncoder().encode('test');

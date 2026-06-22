@@ -11,11 +11,42 @@
     "summary": {
       "type": "string"
     },
+    "repoDid": {
+      "type": "string"
+    },
+    "repoRecordId": {
+      "type": "string"
+    },
+    "repoName": {
+      "type": "string"
+    },
+    "recordId": {
+      "type": "string"
+    },
     "targetDid": {
       "type": "string"
     },
     "targetRecordId": {
       "type": "string"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "head": {
+      "type": "string"
+    },
+    "before": {
+      "type": "string"
+    },
+    "tagName": {
+      "type": "string"
+    },
+    "public": {
+      "type": "boolean"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   "required": ["type", "summary"],

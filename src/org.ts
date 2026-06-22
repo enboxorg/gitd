@@ -28,6 +28,14 @@ export type OrgData = {
 export type OrgMemberData = {
   did : string;
   alias? : string;
+  public? : boolean;
+};
+
+/** Data shape for a user blocked by an organization. */
+export type OrgBlockedUserData = {
+  did : string;
+  blockedAt? : string;
+  blockedBy? : string;
 };
 
 /** Data shape for a team within an organization. */
@@ -35,12 +43,86 @@ export type TeamData = {
   name : string;
   description? : string;
   privacy : 'visible' | 'secret';
+  repositories? : Record<string, {
+    owner : string;
+    repo : string;
+    permission : 'pull' | 'triage' | 'push' | 'maintain' | 'admin';
+  }>;
 };
 
 /** Data shape for a team member. */
 export type TeamMemberData = {
   did : string;
   alias? : string;
+  role? : 'member' | 'maintainer';
+  state? : 'active' | 'pending';
+};
+
+/** Data shape for an organization webhook configuration. */
+export type OrgWebhookDeliveryData = {
+  id : number;
+  guid : string;
+  deliveredAt : string;
+  redelivery : boolean;
+  duration : number;
+  status : string;
+  statusCode : number;
+  event : string;
+  action? : string | null;
+  installationId? : number | null;
+  repositoryId? : number | null;
+  throttledAt? : string | null;
+  request? : {
+    headers? : Record<string, string>;
+    payload? : unknown;
+  };
+  response? : {
+    headers? : Record<string, string>;
+    payload? : unknown;
+  };
+};
+
+export type OrgWebhookData = {
+  url : string;
+  secret : string;
+  events : string[];
+  active : boolean;
+  deliveries? : Record<string, OrgWebhookDeliveryData>;
+};
+
+export type OrgIssueFieldOptionData = {
+  id? : number;
+  name : string;
+  description? : string | null;
+  color : 'gray' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink' | 'purple';
+  priority : number;
+};
+
+/** Data shape for an organization-level custom issue field. */
+export type OrgIssueFieldData = {
+  name : string;
+  description? : string | null;
+  dataType : 'text' | 'single_select' | 'number' | 'date' | 'multi_select';
+  visibility? : 'organization_members_only' | 'all';
+  options? : OrgIssueFieldOptionData[];
+};
+
+export type OrgIssueTypeData = {
+  name : string;
+  description? : string | null;
+  color? : 'gray' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink' | 'purple' | null;
+  isEnabled : boolean;
+};
+
+export type OrgCustomPropertyData = {
+  propertyName : string;
+  valueType : 'string' | 'single_select' | 'multi_select' | 'true_false' | 'url';
+  required? : boolean;
+  defaultValue? : string | string[] | null;
+  description? : string | null;
+  allowedValues? : string[] | null;
+  valuesEditableBy? : 'org_actors' | 'org_and_repo_actors' | null;
+  requireExplicitValues? : boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -52,8 +134,13 @@ export type ForgeOrgSchemaMap = {
   org : OrgData;
   owner : OrgMemberData;
   member : OrgMemberData;
+  blockedUser : OrgBlockedUserData;
   team : TeamData;
   teamMember : TeamMemberData;
+  webhook : OrgWebhookData;
+  issueField : OrgIssueFieldData;
+  issueType : OrgIssueTypeData;
+  customProperty : OrgCustomPropertyData;
 };
 
 // ---------------------------------------------------------------------------
@@ -76,12 +163,33 @@ export const ForgeOrgDefinition = {
       schema      : 'https://enbox.org/schemas/forge/org-member',
       dataFormats : ['application/json'],
     },
+    blockedUser: {
+      schema      : 'https://enbox.org/schemas/forge/org-blocked-user',
+      dataFormats : ['application/json'],
+    },
     team: {
       schema      : 'https://enbox.org/schemas/forge/team',
       dataFormats : ['application/json'],
     },
     teamMember: {
       schema      : 'https://enbox.org/schemas/forge/team-member',
+      dataFormats : ['application/json'],
+    },
+    webhook: {
+      schema             : 'https://enbox.org/schemas/forge/org-webhook',
+      dataFormats        : ['application/json'],
+      encryptionRequired : true,
+    },
+    issueField: {
+      schema      : 'https://enbox.org/schemas/forge/org-issue-field',
+      dataFormats : ['application/json'],
+    },
+    issueType: {
+      schema      : 'https://enbox.org/schemas/forge/org-issue-type',
+      dataFormats : ['application/json'],
+    },
+    customProperty: {
+      schema      : 'https://enbox.org/schemas/forge/org-custom-property',
       dataFormats : ['application/json'],
     },
   },
@@ -113,6 +221,18 @@ export const ForgeOrgDefinition = {
         },
       },
 
+      blockedUser: {
+        $actions: [
+          { who: 'anyone', can: ['read'] },
+          { role: 'org/owner', can: ['create', 'delete'] },
+        ],
+        $tags: {
+          $requiredTags       : ['did'],
+          $allowUndefinedTags : false,
+          did                 : { type: 'string' },
+        },
+      },
+
       team: {
         $actions: [
           { who: 'anyone', can: ['read'] },
@@ -130,6 +250,49 @@ export const ForgeOrgDefinition = {
             $allowUndefinedTags : false,
             did                 : { type: 'string' },
           },
+        },
+      },
+
+      webhook: {
+        // Owner-only, encrypted at rest (webhook secrets are sensitive)
+      },
+
+      issueField: {
+        $actions: [
+          { who: 'anyone', can: ['read'] },
+          { role: 'org/owner', can: ['create', 'update', 'delete'] },
+        ],
+        $tags: {
+          $requiredTags       : ['name', 'dataType'],
+          $allowUndefinedTags : false,
+          name                : { type: 'string' },
+          dataType            : { type: 'string', enum: ['text', 'single_select', 'number', 'date', 'multi_select'] },
+        },
+      },
+
+      issueType: {
+        $actions: [
+          { who: 'anyone', can: ['read'] },
+          { role: 'org/owner', can: ['create', 'update', 'delete'] },
+        ],
+        $tags: {
+          $requiredTags       : ['name', 'isEnabled'],
+          $allowUndefinedTags : false,
+          name                : { type: 'string' },
+          isEnabled           : { type: 'boolean' },
+        },
+      },
+
+      customProperty: {
+        $actions: [
+          { who: 'anyone', can: ['read'] },
+          { role: 'org/owner', can: ['create', 'update', 'delete'] },
+        ],
+        $tags: {
+          $requiredTags       : ['propertyName', 'valueType'],
+          $allowUndefinedTags : false,
+          propertyName        : { type: 'string' },
+          valueType           : { type: 'string', enum: ['string', 'single_select', 'multi_select', 'true_false', 'url'] },
         },
       },
     },

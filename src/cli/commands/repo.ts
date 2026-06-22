@@ -6,7 +6,7 @@
  *   gitd repo add-collaborator <did> <role>  Grant a role
  *   gitd repo remove-collaborator <did>      Revoke a collaborator role
  *
- * Roles: maintainer, triager, contributor
+ * Roles: maintainer, triager, contributor, viewer
  *
  * @module
  */
@@ -20,7 +20,7 @@ import { flagValue, resolveRepoName } from '../flags.js';
 // Valid roles
 // ---------------------------------------------------------------------------
 
-const VALID_ROLES = ['maintainer', 'triager', 'contributor'] as const;
+const VALID_ROLES = ['maintainer', 'triager', 'contributor', 'viewer'] as const;
 type Role = typeof VALID_ROLES[number];
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,9 @@ async function repoInfo(ctx: AgentContext, args: string[]): Promise<void> {
 
   // List collaborators per role.
   for (const role of VALID_ROLES) {
-    const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any);
+    const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any, {
+      filter: { contextId: record.contextId },
+    });
     if (collabs.length > 0) {
       console.log(`\n  ${role}s:`);
       for (const collab of collabs) {
@@ -174,11 +176,12 @@ async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   let found = false;
 
   for (const role of VALID_ROLES) {
     const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any, {
-      filter: { tags: { did } },
+      filter: { contextId: repoContextId, tags: { did } },
     });
 
     for (const collab of collabs) {
@@ -195,5 +198,3 @@ async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 }
-
-

@@ -19,6 +19,82 @@
     },
     "active": {
       "type": "boolean"
+    },
+    "deliveries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "guid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deliveredAt": {
+            "type": "string"
+          },
+          "redelivery": {
+            "type": "boolean"
+          },
+          "duration": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer"
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": ["string", "null"]
+          },
+          "installationId": {
+            "type": ["integer", "null"]
+          },
+          "repositoryId": {
+            "type": ["integer", "null"]
+          },
+          "throttledAt": {
+            "type": ["string", "null"]
+          },
+          "request": {
+            "type": "object",
+            "properties": {
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "payload": {}
+            },
+            "additionalProperties": false
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "payload": {}
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "guid", "deliveredAt", "redelivery", "duration", "status", "statusCode", "event"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["url", "secret", "events", "active"],

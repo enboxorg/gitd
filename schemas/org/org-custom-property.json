@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/org-custom-property",
+  "title": "OrgCustomPropertyData",
+  "description": "An organization-level repository custom property definition",
+  "type": "object",
+  "properties": {
+    "propertyName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 75
+    },
+    "valueType": {
+      "type": "string",
+      "enum": ["string", "single_select", "multi_select", "true_false", "url"]
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "defaultValue": {
+      "type": ["string", "array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": ["string", "null"]
+    },
+    "allowedValues": {
+      "type": ["array", "null"],
+      "maxItems": 200,
+      "items": {
+        "type": "string"
+      }
+    },
+    "valuesEditableBy": {
+      "type": ["string", "null"],
+      "enum": ["org_actors", "org_and_repo_actors", null]
+    },
+    "requireExplicitValues": {
+      "type": "boolean"
+    }
+  },
+  "required": ["propertyName", "valueType"],
+  "additionalProperties": false
+}

@@ -21,6 +21,7 @@
  * @module
  */
 
+import type { DidDocument } from '@enbox/dids';
 import type { EnboxPlatformAgent } from '@enbox/agent';
 
 import type { AgentContext } from '../agent.js';
@@ -95,6 +96,20 @@ export async function checkPublicUrl(publicUrl: string): Promise<boolean> {
   }
 }
 
+async function getLocalDidDocuments(ctx: AgentContext): Promise<Map<string, DidDocument>> {
+  const documents = new Map<string, DidDocument>();
+  try {
+    const agent = ctx.enbox.agent as EnboxPlatformAgent;
+    const identities = await agent.identity.list();
+    for (const identity of identities) {
+      documents.set(identity.did.uri, identity.did.document);
+    }
+  } catch {
+    // Resolver lookup still handles non-local DIDs.
+  }
+  return documents;
+}
+
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
@@ -116,7 +131,9 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   }
 
   // DID-based signature verification for push tokens.
-  const verifySignature = createDidSignatureVerifier();
+  const verifySignature = createDidSignatureVerifier({
+    didDocuments: await getLocalDidDocuments(ctx),
+  });
 
   // DWN-based push authorization — checks role records.
   const authorizePush = createDwnPushAuthorizer({
@@ -295,7 +312,7 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
   const stopRepublisher = startDidRepublisher(ctx.enbox);
 
   // Register the daemon so git-remote-did can discover it.
-  writeLockfile(server.port, getVersion() ?? undefined);
+  writeLockfile(server.port, getVersion() ?? undefined, ctx.did);
 
   // Wire up the idle shutdown function now that we have all the pieces.
   shutdown.fn = async (): Promise<void> => {

@@ -236,8 +236,10 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
     recoveryPhrase: inputPhrase,
   });
 
-  // Build the Enbox API from the session.
-  const enbox = Enbox.connect({ session });
+  await cacheLocalDid(session.agent as EnboxUserAgent, session.did);
+
+  // Build the Enbox API from the caller-owned AuthManager session.
+  const enbox = Enbox.fromSession(session);
 
   return bindProtocols(enbox, session.did, session.recoveryPhrase);
 }
@@ -245,6 +247,21 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+async function cacheLocalDid(agent: EnboxUserAgent, did: string): Promise<void> {
+  const agentDid = agent.agentDid;
+  const localDid = did === agentDid?.uri
+    ? agentDid
+    : await agent.did.get({ didUri: did, tenant: agentDid?.uri });
+  if (!localDid) { return; }
+
+  const portableDid = await localDid.export();
+  await (agent.did as any).cache.set(portableDid.uri, {
+    didDocument           : portableDid.document,
+    didDocumentMetadata   : portableDid.metadata,
+    didResolutionMetadata : {},
+  });
+}
 
 /** Bind typed protocol handles and configure all protocols. */
 async function bindProtocols(

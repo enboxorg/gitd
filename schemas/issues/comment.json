@@ -7,6 +7,13 @@
   "properties": {
     "body": {
       "type": "string"
+    },
+    "pinnedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pinnedBy": {
+      "type": "string"
     }
   },
   "required": ["body"],

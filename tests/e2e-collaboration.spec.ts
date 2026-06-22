@@ -28,6 +28,8 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
+import { cachePortableDid } from './helpers/identity.js';
+import { createTestIdentity } from './helpers/identity.js';
 import { DataStream } from '@enbox/dwn-sdk-js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
@@ -73,8 +75,8 @@ const BOB_CLONE_PATH = `${BASE}/bob-clone`;
 // `DidDht.create({ publish: true })`.  Instead, we:
 //   1. Create the agent (optionally injecting a shared DWN)
 //   2. Assign `agent.agentDid` directly with `publish: false`
-//   3. Create an identity DID with `did:jwk` (purely local)
-//   4. Connect via `Enbox.connect({ agent })` — skips vault flow
+//   3. Create an identity DID with offline DID:DHT keys
+//   4. Construct `Enbox` directly with the selected identity
 //
 // ---------------------------------------------------------------------------
 
@@ -82,6 +84,8 @@ async function createOfflineAgent(dataPath: string): Promise<{
   agent: EnboxUserAgent;
   enbox: InstanceType<typeof Enbox>;
   did: string;
+  didDocument: any;
+  portableDid: any;
   privateKey: Record<string, unknown>;
 }> {
   const agent = await EnboxUserAgent.create({ dataPath });
@@ -107,21 +111,27 @@ async function createOfflineAgent(dataPath: string): Promise<{
     tenant      : agentBearerDid.uri,
   });
 
-  // Create an identity DID (did:jwk — offline, no network).
-  const identity = await agent.identity.create({
-    didMethod  : 'jwk',
-    metadata   : { name: `Test (${dataPath})` },
-    didOptions : { algorithm: 'Ed25519' },
-  });
+  const identity = await createTestIdentity(agent, `Test (${dataPath})`);
 
-  const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+  const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
   const did = identity.did.uri;
 
   // Extract the private key for push credential signing.
   const portableDid = await identity.did.export();
   const privateKey = portableDid.privateKeys![0] as Record<string, unknown>;
 
-  return { agent, enbox, did, privateKey };
+  return {
+    agent,
+    enbox,
+    did,
+    didDocument : identity.did.document,
+    portableDid : {
+      uri      : portableDid.uri,
+      document : portableDid.document,
+      metadata : portableDid.metadata,
+    },
+    privateKey,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +141,7 @@ async function createOfflineAgent(dataPath: string): Promise<{
 describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   // Alice's state
   let aliceDid: string;
+  let aliceDidDocument: any;
   let alicePrivateKey: Record<string, unknown>;
   let aliceAgent: EnboxUserAgent;
   let aliceRepo: AgentContext['repo'];
@@ -140,6 +151,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
   // Bob's state
   let bobDid: string;
+  let bobDidDocument: any;
   let bobPrivateKey: Record<string, unknown>;
   let bobPatches: AgentContext['patches'];
 
@@ -157,6 +169,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     // ----- Alice (maintainer) -----
     const alice = await createOfflineAgent(ALICE_DATA);
     aliceDid = alice.did;
+    aliceDidDocument = alice.didDocument;
     alicePrivateKey = alice.privateKey;
     aliceAgent = alice.agent;
 
@@ -170,7 +183,11 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     // ----- Bob (contributor) -----
     const bob = await createOfflineAgent(BOB_DATA);
     bobDid = bob.did;
+    bobDidDocument = bob.didDocument;
     bobPrivateKey = bob.privateKey;
+
+    await cachePortableDid(alice.agent, bob.portableDid);
+    await cachePortableDid(bob.agent, alice.portableDid);
 
     // Bob must install ForgeRepoProtocol before ForgePatchesProtocol
     // because the patches definition `uses` the repo protocol ($ref).
@@ -212,7 +229,9 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     const backend = new GitBackend({ basePath: REPOS_PATH });
     await backend.initRepo(aliceDid, 'collab-repo');
 
-    const verifySignature = createDidSignatureVerifier();
+    const verifySignature = createDidSignatureVerifier({
+      didDocuments: [aliceDidDocument, bobDidDocument],
+    });
     const authorizePush = createDwnPushAuthorizer({
       repo     : aliceRepo,
       ownerDid : aliceDid,
@@ -335,7 +354,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     const helper = await credentialHelper(aliceDid, alicePrivateKey);
     await exec(`git config --replace-all credential.helper '${helper}'`, { cwd: ALICE_CLONE_PATH });
     await exec('GIT_TERMINAL_PROMPT=0 git push -u origin main', { cwd: ALICE_CLONE_PATH });
-  });
+  }, 15_000);
 
   it('Phase 1c: Alice\'s commits are in the bare repo', async () => {
     const repoPath = server.backend.repoPath(aliceDid, 'collab-repo');
@@ -348,7 +367,9 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     // Wait for async onPushComplete
     await new Promise((r) => setTimeout(r, 500));
 
-    const { records: refRecords } = await aliceRefs.records.query('repo/ref' as any);
+    const { records: refRecords } = await aliceRefs.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
 
     // Manually sync if timing is tight
     if (refRecords.length === 0) {
@@ -357,13 +378,13 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
       await syncer(aliceDid, 'collab-repo', repoPath);
     }
 
-    const { records: finalRefs } = await aliceRefs.records.query('repo/ref' as any);
+    const { records: finalRefs } = await aliceRefs.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
     expect(finalRefs.length).toBeGreaterThanOrEqual(1);
 
-    const mainRef = finalRefs.find(async (r: any) => {
-      const d = await r.data.json();
-      return d.name === 'refs/heads/main';
-    });
+    const refEntries = await Promise.all(finalRefs.map(async (r: any) => r.data.json()));
+    const mainRef = refEntries.find((d: any) => d.name === 'refs/heads/main');
     expect(mainRef).toBeDefined();
   });
 
@@ -426,7 +447,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
   // Bob creates records with `store: false` (signed by Bob, not persisted
   // locally) and then sends them to Alice's DWN via the shared multi-tenant
   // DWN node.  In production this would use `record.send(aliceDid)` over
-  // HTTP.  The protocol allows anyone to create: `{ who: 'anyone', can: ['create'] }`.
+  // HTTP. Bob invokes the contributor role Alice granted earlier.
   // =========================================================================
 
   let patchRecordId: string;
@@ -478,7 +499,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     // targeting Alice's DID on the shared multi-tenant DWN node.
     //
     // In production, this would use record.send(aliceDid) over HTTP.
-    // The protocol allows it: `{ who: 'anyone', can: ['create'] }`.
+    // Bob must invoke Alice's contributor grant for direct writes.
 
     const { bundlePath, baseCommit, headCommit } = (globalThis as any).__collab_bundle;
 
@@ -512,8 +533,9 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
           sourceDid  : bobDid,
         },
         parentContextId : repoContextId,
+        protocolRole    : 'repo:repo/contributor',
         store           : false,
-      },
+      } as any,
     );
     await sendToAlice(patchRecord);
     patchRecordId = patchRecord.id;
@@ -560,7 +582,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
 
     // Clean up temp bundle file
     try { rmSync(bundlePath); } catch { /* ok */ }
-  });
+  }, 15_000);
 
   it('Phase 3c: Bob\'s PR is visible in Alice\'s DWN', async () => {
     const { records } = await alicePatches.records.query('repo/patch', {
@@ -709,7 +731,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     const repoPath = server.backend.repoPath(aliceDid, 'collab-repo');
     const { stdout } = await exec('git log --oneline -5 main', { cwd: repoPath });
     expect(stdout).toContain('Merge PR');
-  });
+  }, 15_000);
 
   it('Phase 4f: Alice records the merge result in DWN', async () => {
     // Update the patch status to merged
@@ -839,7 +861,7 @@ describe('E2E: two-actor collaboration (maintainer + contributor)', () => {
     const repoPath = server.backend.repoPath(aliceDid, 'collab-repo');
     const { stdout } = await exec('git branch -a', { cwd: repoPath });
     expect(stdout).toContain('feat/add-multiply');
-  });
+  }, 15_000);
 
   it('Phase 6b: Unauthorized DID cannot push', async () => {
     // Create a stranger DID (no contributor role)

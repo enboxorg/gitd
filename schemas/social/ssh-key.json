@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/ssh-key",
+  "title": "SshKeyData",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "readOnly": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "additionalProperties": false
+}

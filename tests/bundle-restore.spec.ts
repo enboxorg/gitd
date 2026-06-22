@@ -11,6 +11,7 @@ import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, rmSync } from 'node:fs';
 
+import { createTestIdentity } from './helpers/identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
@@ -54,13 +55,10 @@ describe('restoreFromBundles', () => {
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Restore Test' },
-      });
+      identity = await createTestIdentity(agent, 'Restore Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
 
     repoHandle = enbox.using(ForgeRepoProtocol);
     // Skip encryption: true — the test DID (did:jwk Ed25519) lacks X25519.
@@ -114,8 +112,9 @@ describe('restoreFromBundles', () => {
     const restoredRepoPath = `${RESTORE_PATH}/restored.git`;
 
     const result = await restoreFromBundles({
-      repo     : repoHandle as any,
-      repoPath : restoredRepoPath,
+      repo          : repoHandle as any,
+      repoPath      : restoredRepoPath,
+      repoContextId : repoContextId,
     });
 
     expect(result.success).toBe(true);
@@ -130,8 +129,9 @@ describe('restoreFromBundles', () => {
     const restoredRepoPath = `${RESTORE_PATH}/restored-full.git`;
 
     const result = await restoreFromBundles({
-      repo     : repoHandle as any,
-      repoPath : restoredRepoPath,
+      repo          : repoHandle as any,
+      repoPath      : restoredRepoPath,
+      repoContextId : repoContextId,
     });
 
     expect(result.success).toBe(true);
@@ -149,8 +149,9 @@ describe('restoreFromBundles', () => {
     const clonePath = `${RESTORE_PATH}/restored-clone`;
 
     await restoreFromBundles({
-      repo     : repoHandle as any,
-      repoPath : restoredRepoPath,
+      repo          : repoHandle as any,
+      repoPath      : restoredRepoPath,
+      repoContextId : repoContextId,
     });
 
     // Clone from the restored bare repo to verify content.
@@ -175,13 +176,10 @@ describe('restoreFromBundles', () => {
     const identities = await freshAgent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await freshAgent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Fresh Test' },
-      });
+      identity = await createTestIdentity(freshAgent, 'Fresh Test');
     }
 
-    const freshEnbox = Enbox.connect({ agent: freshAgent, connectedDid: identity.did.uri });
+    const freshEnbox = new Enbox({ agent: freshAgent, connectedDid: identity.did.uri });
 
     const freshRepo = freshEnbox.using(ForgeRepoProtocol);
     await freshRepo.configure();
@@ -202,7 +200,7 @@ describe('restoreFromBundles', () => {
     expect(existsSync(`${RESTORE_PATH}/should-not-exist.git`)).toBe(false);
 
     rmSync(freshDataPath, { recursive: true, force: true });
-  });
+  }, 30_000);
 
   it('should restore the tip commit matching the original', async () => {
     const restoredRepoPath = `${RESTORE_PATH}/restored-tip.git`;
@@ -211,8 +209,9 @@ describe('restoreFromBundles', () => {
     const { stdout: originalTip } = await exec('git rev-parse main', { cwd: repoPath });
 
     const result = await restoreFromBundles({
-      repo     : repoHandle as any,
-      repoPath : restoredRepoPath,
+      repo          : repoHandle as any,
+      repoPath      : restoredRepoPath,
+      repoContextId : repoContextId,
     });
 
     expect(result.success).toBe(true);

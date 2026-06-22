@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/email",
+  "title": "EmailData",
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string"
+    },
+    "primary": {
+      "type": "boolean"
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "visibility": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "public",
+        "private",
+        null
+      ]
+    },
+    "createdAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "email"
+  ],
+  "additionalProperties": false
+}

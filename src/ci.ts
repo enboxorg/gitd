@@ -19,6 +19,13 @@ import { defineProtocol } from '@enbox/api';
 export type CheckSuiteData = {
   app : string;
   headBranch? : string;
+  event? : string;
+  displayTitle? : string;
+  message? : string;
+  inputs? : Record<string, string | number | boolean | null>;
+  conclusion? : string;
+  startedAt? : string;
+  completedAt? : string;
 };
 
 /** Data shape for an individual check run within a suite. */
@@ -27,7 +34,11 @@ export type CheckRunData = {
     title : string;
     summary : string;
     text? : string;
+    steps? : Array<Record<string, unknown>>;
+    annotations? : Array<Record<string, unknown>>;
   };
+  startedAt? : string;
+  completedAt? : string;
 };
 
 // ---------------------------------------------------------------------------
@@ -61,7 +72,7 @@ export const ForgeCiDefinition = {
       dataFormats : ['application/json'],
     },
     artifact: {
-      dataFormats: ['application/octet-stream', 'application/gzip'],
+      dataFormats: ['application/octet-stream', 'application/gzip', 'application/zip'],
     },
   },
   structure: {
@@ -71,7 +82,7 @@ export const ForgeCiDefinition = {
       checkSuite: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'update'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
         ],
         $tags: {
           $requiredTags       : ['commitSha', 'status'],
@@ -85,7 +96,7 @@ export const ForgeCiDefinition = {
         checkRun: {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
-            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update'] },
+            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update', 'delete'] },
           ],
           $tags: {
             $requiredTags       : ['name', 'status'],
@@ -98,8 +109,19 @@ export const ForgeCiDefinition = {
           artifact: {
             $actions: [
               { role: 'repo:repo/contributor', can: ['read'] },
-              { who: 'author', of: 'repo/checkSuite', can: ['create'] },
+              { who: 'author', of: 'repo/checkSuite', can: ['create', 'delete'] },
             ],
+            $tags: {
+              $requiredTags       : ['name'],
+              $allowUndefinedTags : false,
+              name                : { type: 'string' },
+              size                : { type: 'integer' },
+              contentType         : { type: 'string' },
+              digest              : { type: 'string' },
+              expired             : { type: 'boolean' },
+              expiresAt           : { type: 'string' },
+            },
+            $size: { max: 104857600 },
           },
         },
       },

@@ -10,6 +10,14 @@
     },
     "alias": {
       "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["member", "maintainer"]
+    },
+    "state": {
+      "type": "string",
+      "enum": ["active", "pending"]
     }
   },
   "required": ["did"],

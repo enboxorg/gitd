@@ -31,6 +31,8 @@ export type DwnPushAuthorizerOptions = {
   repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
   /** The DID of the DWN owner (server operator). */
   ownerDid: string;
+  /** Optional known repo context. If omitted, resolved from the pushed repo name. */
+  repoContextId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -48,17 +50,22 @@ export type DwnPushAuthorizerOptions = {
  * @returns A PushAuthorizer callback
  */
 export function createDwnPushAuthorizer(options: DwnPushAuthorizerOptions): PushAuthorizer {
-  const { repo, ownerDid } = options;
+  const { repo, ownerDid, repoContextId } = options;
 
-  return async (did: string, owner: string, _repoName: string): Promise<boolean> => {
+  return async (did: string, owner: string, repoName: string): Promise<boolean> => {
     // The owner can always push to their own repos.
     if (did === owner || did === ownerDid) {
       return true;
     }
 
+    const contextId = repoContextId ?? await findRepoContextId(repo, repoName);
+    if (!contextId) {
+      return false;
+    }
+
     // Query for maintainer role records for this DID.
     const { records: maintainers } = await repo.records.query('repo/maintainer' as any, {
-      filter: { tags: { did } },
+      filter: { contextId, tags: { did } },
     });
     if (maintainers.length > 0) {
       return true;
@@ -66,7 +73,7 @@ export function createDwnPushAuthorizer(options: DwnPushAuthorizerOptions): Push
 
     // Query for contributor role records for this DID.
     const { records: contributors } = await repo.records.query('repo/contributor' as any, {
-      filter: { tags: { did } },
+      filter: { contextId, tags: { did } },
     });
     if (contributors.length > 0) {
       return true;
@@ -74,4 +81,14 @@ export function createDwnPushAuthorizer(options: DwnPushAuthorizerOptions): Push
 
     return false;
   };
+}
+
+async function findRepoContextId(
+  repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>,
+  repoName: string,
+): Promise<string | undefined> {
+  const { records } = await repo.records.query('repo', {
+    filter: { tags: { name: repoName } },
+  });
+  return records[0]?.contextId;
 }

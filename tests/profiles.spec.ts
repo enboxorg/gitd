@@ -211,11 +211,15 @@ describe('connectAgent with profile dataPath', () => {
 
   afterAll(() => {
     rmSync(TEST_DATA, { recursive: true, force: true });
+    rmSync('DATA', { recursive: true, force: true });
+    rmSync('RESOLVERCACHE', { recursive: true, force: true });
   });
 
-  // SQLite migration + Dwn.create() takes longer than the default 5 s timeout.
+  // SQLite migration + Dwn.create() can take longer with newer Enbox SDKs.
   it('should create agent at specified dataPath', async () => {
     rmSync(TEST_DATA, { recursive: true, force: true });
+    rmSync('DATA', { recursive: true, force: true });
+    rmSync('RESOLVERCACHE', { recursive: true, force: true });
 
     const { connectAgent } = await import('../src/cli/agent.js');
     const result = await connectAgent({
@@ -230,7 +234,7 @@ describe('connectAgent with profile dataPath', () => {
     expect(existsSync(TEST_DATA)).toBe(true);
     // Verify the DWN uses SQLite instead of LevelDB.
     expect(existsSync(`${TEST_DATA}/dwn.sqlite`)).toBe(true);
-  }, 15_000);
+  }, 30_000);
 
   it('should not create RESOLVERCACHE in CWD', () => {
     // The DWN resolver cache should live inside the profile data path,

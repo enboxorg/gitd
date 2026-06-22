@@ -9,6 +9,8 @@
  *   gitd pr merge <id> [--squash | --rebase] [--no-delete-branch]
  *   gitd pr close <id>
  *   gitd pr reopen <id>
+ *   gitd pr accept <submitter-did> <id>
+ *   gitd pr ignore <submitter-did> <id> [--reason <text>]
  *   gitd pr list [--status <draft|open|closed|merged>]
  *
  * `gitd patch` is accepted as an alias for `gitd pr`.
@@ -23,9 +25,10 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 
-import { getRepoContextId } from '../repo-context.js';
+import { recordIgnoredSubmission } from '../submission-decisions.js';
 import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, hasFlag, resolveRepoName } from '../flags.js';
+import { getRepoContext, getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -44,10 +47,12 @@ export async function prCommand(ctx: AgentContext, args: string[]): Promise<void
     case 'merge': return prMerge(ctx, rest);
     case 'close': return prClose(ctx, rest);
     case 'reopen': return prReopen(ctx, rest);
+    case 'accept': return prAccept(ctx, rest);
+    case 'ignore': return prIgnore(ctx, rest);
     case 'list':
     case 'ls': return prList(ctx, rest);
     default:
-      console.error('Usage: gitd pr <create|checkout|show|comment|merge|close|reopen|list>');
+      console.error('Usage: gitd pr <create|checkout|show|comment|merge|close|reopen|accept|ignore|list>');
       process.exit(1);
   }
 }
@@ -629,6 +634,138 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// pr accept
+// ---------------------------------------------------------------------------
+
+async function prAccept(ctx: AgentContext, args: string[]): Promise<void> {
+  const submitterDid = args[0];
+  const idStr = args[1];
+
+  if (!submitterDid || !idStr) {
+    console.error('Usage: gitd pr accept <submitter-did> <id> [--repo <name>]');
+    process.exit(1);
+  }
+
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    from   : submitterDid,
+    filter : { tags: { repoDid: ctx.did, repoRecordId: repo.recordId } },
+  });
+
+  const externalPatch = findExternalRecord(records, idStr);
+  if (!externalPatch) {
+    console.error(`External PR ${idStr} from ${submitterDid} not found for ${repo.name}.`);
+    process.exit(1);
+  }
+
+  const externalTags = externalPatch.tags as Record<string, string> | undefined;
+  if (externalTags?.repoDid !== ctx.did || externalTags?.repoRecordId !== repo.recordId) {
+    console.error(`External PR ${idStr} does not target ${ctx.did}/${repo.name}.`);
+    process.exit(1);
+  }
+
+  const data = await externalPatch.data.json();
+  const title = typeof data.title === 'string' ? data.title : 'Untitled PR';
+  const body = typeof data.body === 'string' ? data.body : '';
+  const statusTag = validPatchStatus(externalTags?.status) ? externalTags.status : 'open';
+  const baseBranch = externalTags?.baseBranch ?? 'main';
+  const sourceDid = externalTags?.sourceDid ?? submitterDid;
+
+  const tags: Record<string, string> = {
+    status              : statusTag,
+    baseBranch,
+    sourceDid,
+    submitterDid,
+    submissionRecordId  : externalPatch.id,
+    submissionContextId : externalPatch.contextId ?? '',
+  };
+  if (externalTags?.headBranch) { tags.headBranch = externalTags.headBranch; }
+
+  const { status, record } = await ctx.patches.records.create('repo/patch', {
+    data            : { title, body },
+    tags,
+    parentContextId : repo.contextId,
+  });
+
+  if (status.code >= 300) {
+    console.error(`Failed to accept PR: ${status.code} ${status.detail}`);
+    process.exit(1);
+  }
+  if (!record) {throw new Error('Failed to create accepted PR record');}
+
+  const copiedRevisions = await copyExternalPatchRevisions(ctx, submitterDid, externalPatch, record);
+  const copiedDiscussion = await copyExternalPatchDiscussion(
+    ctx,
+    submitterDid,
+    externalPatch,
+    record,
+    copiedRevisions.revisionRecordIds,
+  );
+
+  console.log(`Accepted external PR ${shortId(externalPatch.id)} as ${shortId(record.id)}: "${title}"`);
+  console.log(`  Submitter: ${submitterDid}`);
+  console.log(`  Source record: ${externalPatch.id}`);
+  console.log(`  Record ID: ${record.id}`);
+  const copiedParts = [
+    copiedRevisions.revisions > 0 ? `${copiedRevisions.revisions} revision${copiedRevisions.revisions !== 1 ? 's' : ''}` : '',
+    copiedRevisions.bundles > 0 ? `${copiedRevisions.bundles} bundle${copiedRevisions.bundles !== 1 ? 's' : ''}` : '',
+    copiedDiscussion.reviews > 0 ? `${copiedDiscussion.reviews} review${copiedDiscussion.reviews !== 1 ? 's' : ''}` : '',
+    copiedDiscussion.reviewComments > 0 ? `${copiedDiscussion.reviewComments} review comment${copiedDiscussion.reviewComments !== 1 ? 's' : ''}` : '',
+    copiedDiscussion.statusChanges > 0 ? `${copiedDiscussion.statusChanges} status change${copiedDiscussion.statusChanges !== 1 ? 's' : ''}` : '',
+  ].filter(Boolean);
+  if (copiedParts.length > 0) {
+    console.log(`  Copied: ${copiedParts.join(', ')}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// pr ignore
+// ---------------------------------------------------------------------------
+
+async function prIgnore(ctx: AgentContext, args: string[]): Promise<void> {
+  const submitterDid = args[0];
+  const idStr = args[1];
+  const reason = flagValue(args, '--reason') ?? flagValue(args, '-m');
+
+  if (!submitterDid || !idStr) {
+    console.error('Usage: gitd pr ignore <submitter-did> <id> [--repo <name>] [--reason <text>]');
+    process.exit(1);
+  }
+
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
+  const { records } = await ctx.patches.records.query('repo/patch', {
+    from   : submitterDid,
+    filter : { tags: { repoDid: ctx.did, repoRecordId: repo.recordId } },
+  });
+
+  const externalPatch = findExternalRecord(records, idStr);
+  if (!externalPatch) {
+    console.error(`External PR ${idStr} from ${submitterDid} not found for ${repo.name}.`);
+    process.exit(1);
+  }
+
+  const externalTags = externalPatch.tags as Record<string, string> | undefined;
+  if (externalTags?.repoDid !== ctx.did || externalTags?.repoRecordId !== repo.recordId) {
+    console.error(`External PR ${idStr} does not target ${ctx.did}/${repo.name}.`);
+    process.exit(1);
+  }
+
+  const decision = await recordIgnoredSubmission(ctx, repo, 'patch', submitterDid, externalPatch, reason);
+  if (decision.status && decision.status.code >= 300) {
+    console.error(`Failed to ignore PR: ${decision.status.code} ${decision.status.detail}`);
+    process.exit(1);
+  }
+
+  if (!decision.created) {
+    console.log(`External PR ${shortId(externalPatch.id)} is already ignored.`);
+    return;
+  }
+
+  console.log(`Ignored external PR ${shortId(externalPatch.id)} from ${submitterDid}.`);
+  console.log(`  Decision record: ${decision.record?.id ?? 'unknown'}`);
+}
+
+// ---------------------------------------------------------------------------
 // pr list
 // ---------------------------------------------------------------------------
 
@@ -827,6 +964,149 @@ async function createRevisionAndBundle(
   }
 }
 
+async function copyExternalPatchRevisions(
+  ctx: AgentContext,
+  submitterDid: string,
+  externalPatch: any,
+  acceptedPatch: any,
+): Promise<{ revisions: number; bundles: number; revisionRecordIds: Map<string, string> }> {
+  const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
+    from   : submitterDid,
+    filter : { contextId: externalPatch.contextId },
+  });
+
+  let copiedRevisions = 0;
+  let copiedBundles = 0;
+  const revisionRecordIds = new Map<string, string>();
+  for (const revision of revisions) {
+    const revisionData = await revision.data.json();
+    const revisionTags = (revision.tags ?? {}) as Record<string, unknown>;
+    const { status, record: acceptedRevision } = await ctx.patches.records.create(
+      'repo/patch/revision' as any,
+      {
+        data            : revisionData,
+        tags            : revisionTags,
+        parentContextId : acceptedPatch.contextId,
+      } as any,
+    );
+    if (status.code >= 300 || !acceptedRevision) {
+      console.error(`  Warning: failed to copy revision ${revision.id}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    copiedRevisions++;
+    revisionRecordIds.set(revision.id, acceptedRevision.id);
+
+    const { records: bundles } = await ctx.patches.records.query('repo/patch/revision/revisionBundle' as any, {
+      from   : submitterDid,
+      filter : { contextId: revision.contextId },
+    });
+    for (const bundle of bundles) {
+      const blob = await bundle.data.blob();
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const bundleTags = (bundle.tags ?? {}) as Record<string, unknown>;
+      const { status: bundleStatus } = await ctx.patches.records.create(
+        'repo/patch/revision/revisionBundle' as any,
+        {
+          data            : bytes,
+          dataFormat      : 'application/x-git-bundle',
+          tags            : bundleTags,
+          parentContextId : acceptedRevision.contextId,
+        } as any,
+      );
+      if (bundleStatus.code >= 300) {
+        console.error(`  Warning: failed to copy bundle ${bundle.id}: ${bundleStatus.code} ${bundleStatus.detail}`);
+        continue;
+      }
+      copiedBundles++;
+    }
+  }
+
+  return { revisions: copiedRevisions, bundles: copiedBundles, revisionRecordIds };
+}
+
+async function copyExternalPatchDiscussion(
+  ctx: AgentContext,
+  submitterDid: string,
+  externalPatch: any,
+  acceptedPatch: any,
+  revisionRecordIds: Map<string, string>,
+): Promise<{ reviews: number; reviewComments: number; statusChanges: number }> {
+  const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
+    from   : submitterDid,
+    filter : { contextId: externalPatch.contextId },
+  });
+
+  let copiedReviews = 0;
+  let copiedReviewComments = 0;
+  for (const review of reviews) {
+    const reviewData = await review.data.json();
+    const reviewTags = { ...((review.tags ?? {}) as Record<string, unknown>) };
+    const revisionRecordId = reviewTags.revisionRecordId;
+    if (typeof revisionRecordId === 'string' && revisionRecordIds.has(revisionRecordId)) {
+      reviewTags.revisionRecordId = revisionRecordIds.get(revisionRecordId);
+    }
+
+    const { status, record: acceptedReview } = await ctx.patches.records.create(
+      'repo/patch/review' as any,
+      {
+        data            : reviewData,
+        tags            : reviewTags,
+        parentContextId : acceptedPatch.contextId,
+      } as any,
+    );
+    if (status.code >= 300 || !acceptedReview) {
+      console.error(`  Warning: failed to copy review ${review.id}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    copiedReviews++;
+
+    const { records: reviewComments } = await ctx.patches.records.query('repo/patch/review/reviewComment' as any, {
+      from   : submitterDid,
+      filter : { contextId: review.contextId },
+    });
+    for (const reviewComment of reviewComments) {
+      const commentData = await reviewComment.data.json();
+      const commentTags = (reviewComment.tags ?? {}) as Record<string, unknown>;
+      const { status: commentStatus } = await ctx.patches.records.create(
+        'repo/patch/review/reviewComment' as any,
+        {
+          data            : commentData,
+          tags            : commentTags,
+          parentContextId : acceptedReview.contextId,
+        } as any,
+      );
+      if (commentStatus.code >= 300) {
+        console.error(`  Warning: failed to copy review comment ${reviewComment.id}: ${commentStatus.code} ${commentStatus.detail}`);
+        continue;
+      }
+      copiedReviewComments++;
+    }
+  }
+
+  const { records: statusChanges } = await ctx.patches.records.query('repo/patch/statusChange' as any, {
+    from   : submitterDid,
+    filter : { contextId: externalPatch.contextId },
+  });
+
+  let copiedStatusChanges = 0;
+  for (const statusChange of statusChanges) {
+    const statusData = await statusChange.data.json();
+    const statusTags = (statusChange.tags ?? {}) as Record<string, unknown>;
+    const { status } = await ctx.patches.records.create('repo/patch/statusChange' as any, {
+      data            : statusData,
+      tags            : statusTags,
+      parentContextId : acceptedPatch.contextId,
+    } as any);
+    if (status.code >= 300) {
+      console.error(`  Warning: failed to copy PR status change ${statusChange.id}: ${status.code} ${status.detail}`);
+      continue;
+    }
+    copiedStatusChanges++;
+  }
+
+  return { reviews: copiedReviews, reviewComments: copiedReviewComments, statusChanges: copiedStatusChanges };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -844,4 +1124,12 @@ async function findById(
   });
 
   return findByShortId(records, idStr);
+}
+
+function findExternalRecord(records: any[], idStr: string): any | undefined {
+  return records.find(record => record.id === idStr || shortId(record.id).startsWith(idStr.toLowerCase()));
+}
+
+function validPatchStatus(value: string | undefined): value is 'draft' | 'open' | 'closed' | 'merged' {
+  return value === 'draft' || value === 'open' || value === 'closed' || value === 'merged';
 }

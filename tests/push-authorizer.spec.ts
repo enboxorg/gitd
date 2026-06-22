@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import { rmSync } from 'node:fs';
 
+import { createTestIdentity } from './helpers/identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
@@ -36,13 +37,10 @@ describe('createDwnPushAuthorizer', () => {
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Push Auth Test' },
-      });
+      identity = await createTestIdentity(agent, 'Push Auth Test');
     }
 
-    enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     did = identity.did.uri;
 
     repo = enbox.using(ForgeRepoProtocol);
@@ -54,7 +52,7 @@ describe('createDwnPushAuthorizer', () => {
       tags : { name: 'test-repo', visibility: 'public' },
     });
     repoContextId = record.contextId!;
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });
@@ -109,6 +107,21 @@ describe('createDwnPushAuthorizer', () => {
     const authorizer = createDwnPushAuthorizer({ repo: repo as any, ownerDid: did });
     const result = await authorizer(contributorDid, did, 'test-repo');
     expect(result).toBe(true);
+  });
+
+  it('should reject a DID with only a viewer role', async () => {
+    const viewerDid = 'did:jwk:viewer1';
+
+    await repo.records.create('repo/viewer' as any, {
+      data            : { did: viewerDid, alias: 'Viewer' },
+      tags            : { did: viewerDid },
+      parentContextId : repoContextId,
+      recipient       : viewerDid,
+    });
+
+    const authorizer = createDwnPushAuthorizer({ repo: repo as any, ownerDid: did });
+    const result = await authorizer(viewerDid, did, 'test-repo');
+    expect(result).toBe(false);
   });
 
   it('should reject a DID after its role is revoked', async () => {

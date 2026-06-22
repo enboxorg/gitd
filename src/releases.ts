@@ -19,6 +19,15 @@ import { defineProtocol } from '@enbox/api';
 export type ReleaseData = {
   name : string;
   body? : string;
+  discussionCategoryName? : string;
+  publishedAt? : string;
+  makeLatest? : 'true' | 'false' | 'legacy';
+  reactions? : Record<string, {
+    id : number;
+    userDid : string;
+    content : '+1' | 'laugh' | 'heart' | 'hooray' | 'rocket' | 'eyes';
+    createdAt : string;
+  }>;
 };
 
 /** Data shape for a release asset metadata. */

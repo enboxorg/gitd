@@ -17,6 +17,8 @@ import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 
+import { cacheAgentDid } from './helpers/identity.js';
+import { createTestIdentity } from './helpers/identity.js';
 import { DidJwk } from '@enbox/dids';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
@@ -75,17 +77,15 @@ describe('E2E: init → serve → clone → push → verify', () => {
     const agent = await EnboxUserAgent.create({ dataPath: DATA_PATH });
     await agent.initialize({ password: 'e2e-test' });
     await agent.start({ password: 'e2e-test' });
+    await cacheAgentDid(agent);
 
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'E2E Test' },
-      });
+      identity = await createTestIdentity(agent, 'E2E Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     did = identity.did.uri;
 
     const repoHandle = enbox.using(ForgeRepoProtocol);
@@ -172,14 +172,18 @@ describe('E2E: init → serve → clone → push → verify', () => {
     await new Promise((r) => setTimeout(r, 500));
 
     // Check if ref sync happened automatically.
-    let { records: refRecords } = await refs.records.query('repo/ref' as any);
+    let { records: refRecords } = await refs.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
 
     if (refRecords.length === 0) {
       // onPushComplete may not have fired (timing issue). Invoke manually.
       const repoPath = server.backend.repoPath(did, 'e2e-test-repo');
       const syncer = createRefSyncer({ refs, repoContextId });
       await syncer(did, 'e2e-test-repo', repoPath);
-      ({ records: refRecords } = await refs.records.query('repo/ref' as any));
+      ({ records: refRecords } = await refs.records.query('repo/ref' as any, {
+        filter: { contextId: repoContextId },
+      }));
     }
 
     expect(refRecords.length).toBeGreaterThanOrEqual(1);
@@ -244,17 +248,15 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
     const agent = await EnboxUserAgent.create({ dataPath: BUNDLE_DATA_PATH });
     await agent.initialize({ password: 'bundle-e2e' });
     await agent.start({ password: 'bundle-e2e' });
+    await cacheAgentDid(agent);
 
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Bundle E2E Test' },
-      });
+      identity = await createTestIdentity(agent, 'Bundle E2E Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     did = identity.did.uri;
 
     repoHandle = enbox.using(ForgeRepoProtocol);
@@ -326,7 +328,9 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
   });
 
   it('should have a bundle record in the DWN', async () => {
-    const { records } = await repoHandle.records.query('repo/bundle', {});
+    const { records } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: repoContextId },
+    });
     expect(records.length).toBeGreaterThanOrEqual(1);
 
     // Verify the bundle metadata.
@@ -398,17 +402,15 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     const agent = await EnboxUserAgent.create({ dataPath: AUTH_DATA_PATH });
     await agent.initialize({ password: 'auth-e2e' });
     await agent.start({ password: 'auth-e2e' });
+    await cacheAgentDid(agent);
 
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Auth E2E Test' },
-      });
+      identity = await createTestIdentity(agent, 'Auth E2E Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     ownerDid = identity.did.uri;
 
     // Extract the owner's Ed25519 private key for signing push tokens.
@@ -438,7 +440,9 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     // protection. Nonce replay is incompatible with git's HTTP push flow:
     // git reuses the same Basic auth credentials for both the ref discovery
     // GET and the receive-pack POST within a single push operation.
-    const verifySignature = createDidSignatureVerifier();
+    const verifySignature = createDidSignatureVerifier({
+      didDocuments: [identity.did.document],
+    });
     const authorizePush = createDwnPushAuthorizer({
       repo     : repoHandle,
       ownerDid : ownerDid,
@@ -544,7 +548,7 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/x-git-receive-pack-advertisement');
-  });
+  }, 10_000);
 
   it('should push via git with DID-signed credentials', async () => {
     // Prepare a commit in the clone.
@@ -571,7 +575,7 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     await exec(`git config --replace-all credential.helper '${helper}'`, { cwd: AUTH_CLONE_PATH });
 
     await exec('GIT_TERMINAL_PROMPT=0 git push -u origin main', { cwd: AUTH_CLONE_PATH });
-  });
+  }, 15_000);
 
   it('should have the pushed commit in the bare repo', async () => {
     const repoPath = server.backend.repoPath(ownerDid, 'auth-test-repo');
@@ -583,14 +587,18 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
     // Wait for the async onPushComplete to finish.
     await new Promise((r) => setTimeout(r, 500));
 
-    let { records: refRecords } = await refsHandle.records.query('repo/ref' as any);
+    let { records: refRecords } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
 
     if (refRecords.length === 0) {
       // Manually invoke ref syncer if timing caused it to not fire.
       const repoPath = server.backend.repoPath(ownerDid, 'auth-test-repo');
       const syncer = createRefSyncer({ refs: refsHandle, repoContextId });
       await syncer(ownerDid, 'auth-test-repo', repoPath);
-      ({ records: refRecords } = await refsHandle.records.query('repo/ref' as any));
+      ({ records: refRecords } = await refsHandle.records.query('repo/ref' as any, {
+        filter: { contextId: repoContextId },
+      }));
     }
 
     expect(refRecords.length).toBeGreaterThanOrEqual(1);
@@ -690,15 +698,11 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
     const agent = await EnboxUserAgent.create({ dataPath });
     await agent.initialize({ password: 'profile-e2e' });
     await agent.start({ password: 'profile-e2e' });
+    await cacheAgentDid(agent);
 
-    // Create identity (using did:jwk for offline-friendly tests).
-    const identity = await agent.identity.create({
-      didMethod  : 'jwk',
-      metadata   : { name: 'Profile E2E Test' },
-      didOptions : { algorithm: 'Ed25519' },
-    });
+    const identity = await createTestIdentity(agent, 'Profile E2E Test');
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     profileDid = identity.did.uri;
 
     // Extract private key for credential signing.
@@ -730,7 +734,9 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
     await backend.initRepo(profileDid, 'profile-e2e-repo');
 
     // --- Step 6: Start authenticated server with bundle + ref sync ---
-    const verifySignature = createDidSignatureVerifier();
+    const verifySignature = createDidSignatureVerifier({
+      didDocuments: [identity.did.document],
+    });
     const authorizePush = createDwnPushAuthorizer({
       repo     : repoHandle,
       ownerDid : profileDid,
@@ -844,7 +850,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
     await exec(`git config --replace-all credential.helper '${helper}'`, { cwd: PROFILE_CLONE_PATH });
 
     await exec('GIT_TERMINAL_PROMPT=0 git push -u origin main', { cwd: PROFILE_CLONE_PATH });
-  });
+  }, 15_000);
 
   it('should have the pushed commit in the bare repo', async () => {
     const repoPath = server.backend.repoPath(profileDid, 'profile-e2e-repo');
@@ -855,13 +861,17 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
   it('should sync refs to DWN after profile-signed push', async () => {
     await new Promise((r) => setTimeout(r, 500));
 
-    let { records: refRecords } = await refsHandle.records.query('repo/ref' as any);
+    let { records: refRecords } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: repoContextId },
+    });
 
     if (refRecords.length === 0) {
       const repoPath = server.backend.repoPath(profileDid, 'profile-e2e-repo');
       const syncer = createRefSyncer({ refs: refsHandle, repoContextId });
       await syncer(profileDid, 'profile-e2e-repo', repoPath);
-      ({ records: refRecords } = await refsHandle.records.query('repo/ref' as any));
+      ({ records: refRecords } = await refsHandle.records.query('repo/ref' as any, {
+        filter: { contextId: repoContextId },
+      }));
     }
 
     expect(refRecords.length).toBeGreaterThanOrEqual(1);
@@ -874,7 +884,9 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
   it('should sync bundles to DWN after profile-signed push', async () => {
     await new Promise((r) => setTimeout(r, 500));
 
-    const { records } = await repoHandle.records.query('repo/bundle', {});
+    const { records } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: repoContextId },
+    });
     expect(records.length).toBeGreaterThanOrEqual(1);
 
     const tags = records[0].tags as Record<string, unknown>;
@@ -951,17 +963,15 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
     const agent = await EnboxUserAgent.create({ dataPath: MR_DATA_PATH });
     await agent.initialize({ password: 'multi-repo-e2e' });
     await agent.start({ password: 'multi-repo-e2e' });
+    await cacheAgentDid(agent);
 
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Multi-Repo E2E Test' },
-      });
+      identity = await createTestIdentity(agent, 'Multi-Repo E2E Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     did = identity.did.uri;
 
     repoHandle = enbox.using(ForgeRepoProtocol);
@@ -1080,16 +1090,27 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
     const { stdout: betaSha } = await exec('git rev-parse main', { cwd: betaPath });
 
     // If onPushComplete didn't fire yet, manually invoke syncers.
-    const { records: allRefs } = await refsHandle.records.query('repo/ref' as any);
-    if (allRefs.length < 2) {
+    const { records: alphaRefsBefore } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: alphaCtx.contextId },
+    });
+    const { records: betaRefsBefore } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: betaCtx.contextId },
+    });
+    if (alphaRefsBefore.length === 0 || betaRefsBefore.length === 0) {
       const alphaSync = createRefSyncer({ refs: refsHandle, repoContextId: alphaCtx.contextId });
       const betaSync = createRefSyncer({ refs: refsHandle, repoContextId: betaCtx.contextId });
       await alphaSync(did, 'repo-alpha', alphaPath);
       await betaSync(did, 'repo-beta', betaPath);
     }
 
-    // Query all refs and partition by target SHA to verify isolation.
-    const { records: refRecords } = await refsHandle.records.query('repo/ref' as any);
+    // Query each repo's refs and partition by target SHA to verify isolation.
+    const { records: alphaRefs } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: alphaCtx.contextId },
+    });
+    const { records: betaRefs } = await refsHandle.records.query('repo/ref' as any, {
+      filter: { contextId: betaCtx.contextId },
+    });
+    const refRecords = [...alphaRefs, ...betaRefs];
     expect(refRecords.length).toBeGreaterThanOrEqual(2);
 
     const refEntries = await Promise.all(
@@ -1112,8 +1133,13 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
 
   it('should have scoped bundle records per repo in DWN', async () => {
     // If the async bundle sync didn't fire for both repos, manually invoke.
-    const { records: existingBundles } = await repoHandle.records.query('repo/bundle', {});
-    if (existingBundles.length < 2) {
+    const { records: existingAlphaBundles } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: alphaCtx.contextId },
+    });
+    const { records: existingBetaBundles } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: betaCtx.contextId },
+    });
+    if (existingAlphaBundles.length === 0 || existingBetaBundles.length === 0) {
       const alphaPath = server.backend.repoPath(did, 'repo-alpha');
       const betaPath = server.backend.repoPath(did, 'repo-beta');
       const alphaSync = createBundleSyncer({ repo: repoHandle, repoContextId: alphaCtx.contextId, visibility: 'public' });
@@ -1122,12 +1148,14 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
       await betaSync(did, 'repo-beta', betaPath);
     }
 
-    const { records: allBundles } = await repoHandle.records.query('repo/bundle', {});
+    const { records: alphaBundles } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: alphaCtx.contextId },
+    });
+    const { records: betaBundles } = await repoHandle.records.query('repo/bundle', {
+      filter: { contextId: betaCtx.contextId },
+    });
+    const allBundles = [...alphaBundles, ...betaBundles];
     expect(allBundles.length).toBeGreaterThanOrEqual(2);
-
-    // Partition bundles by contextId.
-    const alphaBundles = allBundles.filter((r: any) => r.contextId?.startsWith(alphaCtx.contextId));
-    const betaBundles = allBundles.filter((r: any) => r.contextId?.startsWith(betaCtx.contextId));
 
     expect(alphaBundles.length).toBeGreaterThanOrEqual(1);
     expect(betaBundles.length).toBeGreaterThanOrEqual(1);

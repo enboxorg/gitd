@@ -121,7 +121,8 @@ export const ForgePatchesDefinition = {
 
       patch: {
         $actions: [
-          { who: 'anyone', can: ['create', 'read'] },
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo:repo/contributor', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
           { who: 'author', of: 'repo/patch', can: ['create', 'update'] },
         ],
@@ -132,6 +133,12 @@ export const ForgePatchesDefinition = {
           baseBranch          : { type: 'string' },
           headBranch          : { type: 'string' },
           sourceDid           : { type: 'string' },
+          repoDid             : { type: 'string' },
+          repoRecordId        : { type: 'string' },
+          repoName            : { type: 'string' },
+          submitterDid        : { type: 'string' },
+          submissionRecordId  : { type: 'string' },
+          submissionContextId : { type: 'string' },
         },
 
         revision: {
@@ -169,7 +176,8 @@ export const ForgePatchesDefinition = {
         review: {
           $immutable : true,
           $actions   : [
-            { who: 'anyone', can: ['create', 'read'] },
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read'] },
           ],
           $tags: {
@@ -181,8 +189,10 @@ export const ForgePatchesDefinition = {
 
           reviewComment: {
             $actions: [
-              { who: 'anyone', can: ['create', 'read'] },
-              { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+              { who: 'anyone', can: ['read'] },
+              { role: 'repo:repo/contributor', can: ['create', 'read'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+              { who: 'author', of: 'repo/patch/review/reviewComment', can: ['create', 'update', 'delete'] },
             ],
             $tags: {
               $allowUndefinedTags : true,

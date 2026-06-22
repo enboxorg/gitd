@@ -30,7 +30,7 @@ export type CommentData = {
   body: string;
 };
 
-/** Data shape for a reaction on a comment. */
+/** Data shape for a reaction on an issue or comment. */
 export type ReactionData = {
   emoji: string;
 };
@@ -52,6 +52,28 @@ export type AssignmentData = {
   alias? : string;
 };
 
+/** Data shape for an issue dependency edge. */
+export type IssueDependencyData = {
+  /** GitHub-style numeric id of the issue that blocks the parent issue. */
+  issueId : number;
+};
+
+/** Data shape for an ordered sub-issue edge. */
+export type IssueSubIssueData = {
+  /** GitHub-style numeric id of the child issue. */
+  issueId : number;
+  /** 1-based ordering position under the parent issue. */
+  priority : number;
+};
+
+/** Data shape for a custom issue field value. */
+export type IssueFieldValueData = {
+  /** GitHub-style numeric id of the custom issue field. */
+  fieldId : number;
+  dataType : 'text' | 'single_select' | 'number' | 'date' | 'multi_select';
+  value : string | number | string[];
+};
+
 // ---------------------------------------------------------------------------
 // Schema map
 // ---------------------------------------------------------------------------
@@ -64,6 +86,9 @@ export type ForgeIssuesSchemaMap = {
   label : LabelData;
   statusChange : StatusChangeData;
   assignment : AssignmentData;
+  issueDependency : IssueDependencyData;
+  subIssue : IssueSubIssueData;
+  issueFieldValue : IssueFieldValueData;
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +126,18 @@ export const ForgeIssuesDefinition = {
       schema      : 'https://enbox.org/schemas/forge/assignment',
       dataFormats : ['application/json'],
     },
+    issueDependency: {
+      schema      : 'https://enbox.org/schemas/forge/issue-dependency',
+      dataFormats : ['application/json'],
+    },
+    subIssue: {
+      schema      : 'https://enbox.org/schemas/forge/issue-sub-issue',
+      dataFormats : ['application/json'],
+    },
+    issueFieldValue: {
+      schema      : 'https://enbox.org/schemas/forge/issue-field-value',
+      dataFormats : ['application/json'],
+    },
   },
   structure: {
     repo: {
@@ -108,7 +145,7 @@ export const ForgeIssuesDefinition = {
 
       issue: {
         $actions: [
-          { who: 'anyone', can: ['create', 'read'] },
+          { who: 'anyone', can: ['read'] },
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
           { role: 'repo:repo/triager', can: ['create', 'read', 'co-update'] },
@@ -120,13 +157,34 @@ export const ForgeIssuesDefinition = {
           status              : { type: 'string', enum: ['open', 'closed'] },
           priority            : { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
           milestone           : { type: 'string' },
+          locked              : { type: 'string', enum: ['true', 'false'] },
+          lockReason          : { type: 'string', enum: ['off-topic', 'too heated', 'resolved', 'spam'] },
+          repoDid             : { type: 'string' },
+          repoRecordId        : { type: 'string' },
+          repoName            : { type: 'string' },
+          submitterDid        : { type: 'string' },
+          submissionRecordId  : { type: 'string' },
+          submissionContextId : { type: 'string' },
+        },
+
+        reaction: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['emoji'],
+            $allowUndefinedTags : false,
+            emoji               : { type: 'string', maxLength: 10 },
+          },
         },
 
         comment: {
           $actions: [
-            { who: 'anyone', can: ['create', 'read'] },
+            { who: 'anyone', can: ['read'] },
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'read'] },
             { who: 'author', of: 'repo/issue/comment', can: ['create', 'update', 'delete'] },
           ],
 
@@ -184,6 +242,46 @@ export const ForgeIssuesDefinition = {
             $requiredTags       : ['assigneeDid'],
             $allowUndefinedTags : false,
             assigneeDid         : { type: 'string' },
+          },
+        },
+
+        issueDependency: {
+          $immutable : true,
+          $actions   : [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['issueId'],
+            $allowUndefinedTags : false,
+            issueId             : { type: 'string' },
+          },
+        },
+
+        subIssue: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'update', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['issueId'],
+            $allowUndefinedTags : false,
+            issueId             : { type: 'string' },
+          },
+        },
+
+        issueFieldValue: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['read'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+            { role: 'repo:repo/triager', can: ['create', 'update', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['fieldId'],
+            $allowUndefinedTags : false,
+            fieldId             : { type: 'string' },
           },
         },
       },

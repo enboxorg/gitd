@@ -96,14 +96,14 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
-    "@enbox/agent": "^0.3.1",
-    "@enbox/api": "^0.4.2",
-    "@enbox/auth": "^0.3.1",
-    "@enbox/crypto": "0.0.6",
-    "@enbox/dids": "0.0.7",
-    "@enbox/dwn-sdk-js": "0.1.0",
-    "@enbox/dwn-sql-store": "0.0.9",
-    "kysely": "0.26.3"
+    "@enbox/agent": "0.8.3",
+    "@enbox/api": "0.6.41",
+    "@enbox/auth": "0.6.49",
+    "@enbox/crypto": "0.1.1",
+    "@enbox/dids": "0.1.1",
+    "@enbox/dwn-sdk-js": "0.4.2",
+    "@enbox/dwn-sql-store": "0.0.27",
+    "kysely": "0.28.14"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

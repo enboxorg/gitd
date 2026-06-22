@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/gist",
+  "title": "GistData",
+  "description": "A GitHub-compatible gist owned by a DID",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "public": {
+      "type": "boolean"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "language": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["filename", "content"],
+        "additionalProperties": false
+      },
+      "minProperties": 1
+    },
+    "forkOfOwnerDid": {
+      "type": "string"
+    },
+    "forkOfGistId": {
+      "type": "string"
+    },
+    "forkedAt": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    }
+  },
+  "required": ["files"],
+  "additionalProperties": false
+}

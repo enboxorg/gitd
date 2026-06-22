@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/submission-decision",
+  "title": "SubmissionDecisionData",
+  "description": "A repo-owner decision for an external issue or patch submission.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["issue", "patch"]
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["ignored"]
+    },
+    "submitterDid": {
+      "type": "string"
+    },
+    "submissionRecordId": {
+      "type": "string"
+    },
+    "submissionContextId": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "decidedBy": {
+      "type": "string"
+    },
+    "decidedAt": {
+      "type": "string"
+    }
+  },
+  "required": ["kind", "decision", "submitterDid", "submissionRecordId", "decidedBy", "decidedAt"],
+  "additionalProperties": false
+}

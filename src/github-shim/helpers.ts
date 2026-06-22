@@ -31,10 +31,30 @@ export type RepoInfo = {
   name : string;
   description : string;
   defaultBranch : string;
+  homepage : string;
   contextId : string;
   visibility : string;
+  language : string;
+  archived : boolean;
+  hasIssues : boolean;
+  hasProjects : boolean;
+  hasWiki : boolean;
+  hasDownloads : boolean;
+  hasPullRequests : boolean;
+  isTemplate : boolean;
+  allowSquashMerge : boolean;
+  allowMergeCommit : boolean;
+  allowRebaseMerge : boolean;
+  allowAutoMerge : boolean;
+  allowForking : boolean;
+  deleteBranchOnMerge : boolean;
+  webCommitSignoffRequired : boolean;
+  pullRequestCreationPolicy : string;
   dateCreated : string;
   timestamp : string;
+  forkedFromDid? : string;
+  forkedFromRepoName? : string;
+  forkedFromRecordId? : string;
 };
 
 /** Pagination parameters parsed from query string. */
@@ -47,7 +67,7 @@ export type PaginationParams = {
 export type JsonResponse = {
   status : number;
   headers : Record<string, string>;
-  body : string;
+  body : string | Uint8Array;
 };
 
 // ---------------------------------------------------------------------------
@@ -128,16 +148,36 @@ export async function getRepoRecord(
 
   const rec = records[0];
   const data = await rec.data.json();
-  const tags = rec.tags as Record<string, string> | undefined;
+  const tags = rec.tags as Record<string, unknown> | undefined;
 
   return {
-    name          : data.name ?? 'unnamed',
-    description   : data.description ?? '',
-    defaultBranch : data.defaultBranch ?? 'main',
-    contextId     : rec.contextId ?? '',
-    visibility    : tags?.visibility ?? 'public',
-    dateCreated   : rec.dateCreated,
-    timestamp     : rec.timestamp,
+    name                      : data.name ?? 'unnamed',
+    description               : data.description ?? '',
+    defaultBranch             : data.defaultBranch ?? 'main',
+    homepage                  : data.homepage ?? '',
+    contextId                 : rec.contextId ?? '',
+    visibility                : typeof tags?.visibility === 'string' ? tags.visibility : 'public',
+    language                  : typeof tags?.language === 'string' ? tags.language : '',
+    archived                  : tags?.archived === true || tags?.archived === 'true',
+    hasIssues                 : data.hasIssues !== false,
+    hasProjects               : data.hasProjects === true,
+    hasWiki                   : data.hasWiki !== false,
+    hasDownloads              : data.hasDownloads !== false,
+    hasPullRequests           : data.hasPullRequests !== false,
+    isTemplate                : data.isTemplate === true,
+    allowSquashMerge          : data.allowSquashMerge !== false,
+    allowMergeCommit          : data.allowMergeCommit !== false,
+    allowRebaseMerge          : data.allowRebaseMerge !== false,
+    allowAutoMerge            : data.allowAutoMerge === true,
+    allowForking              : data.allowForking !== false,
+    deleteBranchOnMerge       : data.deleteBranchOnMerge === true,
+    webCommitSignoffRequired  : data.webCommitSignoffRequired === true,
+    pullRequestCreationPolicy : data.pullRequestCreationPolicy === 'collaborators_only' ? 'collaborators_only' : 'all',
+    dateCreated               : rec.dateCreated,
+    timestamp                 : rec.timestamp,
+    forkedFromDid             : typeof data.forkedFromDid === 'string' ? data.forkedFromDid : undefined,
+    forkedFromRepoName        : typeof data.forkedFromRepoName === 'string' ? data.forkedFromRepoName : undefined,
+    forkedFromRecordId        : typeof data.forkedFromRecordId === 'string' ? data.forkedFromRecordId : undefined,
   };
 }
 
@@ -192,13 +232,14 @@ export function buildLinkHeader(baseUrl: string, path: string, page: number, per
   if (lastPage <= 1) { return null; }
 
   const links: string[] = [];
+  const separator = path.includes('?') ? '&' : '?';
   if (page < lastPage) {
-    links.push(`<${baseUrl}${path}?page=${page + 1}&per_page=${perPage}>; rel="next"`);
-    links.push(`<${baseUrl}${path}?page=${lastPage}&per_page=${perPage}>; rel="last"`);
+    links.push(`<${baseUrl}${path}${separator}page=${page + 1}&per_page=${perPage}>; rel="next"`);
+    links.push(`<${baseUrl}${path}${separator}page=${lastPage}&per_page=${perPage}>; rel="last"`);
   }
   if (page > 1) {
-    links.push(`<${baseUrl}${path}?page=1&per_page=${perPage}>; rel="first"`);
-    links.push(`<${baseUrl}${path}?page=${page - 1}&per_page=${perPage}>; rel="prev"`);
+    links.push(`<${baseUrl}${path}${separator}page=1&per_page=${perPage}>; rel="first"`);
+    links.push(`<${baseUrl}${path}${separator}page=${page - 1}&per_page=${perPage}>; rel="prev"`);
   }
 
   return links.length > 0 ? links.join(', ') : null;
@@ -230,6 +271,20 @@ export function jsonOk(data: unknown, extraHeaders?: Record<string, string>): Js
   };
 }
 
+/** Build a successful binary response. */
+export function binaryOk(body: Uint8Array, contentType: string, extraHeaders?: Record<string, string>): JsonResponse {
+  return {
+    status  : 200,
+    headers : {
+      ...baseHeaders(),
+      'Content-Type'   : contentType,
+      'Content-Length' : String(body.byteLength),
+      ...extraHeaders,
+    },
+    body,
+  };
+}
+
 /** Build a 404 JSON response. */
 export function jsonNotFound(message: string): JsonResponse {
   return {
@@ -245,6 +300,24 @@ export function jsonCreated(data: unknown, extraHeaders?: Record<string, string>
     status  : 201,
     headers : { ...baseHeaders(), ...extraHeaders },
     body    : JSON.stringify(data),
+  };
+}
+
+/** Build a 202 Accepted JSON response. */
+export function jsonAccepted(data: unknown, extraHeaders?: Record<string, string>): JsonResponse {
+  return {
+    status  : 202,
+    headers : { ...baseHeaders(), ...extraHeaders },
+    body    : JSON.stringify(data),
+  };
+}
+
+/** Build a 204 No Content response. */
+export function jsonNoContent(extraHeaders?: Record<string, string>): JsonResponse {
+  return {
+    status  : 204,
+    headers : { ...baseHeaders(), ...extraHeaders },
+    body    : '',
   };
 }
 

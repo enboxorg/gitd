@@ -11,6 +11,7 @@ import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 
+import { createTestIdentity } from './helpers/identity.js';
 import { DateSort } from '@enbox/dwn-sdk-js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
@@ -186,13 +187,10 @@ describe('createBundleSyncer (DWN integration)', () => {
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Bundle Test' },
-      });
+      identity = await createTestIdentity(agent, 'Bundle Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
 
     repoHandle = enbox.using(ForgeRepoProtocol);
     // Skip encryption: true — the test DID (did:jwk Ed25519) lacks X25519.
@@ -238,7 +236,8 @@ describe('createBundleSyncer (DWN integration)', () => {
 
     // Query bundle records.
     const { records } = await (repoHandle as any).records.query('repo/bundle', {
-      dateSort: DateSort.CreatedDescending,
+      filter   : { contextId: repoContextId },
+      dateSort : DateSort.CreatedDescending,
     });
 
     expect(records.length).toBe(1);
@@ -268,11 +267,11 @@ describe('createBundleSyncer (DWN integration)', () => {
 
     // Should now have 2 bundle records: 1 full + 1 incremental.
     const { records: fullRecords } = await (repoHandle as any).records.query('repo/bundle', {
-      filter   : { tags: { isFull: true } },
+      filter   : { contextId: repoContextId, tags: { isFull: true } },
       dateSort : DateSort.CreatedDescending,
     });
     const { records: incRecords } = await (repoHandle as any).records.query('repo/bundle', {
-      filter   : { tags: { isFull: false } },
+      filter   : { contextId: repoContextId, tags: { isFull: false } },
       dateSort : DateSort.CreatedDescending,
     });
 
@@ -304,7 +303,8 @@ describe('createBundleSyncer (DWN integration)', () => {
 
     // Query all bundles — squash should have purged older ones.
     const { records } = await (repoHandle as any).records.query('repo/bundle', {
-      dateSort: DateSort.CreatedDescending,
+      filter   : { contextId: repoContextId },
+      dateSort : DateSort.CreatedDescending,
     });
 
     // After squash, only the squash bundle (full) should remain.
@@ -318,7 +318,7 @@ describe('createBundleSyncer (DWN integration)', () => {
 
   it('should store retrievable bundle data', async () => {
     const { records } = await (repoHandle as any).records.query('repo/bundle', {
-      filter   : { tags: { isFull: true } },
+      filter   : { contextId: repoContextId, tags: { isFull: true } },
       dateSort : DateSort.CreatedDescending,
     });
 

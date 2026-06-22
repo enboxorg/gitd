@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import { rmSync } from 'node:fs';
 
+import { createTestIdentity } from './helpers/identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
@@ -103,13 +104,10 @@ describe('Package manager shims', () => {
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'Shim Test' },
-      });
+      identity = await createTestIdentity(agent, 'Shim Test');
     }
 
-    const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     const did = identity.did.uri;
     testDid = did;
 
@@ -241,7 +239,7 @@ describe('Package manager shims', () => {
       tags            : { filename: 'manifest.json', contentType: 'application/octet-stream', size: OCI_MANIFEST_BYTES.byteLength },
       parentContextId : ociV1Ctx,
     } as any);
-  });
+  }, 30_000);
 
   afterAll(() => {
     rmSync(DATA_PATH, { recursive: true, force: true });

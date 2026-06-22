@@ -278,6 +278,18 @@ export const ForgeIssuesDefinition = {
           milestone           : { type: 'string' },
         },
 
+        reaction: {
+          $actions: [
+            { role: 'repo:repo/contributor', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+          ],
+          $tags: {
+            $requiredTags       : ['emoji'],
+            $allowUndefinedTags : false,
+            emoji               : { type: 'string', maxLength: 10 },
+          },
+        },
+
         comment: {
           $actions: [
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
@@ -436,7 +448,8 @@ export const ForgePatchesDefinition = {
           reviewComment: {
             $actions: [
               { role: 'repo:repo/contributor', can: ['create', 'read'] },
-              { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+              { who: 'author', of: 'repo/patch/review/reviewComment', can: ['create', 'update', 'delete'] },
             ],
             $tags: {
               $allowUndefinedTags : true,
@@ -517,7 +530,7 @@ export const ForgeCiDefinition = {
   types     : {
     checkSuite : { schema: 'https://enbox.org/schemas/forge/check-suite', dataFormats: ['application/json'] },
     checkRun   : { schema: 'https://enbox.org/schemas/forge/check-run',   dataFormats: ['application/json'] },
-    artifact   : { dataFormats: ['application/octet-stream', 'application/gzip'] },
+    artifact   : { dataFormats: ['application/octet-stream', 'application/gzip', 'application/zip'] },
   },
   structure: {
     repo: {
@@ -526,7 +539,7 @@ export const ForgeCiDefinition = {
       checkSuite: {
         $actions: [
           { role: 'repo:repo/contributor', can: ['read'] },
-          { role: 'repo:repo/maintainer', can: ['create', 'update'] },
+          { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
         ],
         $tags: {
           $requiredTags       : ['commitSha', 'status'],
@@ -540,7 +553,7 @@ export const ForgeCiDefinition = {
         checkRun: {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
-            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update'] },
+            { who: 'author', of: 'repo/checkSuite', can: ['create', 'update', 'delete'] },
           ],
           $tags: {
             $requiredTags       : ['name', 'status'],
@@ -553,8 +566,18 @@ export const ForgeCiDefinition = {
           artifact: {
             $actions : [
               { role: 'repo:repo/contributor', can: ['read'] },
-              { who: 'author', of: 'repo/checkSuite', can: ['create'] },
+              { who: 'author', of: 'repo/checkSuite', can: ['create', 'delete'] },
             ],
+            $tags: {
+              $requiredTags       : ['name'],
+              $allowUndefinedTags : false,
+              name                : { type: 'string' },
+              size                : { type: 'integer' },
+              contentType         : { type: 'string' },
+              digest              : { type: 'string' },
+              expired             : { type: 'boolean' },
+              expiresAt           : { type: 'string' },
+            },
             $size: { max: 104857600 },  // 100MB per artifact
           },
         },
@@ -1368,7 +1391,7 @@ Registry CLI with 5 subcommands and 20 CLI tests — 525 total tests, 1282 asser
 - [x] **Web UI**: read-only repo/issue/PR viewer
 - [ ] **VS Code extension**: native IDE integration (separate repo, post-stabilization)
 - [x] **GitHub migration tool**: import repos, issues, PRs from GitHub
-- [x] **GitHub API compatibility shim**: read + write (18 endpoints — 10 GET, 8 POST/PATCH/PUT)
+- [x] **GitHub API compatibility shim**: read + write (583 endpoints — 327 GET, 256 POST/PATCH/PUT/DELETE)
 - [x] **Package manager shims**: npm registry proxy, Go module proxy, OCI/Docker registry proxy — 56 tests, 122 assertions
 - [x] **Unified daemon**: `ShimAdapter` interface, config-driven multi-shim process, `gitd daemon` command — 34 tests, 85 assertions
 
@@ -1435,9 +1458,22 @@ gitd/
 │       ├── helpers.ts          # numericId, fromOpt, pagination, response builders
 │       ├── server.ts           # HTTP server, router, handleShimRequest
 │       ├── repos.ts            # GET /repos/:did/:repo
-│       ├── issues.ts           # GET /repos/:did/:repo/issues{/:number{/comments}}
-│       ├── pulls.ts            # GET /repos/:did/:repo/pulls{/:number{/reviews}}
-│       ├── releases.ts         # GET /repos/:did/:repo/releases{/tags/:tag}
+│       ├── issues.ts           # Issues, labels, milestones, assignees, reactions
+│       ├── pulls.ts            # Pull requests, reviews, review comments, merge
+│       ├── releases.ts         # Releases and release assets
+│       ├── commit-comments.ts  # Commit comments
+│       ├── deployments.ts      # Deployments and deployment statuses
+│       ├── repo-metadata.ts    # Topics, languages, deploy keys, collaborators
+│       ├── git-refs.ts         # Branches, tags, refs, branch protection
+│       ├── git-objects.ts      # Git blobs, trees, commits, archives, contributors
+│       ├── checks.ts           # Statuses, check suites, check runs
+│       ├── actions.ts          # Actions workflows, workflow runs, jobs, logs, and artifacts
+│       ├── webhooks.ts         # Repository webhooks
+│       ├── notifications.ts    # Notifications and thread subscriptions
+│       ├── stars.ts            # Stars and stargazers
+│       ├── follows.ts          # Followers and following
+│       ├── orgs.ts             # Organizations, org members, teams, team members
+│       ├── search.ts           # GitHub-compatible search endpoints
 │       └── users.ts            # GET /users/:did
 │   └── resolver/               # Package resolver + trust chain
 │       ├── index.ts            # Barrel re-export
@@ -1481,7 +1517,7 @@ gitd/
 │   ├── wiki/
 │   └── org/
 └── tests/
-    ├── protocols.spec.ts       # Structural validation tests (148 tests)
+    ├── protocols.spec.ts       # Structural validation tests (159 tests)
     ├── schemas.spec.ts         # JSON schema validation tests
     ├── integration.spec.ts     # DWN integration tests (15 tests)
     ├── cli.spec.ts             # CLI command tests (48 tests)
@@ -1495,7 +1531,7 @@ gitd/
     ├── ref-sync.spec.ts        # Ref sync tests
     ├── verify.spec.ts          # Signature verification tests
     ├── credential-helper.spec.ts # Credential helper tests
-    ├── github-shim.spec.ts     # GitHub API shim tests (92 tests)
+    ├── github-shim.spec.ts     # GitHub API shim tests (394 tests)
     ├── resolver.spec.ts        # Resolver, attestation, trust chain tests (41 tests)
     ├── shims.spec.ts           # Package manager shim tests (56 tests)
     ├── daemon.spec.ts          # Unified daemon tests (34 tests)

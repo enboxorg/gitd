@@ -6,6 +6,9 @@
  * role composition functions as designed.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+
+import { rmSync } from 'node:fs';
+
 import { DidKey, UniversalResolver } from '@enbox/dids';
 
 import type { Persona } from '@enbox/dwn-sdk-js';
@@ -13,8 +16,9 @@ import type { Persona } from '@enbox/dwn-sdk-js';
 import {
   DataStoreLevel,
   DataStream,
+  DurableEventLog,
   Dwn,
-  EventEmitterEventLog,
+  EventEmitterWakePublisher,
   Jws,
   MessageStoreLevel,
   ProtocolsConfigure,
@@ -23,7 +27,6 @@ import {
   RecordsRead,
   RecordsWrite,
   ResumableTaskStoreLevel,
-  StateIndexLevel,
   TestDataGenerator,
 } from '@enbox/dwn-sdk-js';
 
@@ -39,6 +42,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const encoder = new TextEncoder();
+const MESSAGE_STORE_PATH = '__TESTDATA__/int-msg';
+const DATA_STORE_PATH = '__TESTDATA__/int-data';
+const TASK_STORE_PATH = '__TESTDATA__/int-tasks';
 
 /** Creates a ProtocolsConfigure, processes it, and asserts success. */
 async function installProtocol(
@@ -115,7 +121,6 @@ describe('gitd integration', () => {
   let dwn: Dwn;
   let messageStore: MessageStoreLevel;
   let dataStore: DataStoreLevel;
-  let stateIndex: StateIndexLevel;
   let resumableTaskStore: ResumableTaskStoreLevel;
 
   // Personas
@@ -125,20 +130,23 @@ describe('gitd integration', () => {
   let stranger: Persona; // No role
 
   beforeAll(async () => {
-    const didResolver = new UniversalResolver({ didResolvers: [DidKey] });
-    messageStore = new MessageStoreLevel({ blockstoreLocation: '__TESTDATA__/int-msg', indexLocation: '__TESTDATA__/int-idx' });
-    dataStore = new DataStoreLevel({ blockstoreLocation: '__TESTDATA__/int-data' });
-    stateIndex = new StateIndexLevel({ location: '__TESTDATA__/int-state' });
-    resumableTaskStore = new ResumableTaskStoreLevel({ location: '__TESTDATA__/int-tasks' });
-    const eventLog = new EventEmitterEventLog();
+    rmSync(MESSAGE_STORE_PATH, { recursive: true, force: true });
+    rmSync(DATA_STORE_PATH, { recursive: true, force: true });
+    rmSync(TASK_STORE_PATH, { recursive: true, force: true });
 
-    dwn = await Dwn.create({ didResolver, messageStore, dataStore, stateIndex, resumableTaskStore, eventLog });
+    const didResolver = new UniversalResolver({ didResolvers: [DidKey] });
+    const wakePublisher = new EventEmitterWakePublisher();
+    messageStore = new MessageStoreLevel({ location: MESSAGE_STORE_PATH, wakePublisher });
+    dataStore = new DataStoreLevel({ blockstoreLocation: DATA_STORE_PATH });
+    resumableTaskStore = new ResumableTaskStoreLevel({ location: TASK_STORE_PATH });
+    const eventLog = new DurableEventLog(messageStore, wakePublisher);
+
+    dwn = await Dwn.create({ didResolver, messageStore, dataStore, resumableTaskStore, eventLog });
   });
 
   beforeEach(async () => {
     await messageStore.clear();
     await dataStore.clear();
-    await stateIndex.clear();
     await resumableTaskStore.clear();
 
     // Create fresh personas for each test
@@ -149,7 +157,10 @@ describe('gitd integration', () => {
   });
 
   afterAll(async () => {
-    await dwn.close();
+    if (dwn) { await dwn.close(); }
+    rmSync(MESSAGE_STORE_PATH, { recursive: true, force: true });
+    rmSync(DATA_STORE_PATH, { recursive: true, force: true });
+    rmSync(TASK_STORE_PATH, { recursive: true, force: true });
   });
 
   // =========================================================================
@@ -247,6 +258,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo/readme',
+        contextId    : repo.message.contextId,
       });
       expect(reply.entries?.length).toBe(1);
     });
@@ -300,6 +312,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo/contributor',
+        contextId    : repo.message.contextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(roleWrite.message.recordId);
@@ -373,6 +386,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeIssuesDefinition.protocol,
         protocolPath : 'repo/issue',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(issue.message.recordId);
@@ -395,11 +409,12 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeIssuesDefinition.protocol,
         protocolPath : 'repo/issue',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
     });
 
-    it('should allow issue creation from anyone (open model)', async () => {
+    it('should reject issue creation from non-collaborators', async () => {
       const { repoContextId } = await setupRepoWithRoles();
 
       const data = encoder.encode(JSON.stringify({ title: 'External report', body: 'Found a bug' }));
@@ -414,7 +429,7 @@ describe('gitd integration', () => {
         signer          : Jws.createSigner(stranger),
       });
       const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      expect(reply.status.code).toBe(202);
+      expect(reply.status.code).toBeGreaterThanOrEqual(400);
     });
 
     it('should create nested comments on issues', async () => {
@@ -590,6 +605,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgePatchesDefinition.protocol,
         protocolPath : 'repo/patch',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(patch.message.recordId);
@@ -691,8 +707,8 @@ describe('gitd integration', () => {
         protocolRole    : 'repo:repo/contributor',
       });
 
-      // First merge result succeeds
-      await writeRecord(dwn, owner.did, {
+      // First merge result succeeds.
+      const firstMerge = await writeRecord(dwn, owner.did, {
         author          : maintainer,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch/mergeResult',
@@ -703,7 +719,7 @@ describe('gitd integration', () => {
         protocolRole    : 'repo:repo/maintainer',
       });
 
-      // Second merge result should be rejected
+      // `$recordLimit` candidates are accepted and projected at read time.
       const data = encoder.encode(JSON.stringify({ mergedBy: maintainer.did }));
       const write = await RecordsWrite.create({
         protocol        : ForgePatchesDefinition.protocol,
@@ -717,8 +733,15 @@ describe('gitd integration', () => {
         signer          : Jws.createSigner(maintainer),
       });
       const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      // $recordLimit exceeded — DWN rejects with non-202 status
-      expect(reply.status.code).not.toBe(202);
+      expect(reply.status.code).toBe(202);
+
+      const projected = await queryRecords(dwn, owner.did, owner, {
+        protocol     : ForgePatchesDefinition.protocol,
+        protocolPath : 'repo/patch/mergeResult',
+        contextId    : patch.message.contextId,
+      });
+      expect(projected.entries?.length).toBe(1);
+      expect(projected.entries![0].recordId).toBe(firstMerge.message.recordId);
     });
   });
 
