@@ -1,5 +1,11 @@
 # gitd: Architecture & Implementation Plan
 
+For the narrowed public repo-level GitHub replacement scope, see
+[REPO_LEVEL_MVP_PLAN.md](./REPO_LEVEL_MVP_PLAN.md). That plan is the guardrail
+and E2E MVP contract for repo, branch, issue, pull request, and moderation work
+before CI, private repos, organization/team permissions, or broad GitHub API
+compatibility.
+
 ## Table of Contents
 
 1. [Problem Statement](#1-problem-statement)

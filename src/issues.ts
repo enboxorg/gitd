@@ -2,9 +2,9 @@
  * Forge Issues Protocol — issue tracking with comments, labels, and status changes.
  *
  * Composes with the Forge Repo protocol via `uses` for role-based authorization.
- * Only users with a contributor, triager, or maintainer role can create issues
- * directly on the repo owner's DWN. External issue reports live on the reporter's
- * own DWN and are surfaced via indexers.
+ * Only users with a contributor, moderator, legacy triager, or maintainer role
+ * can create issues directly on the repo owner's DWN. External issue reports
+ * live on the reporter's own DWN and are surfaced via indexers.
  *
  * @module
  */
@@ -148,6 +148,7 @@ export const ForgeIssuesDefinition = {
           { who: 'anyone', can: ['read'] },
           { role: 'repo:repo/contributor', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+          { role: 'repo:repo/moderator', can: ['create', 'read', 'co-update'] },
           { role: 'repo:repo/triager', can: ['create', 'read', 'co-update'] },
           { who: 'author', of: 'repo/issue', can: ['create', 'update'] },
         ],
@@ -184,6 +185,7 @@ export const ForgeIssuesDefinition = {
             { who: 'anyone', can: ['read'] },
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'read'] },
             { role: 'repo:repo/triager', can: ['create', 'read'] },
             { who: 'author', of: 'repo/issue/comment', can: ['create', 'update', 'delete'] },
           ],
@@ -206,6 +208,7 @@ export const ForgeIssuesDefinition = {
           $actions   : [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'delete'] },
             { role: 'repo:repo/triager', can: ['create', 'delete'] },
           ],
           $tags: {
@@ -221,6 +224,7 @@ export const ForgeIssuesDefinition = {
           $actions   : [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create'] },
+            { role: 'repo:repo/moderator', can: ['create'] },
             { role: 'repo:repo/triager', can: ['create'] },
             { who: 'author', of: 'repo/issue', can: ['create'] },
           ],
@@ -236,6 +240,7 @@ export const ForgeIssuesDefinition = {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'delete'] },
             { role: 'repo:repo/triager', can: ['create', 'delete'] },
           ],
           $tags: {
@@ -250,6 +255,7 @@ export const ForgeIssuesDefinition = {
           $actions   : [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'delete'] },
             { role: 'repo:repo/triager', can: ['create', 'delete'] },
           ],
           $tags: {
@@ -263,6 +269,7 @@ export const ForgeIssuesDefinition = {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'update', 'delete'] },
             { role: 'repo:repo/triager', can: ['create', 'update', 'delete'] },
           ],
           $tags: {
@@ -276,6 +283,7 @@ export const ForgeIssuesDefinition = {
           $actions: [
             { role: 'repo:repo/contributor', can: ['read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'update', 'delete'] },
+            { role: 'repo:repo/moderator', can: ['create', 'update', 'delete'] },
             { role: 'repo:repo/triager', can: ['create', 'update', 'delete'] },
           ],
           $tags: {

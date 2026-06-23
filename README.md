@@ -142,7 +142,10 @@ gitd web --port 3000
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for protocol and system design, or [PLAN.md](./PLAN.md) for the full roadmap.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for protocol and system design,
+[PLAN.md](./PLAN.md) for the full roadmap, or
+[REPO_LEVEL_MVP_PLAN.md](./REPO_LEVEL_MVP_PLAN.md) for the focused public
+repo-level GitHub replacement plan and E2E MVP contract.
 
 ## Development
 

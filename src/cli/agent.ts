@@ -73,10 +73,15 @@ export type AgentContext = {
   wiki : TypedEnbox<typeof ForgeWikiProtocol.definition, ForgeWikiSchemaMap>;
   org : TypedEnbox<typeof ForgeOrgProtocol.definition, ForgeOrgSchemaMap>;
   enbox : Enbox;
+  /** Test/adapter hook for sending store:false records to another DID. */
+  sendRecord? : (record: any, targetDid: string) => Promise<void>;
 };
 
 /** Valid sync interval values. */
 export type SyncInterval = 'off' | '1s' | '5s' | '15s' | '30s' | '1m' | '5m';
+
+/** Protocol scope shape accepted by Enbox sync registration. */
+type IdentitySyncProtocols = 'all' | [string, ...string[]];
 
 /** Options for connecting to the agent. */
 export type ConnectOptions = {
@@ -107,6 +112,20 @@ export type ConnectOptions = {
    * @default 'off'
    */
   sync? : SyncInterval;
+  /**
+   * Whether to run remote DWN tenant registration during AuthManager connect.
+   * Defaults to enabled unless `GITD_DWN_REGISTRATION=off` or `0` is set.
+   */
+  registration? : boolean;
+  /**
+   * DWN endpoints to place in new DID documents and use for AuthManager sync.
+   * Defaults to `GITD_DWN_ENDPOINTS`, `GITD_DWN_ENDPOINT`, then Enbox hosted DWN.
+   */
+  dwnEndpoints? : string[];
+  /**
+   * Sync protocol scope for gitd records. Defaults to all forge protocols.
+   */
+  identitySyncProtocols? : IdentitySyncProtocols;
 };
 
 // Re-export types for external consumers.
@@ -118,6 +137,21 @@ export type { ProviderAuthParams, RegistrationTokenData };
 
 /** File name for cached DWN registration tokens. */
 const TOKENS_FILE = 'registration-tokens.json';
+const DEFAULT_DWN_ENDPOINTS = ['https://enbox-dwn.fly.dev'];
+
+const GITD_SYNC_PROTOCOLS: IdentitySyncProtocols = [
+  ForgeRepoProtocol.definition.protocol,
+  ForgeRefsProtocol.definition.protocol,
+  ForgeIssuesProtocol.definition.protocol,
+  ForgePatchesProtocol.definition.protocol,
+  ForgeCiProtocol.definition.protocol,
+  ForgeReleasesProtocol.definition.protocol,
+  ForgeRegistryProtocol.definition.protocol,
+  ForgeSocialProtocol.definition.protocol,
+  ForgeNotificationsProtocol.definition.protocol,
+  ForgeWikiProtocol.definition.protocol,
+  ForgeOrgProtocol.definition.protocol,
+];
 
 /**
  * Resolve the path to the registration-tokens file for a profile.
@@ -205,6 +239,8 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 
   // Always resolve to an absolute data path — never fall back to CWD.
   const dataPath = options.dataPath ?? profileDataPath('default');
+  const dwnEndpoints = options.dwnEndpoints ?? resolveAgentDwnEndpoints();
+  const identitySyncProtocols = options.identitySyncProtocols ?? GITD_SYNC_PROTOCOLS;
 
   // Pre-construct a SQLite-backed DWN so that EnboxUserAgent.create()
   // skips the default LevelDB stores for the four core DWN interfaces.
@@ -214,19 +250,24 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
   // Create an AuthManager with the pre-built agent + registration config.
   // Explicitly set the auth store inside the agent's dataPath so it doesn't
   // fall back to the default CWD-relative 'DATA/AGENT/AUTH_STORE'.
+  const registrationEnabled = options.registration ?? isDwnRegistrationEnabled();
+
   const auth = await AuthManager.create({
     agent,
     password,
     storage      : new LevelStorage(join(dataPath, 'AUTH_STORE')),
     sync         : sync === 'off' ? 'off' : sync as SyncOption,
-    dwnEndpoints : ['https://enbox-dwn.fly.dev'],
-    registration : {
-      onSuccess              : () => { /* silent */ },
-      onFailure              : (err) => { console.error(`[dwn-registration] ${(err as Error).message}`); },
-      onProviderAuthRequired : handleProviderAuth,
-      registrationTokens     : loadRegistrationTokens(dataPath),
-      onRegistrationTokens   : (tokens) => { saveRegistrationTokens(dataPath, tokens); },
-    },
+    dwnEndpoints,
+    identitySyncProtocols,
+    registration : registrationEnabled
+      ? {
+        onSuccess              : () => { /* silent */ },
+        onFailure              : (err) => { console.error(`[dwn-registration] ${(err as Error).message}`); },
+        onProviderAuthRequired : handleProviderAuth,
+        registrationTokens     : loadRegistrationTokens(dataPath),
+        onRegistrationTokens   : (tokens) => { saveRegistrationTokens(dataPath, tokens); },
+      }
+      : undefined,
   });
 
   // Connect: first launch initializes vault + creates identity;
@@ -237,6 +278,11 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
   });
 
   await cacheLocalDid(session.agent as EnboxUserAgent, session.did);
+  if (sync !== 'off') {
+    const agent = session.agent as EnboxUserAgent;
+    await ensureGitdSyncScope(agent, session.did, identitySyncProtocols);
+    await pushGitdSyncScope(agent);
+  }
 
   // Build the Enbox API from the caller-owned AuthManager session.
   const enbox = Enbox.fromSession(session);
@@ -247,6 +293,23 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+export function resolveAgentDwnEndpoints(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.GITD_DWN_ENDPOINTS ?? env.GITD_DWN_ENDPOINT;
+  if (!raw?.trim()) { return [...DEFAULT_DWN_ENDPOINTS]; }
+
+  const endpoints = raw
+    .split(',')
+    .map((endpoint) => endpoint.trim())
+    .filter((endpoint) => endpoint.length > 0);
+
+  return endpoints.length > 0 ? endpoints : [...DEFAULT_DWN_ENDPOINTS];
+}
+
+function isDwnRegistrationEnabled(): boolean {
+  const value = process.env.GITD_DWN_REGISTRATION?.toLowerCase();
+  return value !== 'off' && value !== '0' && value !== 'false';
+}
 
 async function cacheLocalDid(agent: EnboxUserAgent, did: string): Promise<void> {
   const agentDid = agent.agentDid;
@@ -261,6 +324,69 @@ async function cacheLocalDid(agent: EnboxUserAgent, did: string): Promise<void> 
     didDocumentMetadata   : portableDid.metadata,
     didResolutionMetadata : {},
   });
+}
+
+async function ensureGitdSyncScope(
+  agent: EnboxUserAgent,
+  did: string,
+  gitdProtocols: IdentitySyncProtocols,
+): Promise<void> {
+  const sync = agent.sync as unknown as {
+    getIdentityOptions: (did: string) => Promise<{ protocols: IdentitySyncProtocols; delegateDid?: string } | undefined>;
+    registerIdentity: (params: { did: string; options: { protocols: IdentitySyncProtocols; delegateDid?: string } }) => Promise<void>;
+    updateIdentityOptions: (params: { did: string; options: { protocols: IdentitySyncProtocols; delegateDid?: string } }) => Promise<void>;
+  };
+
+  const existing = await sync.getIdentityOptions(did);
+  const mergedProtocols = mergeSyncProtocols(existing?.protocols, gitdProtocols);
+  if (existing?.protocols === 'all' || sameStringSet(existing?.protocols, mergedProtocols)) {
+    return;
+  }
+
+  const options = {
+    ...(existing?.delegateDid ? { delegateDid: existing.delegateDid } : {}),
+    protocols: mergedProtocols,
+  };
+
+  if (existing) {
+    await sync.updateIdentityOptions({ did, options });
+    return;
+  }
+
+  await sync.registerIdentity({ did, options });
+}
+
+async function pushGitdSyncScope(agent: EnboxUserAgent): Promise<void> {
+  try {
+    await agent.sync.sync('push');
+  } catch (err) {
+    console.error(`[dwn-sync] initial gitd push failed: ${(err as Error).message}`);
+  }
+}
+
+function mergeSyncProtocols(
+  existing: IdentitySyncProtocols | undefined,
+  next: IdentitySyncProtocols,
+): IdentitySyncProtocols {
+  if (existing === 'all' || next === 'all') { return 'all'; }
+
+  const merged = new Set<string>(existing ?? []);
+  for (const protocol of next) {
+    merged.add(protocol);
+  }
+
+  return [...merged] as [string, ...string[]];
+}
+
+function sameStringSet(
+  left: IdentitySyncProtocols | undefined,
+  right: IdentitySyncProtocols,
+): boolean {
+  if (left === undefined) { return false; }
+  if (left === 'all' || right === 'all') { return left === right; }
+  if (left.length !== right.length) { return false; }
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }
 
 /** Bind typed protocol handles and configure all protocols. */

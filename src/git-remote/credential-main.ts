@@ -207,7 +207,7 @@ async function requestTokenFromDaemon(
   owner: string,
   repo: string,
 ): Promise<{ username: string; password: string } | null> {
-  const lock = readLockfile();
+  const lock = readLockfile(resolveProfile() ?? undefined);
   if (!lock) { return null; }
 
   try {

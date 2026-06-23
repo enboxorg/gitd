@@ -21,7 +21,9 @@
 
 import type { ForgeRepoProtocol } from '../repo.js';
 import type { ForgeRepoSchemaMap } from '../repo.js';
-import type { OnPushComplete } from './ref-sync.js';
+import type { ForgeRefsProtocol } from '../refs.js';
+import type { ForgeRefsSchemaMap } from '../refs.js';
+import type { GitRef, OnPushComplete } from './ref-sync.js';
 import type { TypedEnbox } from '@enbox/api';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
@@ -29,6 +31,8 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { readFile, stat, unlink } from 'node:fs/promises';
+import { branchDataForRef } from '../branch-state.js';
+import { readGitRefs } from './ref-sync.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +45,9 @@ export type BundleSyncOptions = {
 
   /** The repo's contextId (from the ForgeRepoProtocol repo record). */
   repoContextId: string;
+
+  /** Optional ForgeRefsProtocol handle used to write branch-scoped bundles. */
+  refs?: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
 
   /**
    * Repo visibility — controls whether bundle records are encrypted.
@@ -79,6 +86,18 @@ export type BundleInfo = {
   size: number;
 };
 
+/** Metadata about a generated branch-scoped bundle. */
+export type BranchBundleInfo = {
+  /** Path to the bundle file on disk. */
+  path: string;
+  /** Full branch ref name included in the bundle. */
+  refName: string;
+  /** Commit SHA at the branch tip. */
+  tipCommit: string;
+  /** File size in bytes. */
+  size: number;
+};
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -90,10 +109,10 @@ export type BundleInfo = {
  * @returns An async callback to invoke after a successful push
  */
 export function createBundleSyncer(options: BundleSyncOptions): OnPushComplete {
-  const { repo, repoContextId, visibility = 'public', squashThreshold = 5 } = options;
+  const { repo, repoContextId, refs, visibility = 'public', squashThreshold = 5 } = options;
   const encrypt = visibility === 'private';
 
-  return async (_did: string, _repoName: string, repoPath: string): Promise<void> => {
+  return async (did: string, _repoName: string, repoPath: string): Promise<void> => {
     // Query existing bundle records scoped to this repo, newest first.
     const { records: existingBundles } = await repo.records.query('repo/bundle', {
       filter   : { contextId: repoContextId, tags: { isFull: true } },
@@ -151,6 +170,7 @@ export function createBundleSyncer(options: BundleSyncOptions): OnPushComplete {
         tags,
         parentContextId : repoContextId,
         encryption      : encrypt,
+        published       : !encrypt,
       };
 
       if (shouldSquash) {
@@ -159,11 +179,151 @@ export function createBundleSyncer(options: BundleSyncOptions): OnPushComplete {
       }
 
       await repo.records.create('repo/bundle', createOptions);
+
+      if (refs) {
+        await syncBranchBundles({
+          refs,
+          repoContextId,
+          ownerDid: did,
+          repoPath,
+          encrypt,
+        });
+      }
     } finally {
       // Clean up the temp bundle file.
       await unlink(bundleInfo.path).catch(() => {});
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Branch bundle sync
+// ---------------------------------------------------------------------------
+
+type BranchBundleSyncOptions = {
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
+  repoContextId: string;
+  ownerDid: string;
+  repoPath: string;
+  encrypt: boolean;
+};
+
+async function syncBranchBundles(options: BranchBundleSyncOptions): Promise<void> {
+  const { refs, repoContextId, ownerDid, repoPath, encrypt } = options;
+  let gitRefs: GitRef[];
+  try {
+    gitRefs = await readGitRefs(repoPath);
+  } catch (err) {
+    console.error(`bundle-sync: failed to read refs from ${repoPath}: ${(err as Error).message}`);
+    return;
+  }
+
+  const branchRefs = gitRefs.filter((ref) => ref.type === 'branch');
+  if (branchRefs.length === 0) {
+    return;
+  }
+
+  const { records: existingBranches } = await refs.records.query('repo/branch' as any, {
+    filter: { contextId: repoContextId },
+  });
+  const branchRecords = new Map<string, any>();
+  for (const record of existingBranches) {
+    const data = await record.data.json();
+    if (typeof data.refName === 'string') {
+      branchRecords.set(data.refName, record);
+    }
+  }
+
+  for (const ref of branchRefs) {
+    const branchRecord = await ensureBranchRecord(refs, repoContextId, ownerDid, ref.name, branchRecords, !encrypt);
+    await writeBranchBundleIfChanged(refs, branchRecord, repoPath, ref, encrypt);
+  }
+}
+
+async function ensureBranchRecord(
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>,
+  repoContextId: string,
+  ownerDid: string,
+  refName: string,
+  branchRecords: Map<string, any>,
+  publish: boolean,
+): Promise<any> {
+  const existing = branchRecords.get(refName);
+  if (existing) {
+    return existing;
+  }
+
+  const { records: matching } = await refs.records.query('repo/branch' as any, {
+    filter: { contextId: repoContextId, tags: { refName } },
+  });
+  if (matching.length > 0) {
+    branchRecords.set(refName, matching[0]);
+    return matching[0];
+  }
+
+  const data = branchDataForRef(refName, ownerDid);
+  const { record } = await refs.records.create('repo/branch' as any, {
+    data,
+    tags: {
+      refName  : data.refName,
+      ownerDid : data.ownerDid,
+      kind     : data.kind,
+    },
+    parentContextId: repoContextId,
+    published      : publish,
+  });
+  branchRecords.set(refName, record);
+  return record;
+}
+
+async function writeBranchBundleIfChanged(
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>,
+  branchRecord: any,
+  repoPath: string,
+  ref: GitRef,
+  encrypt: boolean,
+): Promise<void> {
+  const branchContextId = branchRecord.contextId;
+  if (!branchContextId) {
+    console.error(`bundle-sync: branch record for ${ref.name} has no contextId; skipping branch bundle`);
+    return;
+  }
+
+  const { records } = await refs.records.query('repo/branch/bundle' as any, {
+    filter   : { contextId: branchContextId },
+    dateSort : DateSort.CreatedDescending,
+  });
+  if (records[0]?.tags?.tipCommit === ref.target) {
+    return;
+  }
+
+  let bundleInfo: BranchBundleInfo;
+  try {
+    bundleInfo = await createBranchBundle(repoPath, ref.name);
+  } catch (err) {
+    console.error(`bundle-sync: failed to create branch bundle for ${ref.name}: ${(err as Error).message}`);
+    return;
+  }
+
+  try {
+    const bundleData = new Uint8Array(await readFile(bundleInfo.path));
+    await refs.records.create('repo/branch/bundle' as any, {
+      data       : bundleData,
+      dataFormat : 'application/x-git-bundle',
+      tags       : {
+        kind      : 'checkpoint',
+        refName   : ref.name,
+        tipCommit : bundleInfo.tipCommit,
+        size      : bundleInfo.size,
+      },
+      parentContextId : branchContextId,
+      encryption      : encrypt,
+      published       : !encrypt,
+      squash          : true,
+    });
+  } finally {
+    await unlink(bundleInfo.path).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +383,29 @@ export async function createIncrementalBundle(
     isFull : false,
     refCount,
     size   : fileInfo.size,
+  };
+}
+
+/**
+ * Create a branch-scoped checkpoint bundle containing one branch ref.
+ *
+ * @param repoPath - Path to the bare git repository
+ * @param refName - Full branch ref name to include
+ * @returns Branch bundle metadata and file path
+ */
+export async function createBranchBundle(repoPath: string, refName: string): Promise<BranchBundleInfo> {
+  const bundlePath = join(tmpdir(), `gitd-branch-bundle-${Date.now()}-${Math.random().toString(36).slice(2)}.bundle`);
+
+  await spawnChecked('git', ['bundle', 'create', bundlePath, refName], repoPath);
+
+  const tipCommit = (await spawnCollectStdout('git', ['rev-parse', refName], repoPath)).trim();
+  const fileInfo = await stat(bundlePath);
+
+  return {
+    path: bundlePath,
+    refName,
+    tipCommit,
+    size: fileInfo.size,
   };
 }
 

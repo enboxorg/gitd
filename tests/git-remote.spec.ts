@@ -7,9 +7,9 @@
  */
 import { DidDht } from '@enbox/dids';
 import { parseDidUrl } from '../src/git-remote/parse-url.js';
-import { resolveGitEndpoint } from '../src/git-remote/resolve.js';
+import { __setResolverForTests, resolveGitEndpoint } from '../src/git-remote/resolve.js';
 
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import {
   createGitTransportService,
@@ -465,13 +465,13 @@ describe('resolveGitEndpoint with local daemon', () => {
   it('should resolve via local daemon when lockfile has no ownerDid (backwards compat)', async () => {
     const result = await resolveGitEndpoint('did:dht:abc123', 'my-repo');
     expect(result.source).toBe('LocalDaemon');
-    expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123/my-repo`);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/did%3Adht%3Aabc123/my-repo`);
   });
 
   it('should resolve without repo name via local daemon', async () => {
     const result = await resolveGitEndpoint('did:dht:abc123');
     expect(result.source).toBe('LocalDaemon');
-    expect(result.url).toBe(`http://localhost:${port}/did:dht:abc123`);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/did%3Adht%3Aabc123`);
   });
 });
 
@@ -497,7 +497,11 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
         resolve();
       });
     });
-    // Write a lockfile with ownerDid set.
+  });
+
+  beforeEach(() => {
+    // Default to a daemon that serves only its owner DID. Individual tests
+    // opt into DWN-helper capability when they need remote-owner routing.
     writeLockfile(port, '1.0.0', ownerDid);
   });
 
@@ -506,10 +510,14 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
     server.close();
   });
 
+  afterEach(() => {
+    __setResolverForTests();
+  });
+
   it('should use local daemon when requested DID matches ownerDid', async () => {
     const result = await resolveGitEndpoint(ownerDid, 'my-repo');
     expect(result.source).toBe('LocalDaemon');
-    expect(result.url).toBe(`http://localhost:${port}/${ownerDid}/my-repo`);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(ownerDid)}/my-repo`);
   });
 
   it('should skip local daemon when requested DID differs from ownerDid', async () => {
@@ -517,5 +525,74 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
     // skipping the local daemon — confirming it didn't short-circuit.
     await expect(resolveGitEndpoint(remoteDid, 'their-repo'))
       .rejects.toThrow();
+  });
+
+  it('should use local DWN helper for a remote DID with a DWN service', async () => {
+    writeLockfile(port, '1.0.0', ownerDid, { dwnHelper: true });
+
+    __setResolverForTests({
+      resolve: async (did: string) => ({
+        didDocument: {
+          id      : did,
+          service : [
+            { id: '#dwn', type: 'DecentralizedWebNode', serviceEndpoint: 'https://dwn.example.com' },
+          ],
+        },
+        didDocumentMetadata  : {},
+        didResolutionMetadata : {},
+      } as any),
+    });
+
+    const result = await resolveGitEndpoint(remoteDid, 'their-repo');
+    expect(result.source).toBe('LocalDwnHelper');
+    expect(result.did).toBe(remoteDid);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(remoteDid)}/their-repo`);
+  });
+
+  it('should prefer GitTransport over the local DWN helper', async () => {
+    writeLockfile(port, '1.0.0', ownerDid, { dwnHelper: true });
+
+    __setResolverForTests({
+      resolve: async (did: string) => ({
+        didDocument: {
+          id      : did,
+          service : [
+            { id: '#dwn', type: 'DecentralizedWebNode', serviceEndpoint: 'https://dwn.example.com' },
+            { id: '#git', type: 'GitTransport', serviceEndpoint: 'https://git.example.com/repos' },
+          ],
+        },
+        didDocumentMetadata  : {},
+        didResolutionMetadata : {},
+      } as any),
+    });
+
+    const result = await resolveGitEndpoint(remoteDid, 'their-repo');
+    expect(result.source).toBe('GitTransport');
+    expect(result.url).toBe(`https://git.example.com/repos/${encodeURIComponent(remoteDid)}/their-repo`);
+  });
+
+  it('should not use local DWN helper when the remote DID has no DWN service', async () => {
+    writeLockfile(port, '1.0.0', ownerDid, { dwnHelper: true });
+
+    __setResolverForTests({
+      resolve: async (did: string) => ({
+        didDocument           : { id: did, service: [] },
+        didDocumentMetadata   : {},
+        didResolutionMetadata : {},
+      } as any),
+    });
+
+    await expect(resolveGitEndpoint(remoteDid, 'their-repo'))
+      .rejects.toThrow('No GitTransport service found');
+  });
+
+  it('should fall back to an advertised local DWN helper when DID resolution fails', async () => {
+    writeLockfile(port, '1.0.0', ownerDid, { dwnHelper: true });
+
+    const unresolvedDid = 'did:gitd-test:alice';
+    const result = await resolveGitEndpoint(unresolvedDid, 'their-repo');
+    expect(result.source).toBe('LocalDwnHelper');
+    expect(result.did).toBe(unresolvedDid);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(unresolvedDid)}/their-repo`);
   });
 });

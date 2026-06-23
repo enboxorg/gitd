@@ -135,7 +135,7 @@ export function listProfiles(): string[] {
  *
  * Precedence (highest to lowest):
  *   1. `--profile <name>` flag (passed as `flagProfile`)
- *   2. `ENBOX_PROFILE` environment variable
+ *   2. `GITD_PROFILE` or `ENBOX_PROFILE` environment variable
  *   3. `.git/config` → `[enbox] profile = <name>`
  *   4. `~/.enbox/config.json` → `defaultProfile`
  *   5. First (and only) profile, if exactly one exists
@@ -146,8 +146,9 @@ export function resolveProfile(flagProfile?: string): string | null {
   // 1. Explicit flag.
   if (flagProfile) { return flagProfile; }
 
-  // 2. Environment variable.
-  const envProfile = process.env.ENBOX_PROFILE;
+  // 2. Environment variable. GITD_PROFILE matches gitd docs; ENBOX_PROFILE
+  // remains accepted for compatibility with existing Enbox tooling.
+  const envProfile = process.env.GITD_PROFILE ?? process.env.ENBOX_PROFILE;
   if (envProfile) { return envProfile; }
 
   // 3. Per-repo git config.

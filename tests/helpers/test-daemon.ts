@@ -35,6 +35,7 @@ import {
   formatAuthPassword,
   parseAuthPassword,
 } from '../../src/git-server/auth.js';
+import type { PushRefUpdate } from '../../src/git-server/push-updates.js';
 
 // ---------------------------------------------------------------------------
 // Config from environment
@@ -108,7 +109,12 @@ async function main(): Promise<void> {
     ownerDid : identity.did.uri,
   });
 
-  const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+  const authenticatePush = async (
+    request: Request,
+    did: string,
+    repo: string,
+    updates?: readonly PushRefUpdate[],
+  ): Promise<boolean> => {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader?.startsWith('Basic ')) { return false; }
 
@@ -133,7 +139,7 @@ async function main(): Promise<void> {
     const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
     if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
 
-    return authorizePush(payload.did, did, repo);
+    return authorizePush(payload.did, did, repo, updates);
   };
 
   // Token generation — the credential helper calls this via /auth/token.

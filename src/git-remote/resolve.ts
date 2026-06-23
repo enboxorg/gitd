@@ -3,9 +3,10 @@
  *
  * Resolves a DID document and extracts the git transport endpoint URL.
  * The resolution order is:
- *   0. Local daemon (auto-started if needed)
+ *   0. Local daemon for the daemon owner's own DID (auto-started if needed)
  *   1. Service of type `GitTransport` in the DID document
- *   2. Failure — no git endpoint found
+ *   2. Local DWN helper when the DID has a `DecentralizedWebNode` service
+ *   3. Failure — no git endpoint found
  *
  * @module
  */
@@ -33,18 +34,24 @@ export type GitEndpoint = {
   did: string;
 
   /** How the endpoint was discovered. */
-  source: 'LocalDaemon' | 'GitTransport';
+  source: 'LocalDaemon' | 'GitTransport' | 'LocalDwnHelper';
 };
 
 // ---------------------------------------------------------------------------
 // Resolver
 // ---------------------------------------------------------------------------
 
+type ResolverResult = Awaited<ReturnType<UniversalResolver['resolve']>>;
+
+type DidResolver = {
+  resolve(did: string): Promise<ResolverResult>;
+};
+
 /** Shared resolver instance (lazy-initialized). */
-let resolver: UniversalResolver | undefined;
+let resolver: DidResolver | undefined;
 
 /** Get or create the DID resolver. */
-function getResolver(): UniversalResolver {
+function getResolver(): DidResolver {
   if (!resolver) {
     resolver = new UniversalResolver({
       didResolvers: [DidDht, DidJwk, DidWeb, DidKey],
@@ -53,8 +60,13 @@ function getResolver(): UniversalResolver {
   return resolver;
 }
 
-/** DID resolution timeout in milliseconds. */
-const DID_RESOLUTION_TIMEOUT_MS = 30_000;
+/** Test hook for deterministic DID resolution without network access. */
+export function __setResolverForTests(testResolver?: DidResolver): void {
+  resolver = testResolver;
+}
+
+/** Default DID resolution timeout in milliseconds. */
+const DEFAULT_DID_RESOLUTION_TIMEOUT_MS = 30_000;
 
 /**
  * Resolve a DID to a git transport HTTPS endpoint.
@@ -65,22 +77,36 @@ const DID_RESOLUTION_TIMEOUT_MS = 30_000;
  * @throws If resolution fails, times out, or no git-compatible service is found
  */
 export async function resolveGitEndpoint(did: string, repo?: string): Promise<GitEndpoint> {
-  // Priority 0: Check for a running local daemon.
-  const local = await resolveLocalDaemon(did, repo);
+  // Priority 0: Check for a local daemon serving its own owner DID.
+  const local = await resolveLocalDaemon(did, repo, 'owner-only');
   if (local) { return local; }
 
-  const { didDocument, didResolutionMetadata } = await Promise.race([
-    getResolver().resolve(did),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`DID resolution timed out after ${DID_RESOLUTION_TIMEOUT_MS}ms for ${did}`)), DID_RESOLUTION_TIMEOUT_MS),
-    ),
-  ]);
+  let resolved: ResolverResult;
+  try {
+    const timeoutMs = didResolutionTimeoutMs();
+    resolved = await Promise.race([
+      getResolver().resolve(did),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`DID resolution timed out after ${timeoutMs}ms for ${did}`)), timeoutMs),
+      ),
+    ]);
+  } catch (err) {
+    const localDwnHelper = await resolveLocalDaemon(did, repo, 'dwn-helper');
+    if (localDwnHelper) { return localDwnHelper; }
+    throw err;
+  }
+
+  const { didDocument, didResolutionMetadata } = resolved;
 
   if (didResolutionMetadata.error) {
+    const localDwnHelper = await resolveLocalDaemon(did, repo, 'dwn-helper');
+    if (localDwnHelper) { return localDwnHelper; }
     throw new Error(`DID resolution failed for ${did}: ${didResolutionMetadata.error}`);
   }
 
   if (!didDocument) {
+    const localDwnHelper = await resolveLocalDaemon(did, repo, 'dwn-helper');
+    if (localDwnHelper) { return localDwnHelper; }
     throw new Error(`DID resolution returned no document for ${did}`);
   }
 
@@ -100,11 +126,16 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
   // No git-capable endpoint found.  Build a helpful error message.
   const dwnService = services.find((s) => s.type === 'DecentralizedWebNode');
   if (dwnService) {
+    const localDwnHelper = await resolveLocalDaemon(did, repo, 'dwn-helper');
+    if (localDwnHelper) { return localDwnHelper; }
+
     throw new Error(
       `No GitTransport service found for ${did}. `
-      + 'The DID has a DecentralizedWebNode service but no git server is registered.\n'
-      + 'Hint: start a local server with `gitd serve`, or register a public '
-      + 'GitTransport endpoint with `gitd serve --public-url <url>`.',
+      + 'The DID has a DecentralizedWebNode service, but no local gitd daemon is available '
+      + 'to restore the repo from DWN records.\n'
+      + 'Hint: run `gitd serve` in another terminal, set GITD_PASSWORD so gitd can '
+      + 'auto-start the helper, or register a public GitTransport endpoint with '
+      + '`gitd serve --public-url <url>`.',
     );
   }
 
@@ -114,12 +145,25 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
   );
 }
 
+function didResolutionTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.GITD_DID_RESOLUTION_TIMEOUT_MS;
+  if (!raw) { return DEFAULT_DID_RESOLUTION_TIMEOUT_MS; }
+
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_DID_RESOLUTION_TIMEOUT_MS;
+}
+
 // ---------------------------------------------------------------------------
 // Local daemon discovery
 // ---------------------------------------------------------------------------
 
 /** Timeout for the local daemon health probe (ms). */
 const LOCAL_PROBE_TIMEOUT_MS = 2_000;
+const LOCAL_LOOPBACK_ORIGIN = 'http://127.0.0.1';
+
+type LocalDaemonMode = 'owner-only' | 'dwn-helper';
 
 /**
  * Check whether a local gitd daemon is running and reachable.
@@ -128,9 +172,13 @@ const LOCAL_PROBE_TIMEOUT_MS = 2_000;
  * the health endpoint to confirm the server is responsive.  If no daemon
  * is running, attempts to auto-start one via `ensureDaemon()`.
  *
- * @returns A `GitEndpoint` pointing to `http://localhost:<port>/...`, or `null`.
+ * @returns A `GitEndpoint` pointing to `http://127.0.0.1:<port>/...`, or `null`.
  */
-async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoint | null> {
+async function resolveLocalDaemon(
+  did: string,
+  repo?: string,
+  mode: LocalDaemonMode = 'owner-only',
+): Promise<GitEndpoint | null> {
   // Fast path: check for an already-running daemon.
   const lock = readLockfile();
   if (lock) {
@@ -139,11 +187,14 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
     // to DID document resolution so the request reaches the correct
     // remote server.  Lockfiles without `ownerDid` (written by older
     // versions) are treated as matching for backwards compatibility.
-    if (lock.ownerDid && lock.ownerDid !== did) {
+    if (mode === 'owner-only' && lock.ownerDid && lock.ownerDid !== did) {
+      return null;
+    }
+    if (mode === 'dwn-helper' && !lock.dwnHelper) {
       return null;
     }
 
-    const healthUrl = `http://localhost:${lock.port}/health`;
+    const healthUrl = `${LOCAL_LOOPBACK_ORIGIN}:${lock.port}/health`;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
@@ -151,9 +202,9 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
       clearTimeout(timer);
       if (res.ok) {
         return {
-          url    : buildUrl(`http://localhost:${lock.port}`, did, repo),
+          url    : buildUrl(`${LOCAL_LOOPBACK_ORIGIN}:${lock.port}`, did, repo),
           did,
-          source : 'LocalDaemon',
+          source : mode === 'dwn-helper' ? 'LocalDwnHelper' : 'LocalDaemon',
         };
       }
     } catch {
@@ -171,10 +222,18 @@ async function resolveLocalDaemon(did: string, repo?: string): Promise<GitEndpoi
 
   try {
     const result = await ensureDaemon(password);
+    const spawnedLock = readLockfile();
+    if (mode === 'owner-only' && spawnedLock?.ownerDid && spawnedLock.ownerDid !== did) {
+      return null;
+    }
+    if (mode === 'dwn-helper' && !spawnedLock?.dwnHelper) {
+      return null;
+    }
+
     return {
-      url    : buildUrl(`http://localhost:${result.port}`, did, repo),
+      url    : buildUrl(`${LOCAL_LOOPBACK_ORIGIN}:${result.port}`, did, repo),
       did,
-      source : 'LocalDaemon',
+      source : mode === 'dwn-helper' ? 'LocalDwnHelper' : 'LocalDaemon',
     };
   } catch (err) {
     // Could not start daemon — warn clearly so the user knows why
@@ -342,6 +401,7 @@ function assertNotPrivateIp(ip: string, urlString: string): void {
  */
 function buildUrl(base: string, did: string, repo?: string): string {
   const normalized = base.replace(/\/$/, '');
-  if (!repo) { return `${normalized}/${did}`; }
-  return `${normalized}/${did}/${repo}`;
+  const encodedDid = encodeURIComponent(did);
+  if (!repo) { return `${normalized}/${encodedDid}`; }
+  return `${normalized}/${encodedDid}/${encodeURIComponent(repo)}`;
 }

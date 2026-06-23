@@ -339,6 +339,15 @@ describe('JSON Schemas', () => {
       ]);
     });
 
+    it('moderation-event.json should define moderation actions and targets', () => {
+      const schema = readSchema('repo', 'moderation-event.json');
+      expect(schema.required).toEqual(['action', 'actorDid', 'createdAt']);
+      expect(schema.properties.action.enum).toContain('block');
+      expect(schema.properties.action.enum).toContain('deleteComment');
+      expect(schema.properties.targetKind.enum).toContain('prComment');
+      expect(schema.properties.reportStatus.enum).toEqual(['open', 'resolved', 'dismissed']);
+    });
+
     it('settings.json should restrict mergeStrategies items to merge, squash, rebase', () => {
       const schema = readSchema('repo', 'settings.json');
       const items = schema.properties.mergeStrategies.items;
@@ -586,6 +595,25 @@ describe('JSON Schemas', () => {
     it('git-ref.json should restrict type to branch or tag', () => {
       const schema = readSchema('refs', 'git-ref.json');
       expect(schema.properties.type.enum).toEqual(['branch', 'tag']);
+    });
+
+    it('branch.json should require refName, ownerDid, and kind', () => {
+      const schema = readSchema('refs', 'branch.json');
+      expect(schema.required).toContain('refName');
+      expect(schema.required).toContain('ownerDid');
+      expect(schema.required).toContain('kind');
+      expect(schema.properties.kind.enum).toEqual(['contributor', 'protected', 'shared']);
+    });
+
+    it('branch-state.json should support updates and checkpoints', () => {
+      const schema = readSchema('refs', 'branch-state.json');
+      expect(schema.required).toContain('kind');
+      expect(schema.required).toContain('refName');
+      expect(schema.required).toContain('actorDid');
+      expect(schema.required).toContain('createdAt');
+      expect(schema.properties.kind.enum).toEqual(['refUpdate', 'checkpoint']);
+      expect(schema.properties.newTarget.type).toEqual(['string', 'null']);
+      expect(schema.properties.target.type).toEqual(['string', 'null']);
     });
   });
 

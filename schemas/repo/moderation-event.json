@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/moderation-event",
+  "title": "ModerationEventData",
+  "description": "Immutable repo-level moderation audit event.",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "block",
+        "unblock",
+        "lock",
+        "unlock",
+        "hideComment",
+        "unhideComment",
+        "deleteComment",
+        "report",
+        "resolveReport",
+        "dismissReport",
+        "interactionLimit"
+      ]
+    },
+    "actorDid": {
+      "type": "string"
+    },
+    "targetDid": {
+      "type": "string"
+    },
+    "targetKind": {
+      "type": "string",
+      "enum": ["repo", "issue", "pr", "issueComment", "prComment", "report"]
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "reportStatus": {
+      "type": "string",
+      "enum": ["open", "resolved", "dismissed"]
+    },
+    "interactionLimit": {
+      "type": "string",
+      "enum": ["off", "contributors", "collaborators"]
+    },
+    "duration": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    }
+  },
+  "required": ["action", "actorDid", "createdAt"],
+  "additionalProperties": false
+}

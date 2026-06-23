@@ -7,5 +7,6 @@
 export * from './credential-cache.js';
 export * from './credential-helper.js';
 export * from './parse-url.js';
-export * from './resolve.js';
+export { assertNotPrivateUrl, resolveGitEndpoint } from './resolve.js';
+export type { GitEndpoint } from './resolve.js';
 export * from './service.js';

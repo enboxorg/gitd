@@ -170,6 +170,27 @@ describe('profile config', () => {
     }
   });
 
+  it('should resolve from GITD_PROFILE env before ENBOX_PROFILE', () => {
+    const origGitd = process.env.GITD_PROFILE;
+    const origEnbox = process.env.ENBOX_PROFILE;
+    process.env.GITD_PROFILE = 'gitd-profile';
+    process.env.ENBOX_PROFILE = 'env-profile';
+    try {
+      expect(resolveProfile()).toBe('gitd-profile');
+    } finally {
+      if (origGitd !== undefined) {
+        process.env.GITD_PROFILE = origGitd;
+      } else {
+        delete process.env.GITD_PROFILE;
+      }
+      if (origEnbox !== undefined) {
+        process.env.ENBOX_PROFILE = origEnbox;
+      } else {
+        delete process.env.ENBOX_PROFILE;
+      }
+    }
+  });
+
   it('should resolve from default profile', () => {
     upsertProfile('default-one', { name: 'default-one', did: 'did:d', createdAt: '2025-01-01T00:00:00Z' });
     expect(resolveProfile()).toBe('default-one');
@@ -253,6 +274,28 @@ describe('connectAgent with profile dataPath', () => {
   // Note: reconnect test cannot run in the same process because LevelDB
   // holds exclusive file locks.  Reconnect is exercised by the CLI itself
   // across separate process invocations.
+});
+
+describe('agent DWN endpoint resolution', () => {
+  it('should default to the hosted Enbox DWN endpoint', async () => {
+    const { resolveAgentDwnEndpoints } = await import('../src/cli/agent.js');
+    expect(resolveAgentDwnEndpoints({} as NodeJS.ProcessEnv)).toEqual(['https://enbox-dwn.fly.dev']);
+  });
+
+  it('should use GITD_DWN_ENDPOINT for agent sync', async () => {
+    const { resolveAgentDwnEndpoints } = await import('../src/cli/agent.js');
+    expect(resolveAgentDwnEndpoints({
+      GITD_DWN_ENDPOINT: 'http://127.0.0.1:9381',
+    } as NodeJS.ProcessEnv)).toEqual(['http://127.0.0.1:9381']);
+  });
+
+  it('should prefer comma-separated GITD_DWN_ENDPOINTS over the singular endpoint', async () => {
+    const { resolveAgentDwnEndpoints } = await import('../src/cli/agent.js');
+    expect(resolveAgentDwnEndpoints({
+      GITD_DWN_ENDPOINT  : 'https://ignored.example',
+      GITD_DWN_ENDPOINTS : ' http://127.0.0.1:9381, https://dwn.example ',
+    } as NodeJS.ProcessEnv)).toEqual(['http://127.0.0.1:9381', 'https://dwn.example']);
+  });
 });
 
 describe('resolveReposPath', () => {

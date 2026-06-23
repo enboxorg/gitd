@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.org/schemas/forge/branch-state",
+  "title": "BranchStateData",
+  "description": "A branch ref update or authoritative checkpoint for a branch-owned git state log.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["refUpdate", "checkpoint"],
+      "description": "State record discriminator"
+    },
+    "refName": {
+      "type": "string",
+      "description": "Full branch ref name this state applies to"
+    },
+    "oldTarget": {
+      "type": ["string", "null"],
+      "description": "Expected previous commit target for ref updates"
+    },
+    "newTarget": {
+      "type": ["string", "null"],
+      "description": "New commit target for ref updates; null represents deletion"
+    },
+    "target": {
+      "type": ["string", "null"],
+      "description": "Authoritative target for checkpoints; null represents deletion"
+    },
+    "actorDid": {
+      "type": "string",
+      "description": "DID that produced this state record"
+    },
+    "bundleRecordId": {
+      "type": "string",
+      "description": "Optional associated branch bundle record ID"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Whether this update represents a non-fast-forward git push"
+    },
+    "nonce": {
+      "type": "string",
+      "description": "Optional helper-generated tie-breaker"
+    },
+    "acceptedStateRecordId": {
+      "type": "string",
+      "description": "Latest accepted delta included in a checkpoint"
+    },
+    "acceptedAt": {
+      "type": "string",
+      "description": "Timestamp when a checkpoint was accepted"
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "Timestamp when this state record was created"
+    }
+  },
+  "required": ["kind", "refName", "actorDid", "createdAt"],
+  "additionalProperties": false
+}

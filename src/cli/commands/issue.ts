@@ -15,11 +15,17 @@
  */
 
 import type { AgentContext } from '../agent.js';
+import type { RepoContext, RepoRoleName } from '../repo-context.js';
 
+import { RecordsWrite } from '@enbox/dwn-sdk-js';
+
+import { ForgeIssuesDefinition } from '../../issues.js';
 import { recordIgnoredSubmission } from '../submission-decisions.js';
 import { findByShortId, shortId } from '../../github-shim/helpers.js';
-import { flagValue, resolveRepoName } from '../flags.js';
-import { getRepoContext, getRepoContextId } from '../repo-context.js';
+import { flagValue, resolveRepoName, resolveRepoOwner } from '../flags.js';
+import { fromOpt, getRepoContext, getRepoContextForDid, getRepoContextId, resolveRepoProtocolRole } from '../repo-context.js';
+import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
+import { bodyInit, configuredDwnEndpoints, jsonBody, messageSignerForContext, processMessageOnTargetEndpoints, sendRecordToTarget } from '../record-send.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -58,13 +64,27 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  debugIssue('create: resolving target');
+  const target = await resolveIssueTarget(ctx, args);
+  debugIssue(`create: target resolved ${target.ownerDid}/${target.repo.name}`);
+  debugIssue('create: checking write access');
+  await ensureRepoWriteAllowed(ctx, target);
+  debugIssue('create: resolving role');
+  const protocolRole = await issueWriteRole(ctx, target);
+  debugIssue(`create: role ${protocolRole ?? '<none>'}`);
+  if (target.remote) {
+    debugIssue('create: creating remote issue');
+    const recordId = await createRemoteIssue(ctx, target, title, body, protocolRole);
+    console.log(`Created issue ${shortId(recordId)}: "${title}"`);
+    console.log(`  Record ID: ${recordId}`);
+    return;
+  }
 
   const { status, record } = await ctx.issues.records.create('repo/issue', {
     data            : { title, body },
     tags            : { status: 'open' },
-    parentContextId : repoContextId,
-  });
+    parentContextId : target.repo.contextId,
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to create issue: ${status.code} ${status.detail}`);
@@ -72,7 +92,6 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   if (!record) {throw new Error('Failed to create issue record');}
-
   const id = shortId(record.id);
   console.log(`Created issue ${id}: "${title}"`);
   console.log(`  Record ID: ${record.id}`);
@@ -89,8 +108,8 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const record = await findById(ctx, repoContextId, idStr);
+  const target = await resolveIssueTarget(ctx, args);
+  const record = await findById(ctx, target, idStr);
   if (!record) {
     console.error(`Issue ${idStr} not found.`);
     process.exit(1);
@@ -113,14 +132,16 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
 
   // Fetch comments.
   const { records: comments } = await ctx.issues.records.query('repo/issue/comment' as any, {
+    ...(target.from ? { from: target.from } : {}),
     filter: { contextId: record.contextId },
   });
 
-  if (comments.length > 0) {
+  const visibleComments = await visibleCommentRecords(ctx, target, 'issueComment', comments);
+  if (visibleComments.length > 0) {
     console.log('');
-    console.log(`  Comments (${comments.length}):`);
+    console.log(`  Comments (${visibleComments.length}):`);
     console.log('  ---');
-    for (const comment of comments) {
+    for (const comment of visibleComments) {
       const commentData = await comment.data.json();
       const commentDate = comment.dateCreated?.slice(0, 19)?.replace('T', ' ') ?? '';
       console.log(`  ${commentDate}`);
@@ -146,21 +167,34 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findById(ctx, repoContextId, idStr);
+  const target = await resolveIssueTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const issue = await findById(ctx, target, idStr);
   if (!issue) {
     console.error(`Issue ${idStr} not found.`);
     process.exit(1);
   }
 
-  const { status } = await ctx.issues.records.create('repo/issue/comment' as any, {
+  if (await discussionIsLocked(ctx, target, 'issue', issue)) {
+    console.error(`Issue ${idStr} is locked.`);
+    process.exit(1);
+  }
+
+  const protocolRole = await issueWriteRole(ctx, target);
+  const { status, record: commentRecord } = await ctx.issues.records.create('repo/issue/comment' as any, {
     data            : { body },
     parentContextId : issue.contextId,
+    ...(target.remote ? { protocolRole, store: false } : {}),
   } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to add comment: ${status.code} ${status.detail}`);
     process.exit(1);
+  }
+
+  if (target.remote) {
+    if (!commentRecord) { throw new Error('Failed to create issue comment record'); }
+    await sendRecordToTarget(ctx, commentRecord, target.ownerDid, 'issue comment');
   }
 
   console.log(`Added comment to issue ${idStr}.`);
@@ -178,8 +212,9 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
   }
   const reason = flagValue(args, '--reason') ?? flagValue(args, '-m');
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findById(ctx, repoContextId, idStr);
+  const target = await resolveIssueTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const issue = await findById(ctx, target, idStr);
   if (!issue) {
     console.error(`Issue ${idStr} not found.`);
     process.exit(1);
@@ -193,24 +228,33 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
     return;
   }
 
-  const { status } = await issue.update({
+  const { status, record: updatedIssue } = await issue.update({
     data : data,
     tags : { ...tags, status: 'closed' },
-  });
+    ...(target.remote ? { store: false } : {}),
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to close issue: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
+  if (target.remote) {
+    await sendRecordToTarget(ctx, updatedIssue ?? issue, target.ownerDid, 'issue update');
+  }
+
   const event = await ctx.issues.records.create('repo/issue/statusChange' as any, {
     data            : reason ? { reason } : {},
     tags            : { from: tags?.status ?? 'open', to: 'closed' },
     parentContextId : issue.contextId,
+    ...(target.remote ? { store: false } : {}),
   } as any);
   if (event.status.code >= 300) {
     console.error(`Failed to record issue status change: ${event.status.code} ${event.status.detail}`);
     process.exit(1);
+  }
+  if (target.remote && event.record) {
+    await sendRecordToTarget(ctx, event.record, target.ownerDid, 'issue status change');
   }
 
   console.log(`Closed issue ${idStr}: "${data.title}"`);
@@ -227,8 +271,9 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const issue = await findById(ctx, repoContextId, idStr);
+  const target = await resolveIssueTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const issue = await findById(ctx, target, idStr);
   if (!issue) {
     console.error(`Issue ${idStr} not found.`);
     process.exit(1);
@@ -242,24 +287,32 @@ async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
     return;
   }
 
-  const { status } = await issue.update({
+  const { status, record: updatedIssue } = await issue.update({
     data : data,
     tags : { ...tags, status: 'open' },
-  });
+    ...(target.remote ? { store: false } : {}),
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to reopen issue: ${status.code} ${status.detail}`);
     process.exit(1);
+  }
+  if (target.remote) {
+    await sendRecordToTarget(ctx, updatedIssue ?? issue, target.ownerDid, 'issue update');
   }
 
   const event = await ctx.issues.records.create('repo/issue/statusChange' as any, {
     data            : {},
     tags            : { from: tags?.status ?? 'closed', to: 'open' },
     parentContextId : issue.contextId,
+    ...(target.remote ? { store: false } : {}),
   } as any);
   if (event.status.code >= 300) {
     console.error(`Failed to record issue status change: ${event.status.code} ${event.status.detail}`);
     process.exit(1);
+  }
+  if (target.remote && event.record) {
+    await sendRecordToTarget(ctx, event.record, target.ownerDid, 'issue status change');
   }
 
   console.log(`Reopened issue ${idStr}: "${data.title}"`);
@@ -388,11 +441,11 @@ async function issueIgnore(ctx: AgentContext, args: string[]): Promise<void> {
 async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
   const statusFilter = flagValue(args, '--status') ?? flagValue(args, '-s');
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const target = await resolveIssueTarget(ctx, args);
 
   const filter: Record<string, unknown> = {};
-  if (repoContextId) {
-    filter.contextId = repoContextId;
+  if (target.repo.contextId) {
+    filter.contextId = target.repo.contextId;
   }
 
   const tags: Record<string, string> = {};
@@ -404,6 +457,7 @@ async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const { records } = await ctx.issues.records.query('repo/issue', {
+    ...(target.from ? { from: target.from } : {}),
     filter,
   });
 
@@ -433,14 +487,106 @@ async function issueList(ctx: AgentContext, args: string[]): Promise<void> {
  */
 async function findById(
   ctx: AgentContext,
-  repoContextId: string,
+  target: IssueTarget,
   idStr: string,
 ): Promise<any | undefined> {
   const { records } = await ctx.issues.records.query('repo/issue', {
-    filter: { contextId: repoContextId },
+    ...(target.from ? { from: target.from } : {}),
+    filter: { contextId: target.repo.contextId },
   });
 
   return findByShortId(records, idStr);
+}
+
+type IssueTarget = {
+  ownerDid : string;
+  repo : RepoContext;
+  from? : string;
+  remote : boolean;
+};
+
+async function createRemoteIssue(
+  ctx: AgentContext,
+  target: IssueTarget,
+  title: string,
+  body: string,
+  protocolRole?: string,
+): Promise<string> {
+  if (configuredDwnEndpoints(ctx).length === 0) {
+    const { status, record } = await ctx.issues.records.create('repo/issue', {
+      data            : { title, body },
+      tags            : { status: 'open' },
+      parentContextId : target.repo.contextId,
+      protocolRole,
+      store           : false,
+    } as any);
+
+    if (status.code >= 300) {
+      console.error(`Failed to create issue: ${status.code} ${status.detail}`);
+      process.exit(1);
+    }
+
+    if (!record) { throw new Error('Failed to create issue record'); }
+    await sendRecordToTarget(ctx, record, target.ownerDid, 'issue');
+    return record.id;
+  }
+
+  const data = jsonBody({ title, body });
+  debugIssue('remote: loading signer');
+  const signer = await messageSignerForContext(ctx);
+  debugIssue('remote: composing write');
+  const write = await RecordsWrite.create({
+    protocol        : ForgeIssuesDefinition.protocol,
+    protocolPath    : 'repo/issue',
+    schema          : ForgeIssuesDefinition.types.issue.schema,
+    dataFormat      : 'application/json',
+    data,
+    tags            : { status: 'open' },
+    parentContextId : target.repo.contextId,
+    protocolRole,
+    published       : true,
+    recipient       : target.ownerDid,
+    signer,
+  });
+
+  debugIssue('remote: processing write');
+  await processMessageOnTargetEndpoints(ctx, target.ownerDid, write.message, 'issue', bodyInit(data));
+  debugIssue('remote: write processed');
+  return write.message.recordId;
+}
+
+async function resolveIssueTarget(ctx: AgentContext, args: string[]): Promise<IssueTarget> {
+  const ownerDid = resolveRepoOwner(args) ?? ctx.did;
+  const repo = await getRepoContextForDid(ctx, ownerDid, resolveRepoName(args));
+  const from = fromOpt(ctx, ownerDid);
+  return { ownerDid, repo, from, remote: ownerDid !== ctx.did };
+}
+
+async function issueWriteRole(ctx: AgentContext, target: IssueTarget): Promise<string | undefined> {
+  return resolveTargetRole(ctx, target, ['contributor', 'moderator', 'maintainer', 'triager'], 'contributor');
+}
+
+async function ensureRepoWriteAllowed(ctx: AgentContext, target: IssueTarget): Promise<void> {
+  const block = await latestActiveBlock(ctx, target);
+  if (!block) {
+    return;
+  }
+
+  const reason = block.data.reason ? ` Reason: ${block.data.reason}` : '';
+  console.error(`You are blocked from writing to ${target.ownerDid}/${target.repo.name}.${reason}`);
+  process.exit(1);
+}
+
+async function resolveTargetRole(
+  ctx: AgentContext,
+  target: IssueTarget,
+  candidates: readonly RepoRoleName[],
+  fallback: RepoRoleName,
+): Promise<string | undefined> {
+  if (target.remote) {
+    return `repo:repo/${fallback}`;
+  }
+  return resolveRepoProtocolRole(ctx, target.ownerDid, target.repo.contextId, candidates, fallback);
 }
 
 function findExternalRecord(records: any[], idStr: string): any | undefined {
@@ -494,4 +640,10 @@ async function copyExternalIssueThread(
   }
 
   return { comments: copiedComments, statusChanges: copiedStatusChanges };
+}
+
+function debugIssue(message: string): void {
+  if (process.env.GITD_DEBUG === '1') {
+    console.error(`[issue] ${message}`);
+  }
 }

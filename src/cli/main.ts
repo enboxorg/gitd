@@ -7,6 +7,16 @@
  *   gitd clone <did>/<repo>                 Clone a repo via DID
  *   gitd init <name> [--description <text>] Create a repo record + bare git repo
  *   gitd repo info                          Show repo metadata
+ *   gitd repo add-moderator <did>           Grant moderator role
+ *   gitd repo remove-moderator <did>        Revoke moderator role
+ *   gitd mod add <did>                      Grant moderator role
+ *   gitd mod remove <did>                   Revoke moderator role
+ *   gitd mod list                           List moderators
+ *   gitd mod block <did>                    Block a DID from repo interaction
+ *   gitd mod lock pr <id>                   Lock a PR discussion
+ *   gitd mod hide-comment <id>              Hide a comment in canonical views
+ *   gitd repo add-contributor <did>         Grant contributor role
+ *   gitd repo remove-contributor <did>      Revoke contributor role
  *   gitd repo add-collaborator <did> <role> Grant a role
  *   gitd repo remove-collaborator <did>     Revoke a collaborator role
  *   gitd issue create <title>               File an issue
@@ -72,30 +82,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { authCommand } from './commands/auth.js';
-import { ciCommand } from './commands/ci.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
-import { daemonCommand } from './commands/daemon.js';
+import { dispatchAgentCommand } from './dispatch.js';
 import { ensureDaemon } from '../daemon/lifecycle.js';
-import { githubApiCommand } from './commands/github-api.js';
-import { indexerCommand } from '../indexer/main.js';
-import { initCommand } from './commands/init.js';
-import { issueCommand } from './commands/issue.js';
-import { logCommand } from './commands/log.js';
-import { migrateCommand } from './commands/migrate.js';
-import { notificationCommand } from './commands/notification.js';
-import { orgCommand } from './commands/org.js';
-import { prCommand } from './commands/pr.js';
-import { registryCommand } from './commands/registry.js';
-import { releaseCommand } from './commands/release.js';
-import { repoCommand } from './commands/repo.js';
-import { serveCommand } from './commands/serve.js';
 import { serveDaemonCommand } from './commands/serve-lifecycle.js';
 import { setupCommand } from './commands/setup.js';
-import { shimCommand } from './commands/shim.js';
-import { socialCommand } from './commands/social.js';
-import { webCommand } from './commands/web.js';
-import { wikiCommand } from './commands/wiki.js';
+import { forwardCliCommandIfAvailable } from './local-rpc.js';
 import { checkGit, requireGit, warnGit } from './preflight.js';
 import { flagValue, hasFlag } from './flags.js';
 import { profileDataPath, resolveProfile } from '../profiles/config.js';
@@ -130,8 +123,24 @@ function printUsage(): void {
   console.log('  serve logs                                  Tail daemon log file');
   console.log('');
   console.log('  repo info                                   Show repo metadata');
-  console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|triager|contributor|viewer)');
+  console.log('  repo add-moderator <did>                    Grant moderator role');
+  console.log('  repo remove-moderator <did>                 Revoke moderator role');
+  console.log('  repo add-contributor <did>                  Grant contributor role');
+  console.log('  repo remove-contributor <did>               Revoke contributor role');
+  console.log('  repo add-collaborator <did> <role>          Grant a role (maintainer|moderator|contributor|viewer)');
   console.log('  repo remove-collaborator <did>              Revoke a collaborator role');
+  console.log('  mod add <did> [--alias <name>]              Grant moderator role');
+  console.log('  mod remove <did>                            Revoke moderator role');
+  console.log('  mod list                                    List moderators');
+  console.log('  mod block <did> [--reason <text>]           Block repo interaction');
+  console.log('  mod unblock <did>                           Remove a repo block');
+  console.log('  mod lock <issue|pr> <id>                    Lock a discussion');
+  console.log('  mod unlock <issue|pr> <id>                  Unlock a discussion');
+  console.log('  mod hide-comment <id> [--kind issue|pr]     Hide a comment');
+  console.log('  mod delete-comment <id> [--kind issue|pr]   Tombstone a comment');
+  console.log('  mod report <record-id>                      Report repo content');
+  console.log('  mod resolve-report <id>                     Resolve a report');
+  console.log('  mod interaction-limit <mode>                Set interaction limit');
   console.log('');
   console.log('  issue create <title> [--body <text>]        File an issue');
   console.log('  issue show <number>                         Show issue details and comments');
@@ -219,12 +228,18 @@ function printUsage(): void {
   console.log('  help                                        Show this message\n');
   console.log('Environment:');
   console.log('  GITD_PASSWORD      vault password (prompted if not set)');
+  console.log('  GITD_PROFILE       active identity profile (alias: ENBOX_PROFILE)');
   console.log('  GITD_PORT          server port for `serve` (default: 9418)');
   console.log('  GITD_WEB_PORT      web UI port for `web` (default: 8080)');
   console.log('  GITD_REPOS         base path for bare repos (default: ~/.enbox/profiles/<name>/repos/)');
   console.log('  GITD_PUBLIC_URL    public URL for `serve` (enables DID service registration)');
   console.log('  GITD_SYNC          DWN sync interval: off|5s|30s|1m (default: 30s for serve, off otherwise)');
-  console.log('  GITD_DWN_ENDPOINT  DWN endpoint URL for repo records');
+  console.log('  GITD_DWN_REGISTRATION=off  skip remote DWN registration');
+  console.log('  GITD_DID_REPUBLISH=off     skip DID DHT republishing in serve');
+  console.log('  GITD_DWN_ENDPOINT   DWN endpoint URL for repo records and agent sync');
+  console.log('  GITD_DWN_ENDPOINTS  comma-separated DWN endpoint URLs for agent sync');
+  console.log('  GITD_DID_RESOLUTION_TIMEOUT_MS  DID lookup timeout before local-helper fallback');
+  console.log('  GITD_CLI_RPC=off    disable one-shot command forwarding to a running local helper');
   console.log('  GITD_INDEXER_PORT      indexer API port (default: 8090)');
   console.log('  GITD_INDEXER_INTERVAL  crawl interval in seconds (default: 60)');
   console.log('  GITD_GITHUB_API_PORT   GitHub API shim port (default: 8181)');
@@ -364,8 +379,9 @@ async function main(): Promise<void> {
       // blocks the terminal.
       if (!hasFlag(rest, '--foreground') && process.env.GITD_DAEMON_BACKGROUND !== '1') {
         const pw = await getPassword();
+        const profileName = resolveProfile(flagValue(rest, '--profile')) ?? undefined;
         try {
-          const result = await ensureDaemon(pw);
+          const result = await ensureDaemon(pw, { profileName });
           if (result.spawned) {
             console.log(`gitd server started in the background on port ${result.port}.`);
           } else {
@@ -381,11 +397,8 @@ async function main(): Promise<void> {
       break; // Fall through to agent-requiring path for foreground serve.
   }
 
-  // Commands that require the Enbox agent.
-  const password = await getPassword();
   const profileFlag = flagValue(rest, '--profile');
   const profileName = resolveProfile(profileFlag);
-  const dataPath = profileName ? profileDataPath(profileName) : undefined;
 
   // Resolve DWN sync interval.
   // Long-running commands default to '30s'; one-shot commands default to 'off'.
@@ -396,6 +409,19 @@ async function main(): Promise<void> {
   const syncFlag = flagValue(rest, '--sync');
   const sync = noSync ? 'off' : (syncFlag ?? syncEnv ?? syncDefault);
 
+  if (!longRunning) {
+    const forwarded = await forwardCliCommandIfAvailable(profileName ?? undefined, command, rest);
+    if (forwarded) {
+      if (forwarded.stdout) { process.stdout.write(forwarded.stdout); }
+      if (forwarded.stderr) { process.stderr.write(forwarded.stderr); }
+      process.exit(forwarded.status);
+    }
+  }
+
+  // Commands that require the Enbox agent.
+  const password = await getPassword();
+  const dataPath = profileName ? profileDataPath(profileName) : undefined;
+
   const ctx = await connectAgent({ password, dataPath, sync: sync as any });
   ctx.profileName = profileName ?? undefined;
 
@@ -404,100 +430,17 @@ async function main(): Promise<void> {
   // commands either *are* the server or manage their own lifecycle.
   if (!longRunning) {
     try {
-      await ensureDaemon(password);
+      await ensureDaemon(password, { profileName: profileName ?? undefined });
     } catch {
       // Non-fatal — warn but don't block the command.
       console.error('[daemon] Could not start background server. Run `gitd serve` manually for push/clone.');
     }
   }
 
-  switch (command) {
-    case 'init':
-      await initCommand(ctx, rest);
-      break;
-
-    case 'issue':
-      await issueCommand(ctx, rest);
-      break;
-
-    case 'pr':
-    case 'patch':
-      await prCommand(ctx, rest);
-      break;
-
-    case 'repo':
-      await repoCommand(ctx, rest);
-      break;
-
-    case 'serve':
-      await serveCommand(ctx, rest);
-      break;
-
-    case 'release':
-      await releaseCommand(ctx, rest);
-      break;
-
-    case 'registry':
-      await registryCommand(ctx, rest);
-      break;
-
-    case 'ci':
-      await ciCommand(ctx, rest);
-      break;
-
-    case 'wiki':
-      await wikiCommand(ctx, rest);
-      break;
-
-    case 'org':
-      await orgCommand(ctx, rest);
-      break;
-
-    case 'social':
-      await socialCommand(ctx, rest);
-      break;
-
-    case 'notification':
-    case 'notifications':
-      await notificationCommand(ctx, rest);
-      break;
-
-    case 'migrate':
-      await migrateCommand(ctx, rest);
-      break;
-
-    case 'web':
-      await webCommand(ctx, rest);
-      break;
-
-    case 'indexer':
-      await indexerCommand(ctx, rest);
-      break;
-
-    case 'daemon':
-      await daemonCommand(ctx, rest);
-      break;
-
-    case 'github-api':
-      await githubApiCommand(ctx, rest);
-      break;
-
-    case 'shim':
-      await shimCommand(ctx, rest);
-      break;
-
-    case 'log':
-      await logCommand(ctx, rest);
-      break;
-
-    case 'whoami':
-      console.log(ctx.did);
-      break;
-
-    default:
-      console.error(`Unknown command: ${command}`);
-      printUsage();
-      process.exit(1);
+  if (command === 'whoami') {
+    console.log(ctx.did);
+  } else {
+    await dispatchAgentCommand(ctx, command, rest);
   }
 
   // One-shot commands reach here after completing.  The Enbox agent keeps

@@ -161,4 +161,8 @@ export async function cloneCommand(args: string[]): Promise<void> {
     cwd   : cloneDir,
     stdio : 'pipe',
   });
+  spawnSync('git', ['config', 'enbox.owner', didPart], {
+    cwd   : cloneDir,
+    stdio : 'pipe',
+  });
 }

@@ -179,6 +179,7 @@ export const ForgePatchesDefinition = {
             { who: 'anyone', can: ['read'] },
             { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+            { role: 'repo:repo/moderator', can: ['create', 'read'] },
           ],
           $tags: {
             $requiredTags       : ['verdict'],
@@ -192,6 +193,7 @@ export const ForgePatchesDefinition = {
               { who: 'anyone', can: ['read'] },
               { role: 'repo:repo/contributor', can: ['create', 'read'] },
               { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+              { role: 'repo:repo/moderator', can: ['create', 'read'] },
               { who: 'author', of: 'repo/patch/review/reviewComment', can: ['create', 'update', 'delete'] },
             ],
             $tags: {

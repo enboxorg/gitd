@@ -1,10 +1,10 @@
 /**
  * Forge Repository Protocol — foundational protocol for repository management.
  *
- * Defines repository metadata, collaborator roles (maintainer, triager,
- * contributor, viewer), and repo-level resources (readme, license, topics, settings,
- * webhooks). Other forge protocols compose with this via `uses` to leverage
- * role-based authorization.
+ * Defines repository metadata, collaborator roles (maintainer, moderator,
+ * contributor, viewer, and legacy triager), and repo-level resources (readme,
+ * license, topics, settings, webhooks). Other forge protocols compose with
+ * this via `uses` to leverage role-based authorization.
  *
  * @module
  */
@@ -44,7 +44,7 @@ export type RepoData = {
   forkedFromRecordId? : string;
 };
 
-/** Data shape for a collaborator role record (maintainer, triager, contributor, viewer). */
+/** Data shape for a collaborator role record. */
 export type CollaboratorData = {
   did : string;
   alias? : string;
@@ -65,6 +65,31 @@ export type SubmissionDecisionData = {
   reason? : string;
   decidedBy : string;
   decidedAt : string;
+};
+
+/** Immutable repo-level moderation event. */
+export type ModerationEventData = {
+  action :
+    | 'block'
+    | 'unblock'
+    | 'lock'
+    | 'unlock'
+    | 'hideComment'
+    | 'unhideComment'
+    | 'deleteComment'
+    | 'report'
+    | 'resolveReport'
+    | 'dismissReport'
+    | 'interactionLimit';
+  actorDid : string;
+  targetDid? : string;
+  targetKind? : 'repo' | 'issue' | 'pr' | 'issueComment' | 'prComment' | 'report';
+  targetId? : string;
+  reason? : string;
+  reportStatus? : 'open' | 'resolved' | 'dismissed';
+  interactionLimit? : 'off' | 'contributors' | 'collaborators';
+  duration? : string;
+  createdAt : string;
 };
 
 export type RepositoryRulesetStateData = {
@@ -551,11 +576,14 @@ export type ForgeRepoSchemaMap = {
   readme : string;
   license : string;
   maintainer : CollaboratorData;
+  moderator : CollaboratorData;
+  /** Compatibility role retained for existing records and GitHub-shim behavior. */
   triager : CollaboratorData;
   contributor : CollaboratorData;
   viewer : CollaboratorData;
   topic : TopicData;
   submissionDecision : SubmissionDecisionData;
+  moderationEvent : ModerationEventData;
   webhook : WebhookData;
 };
 
@@ -585,6 +613,10 @@ export const ForgeRepoDefinition = {
       schema      : 'https://enbox.org/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
+    moderator: {
+      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      dataFormats : ['application/json'],
+    },
     triager: {
       schema      : 'https://enbox.org/schemas/forge/collaborator',
       dataFormats : ['application/json'],
@@ -603,6 +635,10 @@ export const ForgeRepoDefinition = {
     },
     submissionDecision: {
       schema      : 'https://enbox.org/schemas/forge/submission-decision',
+      dataFormats : ['application/json'],
+    },
+    moderationEvent: {
+      schema      : 'https://enbox.org/schemas/forge/moderation-event',
       dataFormats : ['application/json'],
     },
     bundle: {
@@ -631,6 +667,16 @@ export const ForgeRepoDefinition = {
       },
 
       maintainer: {
+        $role    : true,
+        $actions : [{ who: 'anyone', can: ['read'] }],
+        $tags    : {
+          $requiredTags       : ['did'],
+          $allowUndefinedTags : false,
+          did                 : { type: 'string' },
+        },
+      },
+
+      moderator: {
         $role    : true,
         $actions : [{ who: 'anyone', can: ['read'] }],
         $tags    : {
@@ -725,6 +771,41 @@ export const ForgeRepoDefinition = {
           submitterDid        : { type: 'string' },
           submissionRecordId  : { type: 'string' },
           submissionContextId : { type: 'string' },
+        },
+      },
+
+      moderationEvent: {
+        $immutable : true,
+        $actions   : [
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo/maintainer', can: ['create'] },
+          { role: 'repo/moderator', can: ['create'] },
+        ],
+        $tags: {
+          $requiredTags       : ['action', 'actorDid'],
+          $allowUndefinedTags : false,
+          action              : {
+            type : 'string',
+            enum : [
+              'block',
+              'unblock',
+              'lock',
+              'unlock',
+              'hideComment',
+              'unhideComment',
+              'deleteComment',
+              'report',
+              'resolveReport',
+              'dismissReport',
+              'interactionLimit',
+            ],
+          },
+          actorDid         : { type: 'string' },
+          targetDid        : { type: 'string' },
+          targetKind       : { type: 'string', enum: ['repo', 'issue', 'pr', 'issueComment', 'prComment', 'report'] },
+          targetId         : { type: 'string' },
+          reportStatus     : { type: 'string', enum: ['open', 'resolved', 'dismissed'] },
+          interactionLimit : { type: 'string', enum: ['off', 'contributors', 'collaborators'] },
         },
       },
 

@@ -26,6 +26,7 @@ import { EnboxUserAgent } from '@enbox/agent';
 import type { AgentContext } from '../src/cli/agent.js';
 import type { GitServer } from '../src/git-server/server.js';
 import type { RepoContext } from '../src/cli/repo-context.js';
+import type { PushRefUpdate } from '../src/git-server/push-updates.js';
 
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { createDidSignatureVerifier } from '../src/git-server/verify.js';
@@ -194,6 +195,37 @@ describe('E2E: init → serve → clone → push → verify', () => {
     expect(refData.target).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it('should sync branch state checkpoints to DWN after push', async () => {
+    const repoPath = server.backend.repoPath(did, 'e2e-test-repo');
+    const syncer = createRefSyncer({ refs, repoContextId });
+    await syncer(did, 'e2e-test-repo', repoPath);
+
+    const { records: branchRecords } = await refs.records.query('repo/branch' as any, {
+      filter: { contextId: repoContextId },
+    });
+    expect(branchRecords.length).toBeGreaterThanOrEqual(1);
+
+    const branches = await Promise.all(branchRecords.map(async (record: any) => ({
+      record,
+      data: await record.data.json(),
+    })));
+    const mainBranch = branches.find((entry) => entry.data.refName === 'refs/heads/main');
+    expect(mainBranch).toBeDefined();
+    expect(mainBranch!.data.kind).toBe('protected');
+    expect(mainBranch!.data.ownerDid).toBe(did);
+
+    const { records: stateRecords } = await refs.records.query('repo/branch/state' as any, {
+      filter: { contextId: mainBranch!.record.contextId },
+    });
+    expect(stateRecords).toHaveLength(1);
+
+    const checkpoint = await stateRecords[0].data.json();
+    expect(checkpoint.kind).toBe('checkpoint');
+    expect(checkpoint.refName).toBe('refs/heads/main');
+    expect(checkpoint.target).toMatch(/^[0-9a-f]{40}$/);
+    expect(checkpoint.actorDid).toBe(did);
+  });
+
   it('should handle a second push updating the ref', async () => {
     await exec('echo "update" >> README.md', { cwd: CLONE_PATH });
     await exec('git add README.md', { cwd: CLONE_PATH });
@@ -283,6 +315,7 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
 
     const bundleSyncer = createBundleSyncer({
       repo          : repoHandle,
+      refs          : refsHandle,
       repoContextId : repoContextId,
       visibility    : 'public',
     });
@@ -338,6 +371,26 @@ describe('E2E: push → bundle sync → cold start → clone via restore', () =>
     const tags = bundle.tags as Record<string, unknown>;
     expect(tags.isFull).toBe(true);
     expect(tags.tipCommit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('should have a branch-scoped bundle record in the DWN', async () => {
+    const { records: branchRecords } = await refsHandle.records.query('repo/branch' as any, {
+      filter: { contextId: repoContextId },
+    });
+    const branches = await Promise.all(branchRecords.map(async (record: any) => ({
+      record,
+      data: await record.data.json(),
+    })));
+    const mainBranch = branches.find((entry) => entry.data.refName === 'refs/heads/main');
+    expect(mainBranch).toBeDefined();
+
+    const { records: bundleRecords } = await refsHandle.records.query('repo/branch/bundle' as any, {
+      filter: { contextId: mainBranch!.record.contextId },
+    });
+    expect(bundleRecords).toHaveLength(1);
+    expect(bundleRecords[0].tags.kind).toBe('checkpoint');
+    expect(bundleRecords[0].tags.refName).toBe('refs/heads/main');
+    expect(bundleRecords[0].tags.tipCommit).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('should restore the repo from bundles on cold start and serve a clone', async () => {
@@ -448,7 +501,12 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
       ownerDid : ownerDid,
     });
 
-    const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+    const authenticatePush = async (
+      request: Request,
+      did: string,
+      repo: string,
+      updates?: readonly PushRefUpdate[],
+    ): Promise<boolean> => {
       const authHeader = request.headers.get('Authorization');
       if (!authHeader?.startsWith('Basic ')) { return false; }
 
@@ -473,7 +531,7 @@ describe('E2E: authenticated push with DID-signed tokens', () => {
       const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
       if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
 
-      return authorizePush(payload.did, did, repo);
+      return authorizePush(payload.did, did, repo, updates);
     };
 
     const refSyncer = createRefSyncer({
@@ -742,7 +800,12 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       ownerDid : profileDid,
     });
 
-    const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+    const authenticatePush = async (
+      request: Request,
+      did: string,
+      repo: string,
+      updates?: readonly PushRefUpdate[],
+    ): Promise<boolean> => {
       const authHeader = request.headers.get('Authorization');
       if (!authHeader?.startsWith('Basic ')) { return false; }
 
@@ -767,7 +830,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
       const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
       if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
 
-      return authorizePush(payload.did, did, repo);
+      return authorizePush(payload.did, did, repo, updates);
     };
 
     const refSyncer = createRefSyncer({
@@ -777,6 +840,7 @@ describe('E2E: profile-based agent → repo → serve → clone → auth push', 
 
     const bundleSyncer = createBundleSyncer({
       repo          : repoHandle,
+      refs          : refsHandle,
       repoContextId : repoContextId,
       visibility    : 'public',
     });
@@ -1020,14 +1084,13 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
 
       const syncBundle = createBundleSyncer({
         repo          : repoHandle,
+        refs          : refsHandle,
         repoContextId : repoCtx.contextId,
         visibility    : repoCtx.visibility,
       });
 
-      await Promise.all([
-        syncRefs(_did, repoName, repoPath),
-        syncBundle(_did, repoName, repoPath),
-      ]);
+      await syncRefs(_did, repoName, repoPath);
+      await syncBundle(_did, repoName, repoPath);
     };
 
     server = await createGitServer({
@@ -1142,8 +1205,8 @@ describe('E2E: multi-repo — two repos, dynamic context, scoped sync + restore'
     if (existingAlphaBundles.length === 0 || existingBetaBundles.length === 0) {
       const alphaPath = server.backend.repoPath(did, 'repo-alpha');
       const betaPath = server.backend.repoPath(did, 'repo-beta');
-      const alphaSync = createBundleSyncer({ repo: repoHandle, repoContextId: alphaCtx.contextId, visibility: 'public' });
-      const betaSync = createBundleSyncer({ repo: repoHandle, repoContextId: betaCtx.contextId, visibility: 'public' });
+      const alphaSync = createBundleSyncer({ repo: repoHandle, refs: refsHandle, repoContextId: alphaCtx.contextId, visibility: 'public' });
+      const betaSync = createBundleSyncer({ repo: repoHandle, refs: refsHandle, repoContextId: betaCtx.contextId, visibility: 'public' });
       await alphaSync(did, 'repo-alpha', alphaPath);
       await betaSync(did, 'repo-beta', betaPath);
     }

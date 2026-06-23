@@ -19,16 +19,36 @@
  */
 
 import type { AgentContext } from '../agent.js';
+import type { RepoContext, RepoRoleName } from '../repo-context.js';
 
+import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 
+import { HttpDwnRpcClient } from '@enbox/dwn-clients';
+import {
+  DataStream,
+  RecordsQuery,
+  RecordsRead,
+  RecordsWrite,
+} from '@enbox/dwn-sdk-js';
+
 import { recordIgnoredSubmission } from '../submission-decisions.js';
-import { findByShortId, shortId } from '../../github-shim/helpers.js';
-import { flagValue, hasFlag, resolveRepoName } from '../flags.js';
-import { getRepoContext, getRepoContextId } from '../repo-context.js';
+import { shortId } from '../../github-shim/helpers.js';
+import { flagValue, hasFlag, resolveRepoName, resolveRepoOwner } from '../flags.js';
+import { fromOpt, getRepoContext, getRepoContextForDid, getRepoContextId, resolveRepoProtocolRole } from '../repo-context.js';
+import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
+import { ForgePatchesDefinition } from '../../patches.js';
+import {
+  bodyInit,
+  configuredDwnEndpoints,
+  jsonBody,
+  messageSignerForContext,
+  processMessageOnTargetEndpoints,
+  sendRecordToTarget,
+} from '../record-send.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -73,7 +93,12 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const target = await resolvePatchTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const protocolRole = await patchCreateRole(ctx, target);
+  if (target.remote) {
+    await (ctx.patches as any).configure?.({ encryption: true });
+  }
 
   // Detect git context for revision + bundle creation.
   const gitInfo = noBundle ? null : detectGitContext(base);
@@ -90,8 +115,9 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const { status, record } = await ctx.patches.records.create('repo/patch', {
     data            : { title, body },
     tags,
-    parentContextId : repoContextId,
-  });
+    parentContextId : target.repo.contextId,
+    ...(target.remote ? { protocolRole, store: false } : {}),
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to create PR: ${status.code} ${status.detail}`);
@@ -99,6 +125,9 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   if (!record) {throw new Error('Failed to create PR record');}
+  if (target.remote) {
+    await sendRecordToTarget(ctx, record, target.ownerDid, 'PR');
+  }
 
   const id = shortId(record.id);
 
@@ -107,7 +136,7 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
 
   // Create revision + bundle if we have git context.
   if (gitInfo) {
-    await createRevisionAndBundle(ctx, record, gitInfo);
+    await createRevisionAndBundle(ctx, record, gitInfo, target);
   }
 }
 
@@ -132,8 +161,8 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  const patch = await findById(ctx, target, idStr);
   if (!patch) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
@@ -142,8 +171,8 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
   const patchTags = patch.tags as Record<string, string> | undefined;
 
   // Fetch the latest revision under this patch.
-  const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
-    filter: { contextId: patch.contextId },
+  const revisions = await queryPatchRecords(ctx, target, 'repo/patch/revision', {
+    contextId: patch.contextId,
   });
 
   if (revisions.length === 0) {
@@ -156,8 +185,8 @@ async function prCheckout(ctx: AgentContext, args: string[]): Promise<void> {
   const revisionTags = revision.tags as Record<string, string> | undefined;
 
   // Fetch the bundle from the revision.
-  const { records: bundles } = await ctx.patches.records.query('repo/patch/revision/revisionBundle' as any, {
-    filter: { contextId: revision.contextId },
+  const bundles = await queryPatchRecords(ctx, target, 'repo/patch/revision/revisionBundle', {
+    contextId: revision.contextId,
   });
 
   if (bundles.length === 0) {
@@ -246,8 +275,8 @@ async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const record = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  const record = await findById(ctx, target, idStr);
   if (!record) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
@@ -274,14 +303,16 @@ async function prShow(ctx: AgentContext, args: string[]): Promise<void> {
 
   // Fetch reviews.
   const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
+    ...(target.from ? { from: target.from } : {}),
     filter: { contextId: record.contextId },
   });
 
-  if (reviews.length > 0) {
+  const visibleReviews = await visibleCommentRecords(ctx, target, 'prComment', reviews);
+  if (visibleReviews.length > 0) {
     console.log('');
-    console.log(`  Reviews (${reviews.length}):`);
+    console.log(`  Reviews (${visibleReviews.length}):`);
     console.log('  ---');
-    for (const review of reviews) {
+    for (const review of visibleReviews) {
       const reviewData = await review.data.json();
       const reviewTags = review.tags as Record<string, string> | undefined;
       const verdict = reviewTags?.verdict ?? 'comment';
@@ -312,23 +343,35 @@ async function prComment(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const patch = await findById(ctx, target, idStr);
   if (!patch) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
   }
 
+  if (await discussionIsLocked(ctx, target, 'pr', patch)) {
+    console.error(`PR ${idStr} is locked.`);
+    process.exit(1);
+  }
+
+  const protocolRole = await patchDiscussionRole(ctx, target);
   // Create a review with verdict: 'comment' (general comment, not approve/reject).
-  const { status } = await ctx.patches.records.create('repo/patch/review' as any, {
+  const { status, record: reviewRecord } = await ctx.patches.records.create('repo/patch/review' as any, {
     data            : { body },
     tags            : { verdict: 'comment' },
     parentContextId : patch.contextId,
+    ...(target.remote ? { protocolRole, store: false } : {}),
   } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to add comment: ${status.code} ${status.detail}`);
     process.exit(1);
+  }
+  if (target.remote) {
+    if (!reviewRecord) { throw new Error('Failed to create PR comment record'); }
+    await sendRecordToTarget(ctx, reviewRecord, target.ownerDid, 'PR comment');
   }
 
   console.log(`Added comment to PR ${idStr}.`);
@@ -359,8 +402,9 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const patch = await findById(ctx, target, idStr);
   if (!patch) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
@@ -489,29 +533,70 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const mergeCommit = git(['rev-parse', 'HEAD']) ?? 'unknown';
 
   // Update the patch status to merged.
-  const { status } = await patch.update({
-    data : data,
-    tags : { ...tags, status: 'merged' },
-  });
+  const protocolRole = await patchMaintainerRole(ctx, target, 'maintainer');
+  if (isEndpointBackedRecord(patch)) {
+    await updateEndpointBackedPatch(ctx, target, patch, data, { ...tags, status: 'merged' }, protocolRole);
+  } else {
+    const { status, record: updatedPatch } = await patch.update({
+      data : data,
+      tags : { ...tags, status: 'merged' },
+      ...(target.remote ? { protocolRole, store: false } : {}),
+    } as any);
 
-  if (status.code >= 300) {
-    console.error(`Failed to update PR status: ${status.code} ${status.detail}`);
-    process.exit(1);
+    if (status.code >= 300) {
+      console.error(`Failed to update PR status: ${status.code} ${status.detail}`);
+      process.exit(1);
+    }
+    if (target.remote) {
+      await sendRecordToTarget(ctx, updatedPatch ?? patch, target.ownerDid, 'PR update');
+    }
   }
 
   // Create a merge result record with the actual commit SHA.
-  await ctx.patches.records.create('repo/patch/mergeResult' as any, {
-    data            : { mergedBy: ctx.did },
-    tags            : { mergeCommit, strategy },
-    parentContextId : patch.contextId,
-  } as any);
+  if (isEndpointBackedRecord(patch)) {
+    await createEndpointBackedPatchChild(ctx, target, {
+      protocolPath    : 'repo/patch/mergeResult',
+      schema          : ForgePatchesDefinition.types.mergeResult.schema,
+      data            : { mergedBy: ctx.did },
+      tags            : { mergeCommit, strategy },
+      parentContextId : patch.contextId,
+      protocolRole,
+      label           : 'PR merge result',
+    });
+  } else {
+    const mergeResult = await ctx.patches.records.create('repo/patch/mergeResult' as any, {
+      data            : { mergedBy: ctx.did },
+      tags            : { mergeCommit, strategy },
+      parentContextId : patch.contextId,
+      ...(target.remote ? { protocolRole, store: false } : {}),
+    } as any);
+    if (target.remote && mergeResult.record) {
+      await sendRecordToTarget(ctx, mergeResult.record, target.ownerDid, 'PR merge result');
+    }
+  }
 
   // Create a status change record (audit trail).
-  await ctx.patches.records.create('repo/patch/statusChange' as any, {
-    data            : { reason: `Merged via ${strategy} strategy` },
-    tags            : { from: tags?.status ?? 'open', to: 'merged' },
-    parentContextId : patch.contextId,
-  } as any);
+  if (isEndpointBackedRecord(patch)) {
+    await createEndpointBackedPatchChild(ctx, target, {
+      protocolPath    : 'repo/patch/statusChange',
+      schema          : ForgePatchesDefinition.types.statusChange.schema,
+      data            : { reason: `Merged via ${strategy} strategy` },
+      tags            : { from: tags?.status ?? 'open', to: 'merged' },
+      parentContextId : patch.contextId,
+      protocolRole,
+      label           : 'PR status change',
+    });
+  } else {
+    const statusChange = await ctx.patches.records.create('repo/patch/statusChange' as any, {
+      data            : { reason: `Merged via ${strategy} strategy` },
+      tags            : { from: tags?.status ?? 'open', to: 'merged' },
+      parentContextId : patch.contextId,
+      ...(target.remote ? { protocolRole, store: false } : {}),
+    } as any);
+    if (target.remote && statusChange.record) {
+      await sendRecordToTarget(ctx, statusChange.record, target.ownerDid, 'PR status change');
+    }
+  }
 
   const commitLabel = commitCount > 0
     ? ` (${commitCount} commit${commitCount !== 1 ? 's' : ''})`
@@ -542,8 +627,9 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const patch = await findById(ctx, target, idStr);
   if (!patch) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
@@ -562,22 +648,31 @@ async function prClose(ctx: AgentContext, args: string[]): Promise<void> {
     return;
   }
 
-  const { status } = await patch.update({
+  const protocolRole = await patchMaintainerRole(ctx, target);
+  const { status, record: updatedPatch } = await patch.update({
     data : data,
     tags : { ...tags, status: 'closed' },
-  });
+    ...(target.remote ? { protocolRole, store: false } : {}),
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to close PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+  if (target.remote) {
+    await sendRecordToTarget(ctx, updatedPatch ?? patch, target.ownerDid, 'PR update');
+  }
 
   // Audit trail.
-  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+  const statusChange = await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: 'Closed by maintainer' },
     tags            : { from: tags?.status ?? 'open', to: 'closed' },
     parentContextId : patch.contextId,
+    ...(target.remote ? { protocolRole, store: false } : {}),
   } as any);
+  if (target.remote && statusChange.record) {
+    await sendRecordToTarget(ctx, statusChange.record, target.ownerDid, 'PR status change');
+  }
 
   console.log(`Closed PR ${idStr}: "${data.title}"`);
 }
@@ -593,8 +688,9 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
-  const patch = await findById(ctx, repoContextId, idStr);
+  const target = await resolvePatchTarget(ctx, args);
+  await ensureRepoWriteAllowed(ctx, target);
+  const patch = await findById(ctx, target, idStr);
   if (!patch) {
     console.error(`PR ${idStr} not found.`);
     process.exit(1);
@@ -613,22 +709,31 @@ async function prReopen(ctx: AgentContext, args: string[]): Promise<void> {
     return;
   }
 
-  const { status } = await patch.update({
+  const protocolRole = await patchMaintainerRole(ctx, target);
+  const { status, record: updatedPatch } = await patch.update({
     data : data,
     tags : { ...tags, status: 'open' },
-  });
+    ...(target.remote ? { protocolRole, store: false } : {}),
+  } as any);
 
   if (status.code >= 300) {
     console.error(`Failed to reopen PR: ${status.code} ${status.detail}`);
     process.exit(1);
   }
+  if (target.remote) {
+    await sendRecordToTarget(ctx, updatedPatch ?? patch, target.ownerDid, 'PR update');
+  }
 
   // Audit trail.
-  await ctx.patches.records.create('repo/patch/statusChange' as any, {
+  const statusChange = await ctx.patches.records.create('repo/patch/statusChange' as any, {
     data            : { reason: 'Reopened by maintainer' },
     tags            : { from: tags?.status ?? 'closed', to: 'open' },
     parentContextId : patch.contextId,
+    ...(target.remote ? { protocolRole, store: false } : {}),
   } as any);
+  if (target.remote && statusChange.record) {
+    await sendRecordToTarget(ctx, statusChange.record, target.ownerDid, 'PR status change');
+  }
 
   console.log(`Reopened PR ${idStr}: "${data.title}"`);
 }
@@ -772,11 +877,11 @@ async function prIgnore(ctx: AgentContext, args: string[]): Promise<void> {
 async function prList(ctx: AgentContext, args: string[]): Promise<void> {
   const statusFilter = flagValue(args, '--status') ?? flagValue(args, '-s');
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const target = await resolvePatchTarget(ctx, args);
 
   const filter: Record<string, unknown> = {};
-  if (repoContextId) {
-    filter.contextId = repoContextId;
+  if (target.repo.contextId) {
+    filter.contextId = target.repo.contextId;
   }
 
   const filterTags: Record<string, string> = {};
@@ -788,6 +893,7 @@ async function prList(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   const { records } = await ctx.patches.records.query('repo/patch', {
+    ...(target.from ? { from: target.from } : {}),
     filter,
   });
 
@@ -895,6 +1001,7 @@ async function createRevisionAndBundle(
   ctx: AgentContext,
   patchRecord: any,
   gitCtx: GitContext,
+  target?: PatchTarget,
 ): Promise<void> {
   // Create the revision record.
   const { status: revStatus, record: revisionRecord } = await ctx.patches.records.create(
@@ -910,6 +1017,7 @@ async function createRevisionAndBundle(
         commitCount : gitCtx.commitCount,
       },
       parentContextId: patchRecord.contextId,
+      ...(target?.remote ? { store: false } : {}),
     } as any,
   );
 
@@ -918,6 +1026,9 @@ async function createRevisionAndBundle(
     return;
   }
   if (!revisionRecord) {throw new Error('Failed to create revision record');}
+  if (target?.remote) {
+    await sendRecordToTarget(ctx, revisionRecord, target.ownerDid, 'PR revision');
+  }
 
   console.log(`  Revision: ${gitCtx.commitCount} commit${gitCtx.commitCount !== 1 ? 's' : ''} (${gitCtx.baseCommit.slice(0, 7)}..${gitCtx.headCommit.slice(0, 7)})`);
   console.log(`  DiffStat: +${gitCtx.diffStat.additions} -${gitCtx.diffStat.deletions} (${gitCtx.diffStat.filesChanged} file${gitCtx.diffStat.filesChanged !== 1 ? 's' : ''})`);
@@ -938,7 +1049,7 @@ async function createRevisionAndBundle(
     const refListOutput = git(['bundle', 'list-heads', bundlePath]) ?? '';
     const refCount = refListOutput.split('\n').filter((l) => l.trim().length > 0).length;
 
-    const { status: bundleStatus } = await ctx.patches.records.create(
+    const { status: bundleStatus, record: bundleRecord } = await ctx.patches.records.create(
       'repo/patch/revision/revisionBundle' as any,
       {
         data       : bundleBytes,
@@ -950,12 +1061,17 @@ async function createRevisionAndBundle(
           size       : bundleSize,
         },
         parentContextId: revisionRecord.contextId,
+        ...(target?.remote ? { store: false } : {}),
       } as any,
     );
 
     if (bundleStatus.code >= 300) {
       console.error(`  Warning: failed to attach bundle: ${bundleStatus.code} ${bundleStatus.detail}`);
       return;
+    }
+    if (target?.remote) {
+      if (!bundleRecord) { throw new Error('Failed to create PR bundle record'); }
+      await sendRecordToTarget(ctx, bundleRecord, target.ownerDid, 'PR bundle');
     }
 
     console.log(`  Bundle: ${bundleSize} bytes, ${refCount} ref${refCount !== 1 ? 's' : ''}`);
@@ -1116,14 +1232,287 @@ async function copyExternalPatchDiscussion(
  */
 async function findById(
   ctx: AgentContext,
-  repoContextId: string,
+  target: PatchTarget,
   idStr: string,
 ): Promise<any | undefined> {
-  const { records } = await ctx.patches.records.query('repo/patch', {
-    filter: { contextId: repoContextId },
+  const records = await queryPatchRecords(ctx, target, 'repo/patch', {
+    contextId: target.repo.contextId,
   });
 
-  return findByShortId(records, idStr);
+  const record = findExternalRecord(records, idStr);
+  if (record) {
+    return record;
+  }
+
+  if (target.remote && idStr.startsWith('bafy')) {
+    return {
+      id        : idStr,
+      contextId : `${target.repo.contextId}/${idStr}`,
+      tags      : {},
+      data      : {
+        json: async () => ({ title: idStr, body: '' }),
+      },
+    };
+  }
+}
+
+async function queryPatchRecords(
+  ctx: AgentContext,
+  target: PatchTarget,
+  protocolPath: string,
+  filter: Record<string, unknown>,
+): Promise<any[]> {
+  const { records } = await ctx.patches.records.query(protocolPath as any, {
+    ...(target.from ? { from: target.from } : {}),
+    filter,
+  });
+  if (records.length > 0) {
+    return records;
+  }
+
+  return queryEndpointPatchRecords(ctx, target, protocolPath, filter);
+}
+
+async function queryEndpointPatchRecords(
+  ctx: AgentContext,
+  target: PatchTarget,
+  protocolPath: string,
+  filter: Record<string, unknown>,
+): Promise<any[]> {
+  const endpoints = configuredDwnEndpoints(ctx);
+  if (endpoints.length === 0) {
+    return [];
+  }
+
+  const query = await RecordsQuery.create({
+    signer : await messageSignerForContext(ctx),
+    filter : {
+      protocol: ForgePatchesDefinition.protocol,
+      protocolPath,
+      ...filter,
+    },
+  });
+  const client = new HttpDwnRpcClient();
+
+  for (const endpoint of endpoints) {
+    let errorMessage: string | undefined;
+    const reply = await client.sendDwnRequest({
+      dwnUrl    : endpoint,
+      targetDid : target.ownerDid,
+      message   : query.message,
+      signal    : AbortSignal.timeout(15_000),
+      timeoutMs : 15_000,
+    }).catch((err) => {
+      errorMessage = (err as Error).message;
+      return undefined;
+    });
+
+    if (process.env.GITD_DEBUG === '1') {
+      console.error(`[pr] endpoint query ${protocolPath} ${endpoint} status=${reply?.status.code ?? '<error>'} entries=${reply?.entries?.length ?? 0}${errorMessage ? ` error=${errorMessage}` : ''}`);
+    }
+
+    if (reply?.status.code === 200 && (reply.entries?.length ?? 0) > 0) {
+      return (reply.entries ?? []).map((entry) => endpointBackedRecord(ctx, target, entry));
+    }
+  }
+
+  return [];
+}
+
+function endpointBackedRecord(ctx: AgentContext, target: PatchTarget, entry: any): any {
+  const descriptor = entry.descriptor ?? entry.initialWrite?.descriptor ?? {};
+  const recordId = entry.recordId ?? entry.initialWrite?.recordId;
+  const contextId = entry.contextId ?? entry.initialWrite?.contextId;
+
+  return {
+    __gitdEndpointBackedRecord : true,
+    id                         : recordId,
+    contextId,
+    tags                       : descriptor.tags ?? {},
+    rawMessage                 : entry,
+    dataSize                   : descriptor.dataSize ?? 0,
+    data: {
+      json: async () => JSON.parse(new TextDecoder().decode(await endpointRecordBytes(ctx, target, entry))),
+      blob: async () => new Blob(
+        [await endpointRecordBytes(ctx, target, entry)],
+        { type: descriptor.dataFormat ?? 'application/octet-stream' },
+      ),
+    },
+  };
+}
+
+function isEndpointBackedRecord(record: any): boolean {
+  return record?.__gitdEndpointBackedRecord === true;
+}
+
+async function endpointRecordBytes(
+  ctx: AgentContext,
+  target: PatchTarget,
+  entry: any,
+): Promise<Uint8Array> {
+  if (typeof entry.encodedData === 'string') {
+    return decodeBase64Url(entry.encodedData);
+  }
+
+  const recordId = entry.recordId ?? entry.initialWrite?.recordId;
+  if (!recordId) {
+    throw new Error('Endpoint record is missing recordId');
+  }
+
+  const endpoints = configuredDwnEndpoints(ctx);
+  const read = await RecordsRead.create({
+    signer : await messageSignerForContext(ctx),
+    filter : { recordId },
+  });
+  const client = new HttpDwnRpcClient();
+
+  for (const endpoint of endpoints) {
+    let errorMessage: string | undefined;
+    const reply = await client.sendDwnRequest({
+      dwnUrl    : endpoint,
+      targetDid : target.ownerDid,
+      message   : read.message,
+      signal    : AbortSignal.timeout(15_000),
+      timeoutMs : 15_000,
+    }).catch((err) => {
+      errorMessage = (err as Error).message;
+      return undefined;
+    });
+
+    if (process.env.GITD_DEBUG === '1') {
+      console.error(`[pr] endpoint read ${recordId} ${endpoint} status=${reply?.status.code ?? '<error>'}${errorMessage ? ` error=${errorMessage}` : ''}`);
+    }
+
+    if (reply?.status.code === 200 && reply.entry?.data) {
+      return DataStream.toBytes(reply.entry.data);
+    }
+
+    const encodedData = (reply?.entry as any)?.encodedData
+      ?? (reply?.entry?.recordsWrite as any)?.encodedData;
+    if (reply?.status.code === 200 && typeof encodedData === 'string') {
+      return decodeBase64Url(encodedData);
+    }
+  }
+
+  throw new Error(`Endpoint record ${recordId} has no readable data`);
+}
+
+async function updateEndpointBackedPatch(
+  ctx: AgentContext,
+  target: PatchTarget,
+  patch: any,
+  data: unknown,
+  tags: Record<string, string>,
+  protocolRole: string | undefined,
+): Promise<void> {
+  const dataBytes = jsonBody(data);
+  const write = await RecordsWrite.create({
+    recordId        : patch.id,
+    dateCreated     : patch.rawMessage.descriptor.dateCreated,
+    protocol        : ForgePatchesDefinition.protocol,
+    protocolPath    : 'repo/patch',
+    schema          : ForgePatchesDefinition.types.patch.schema,
+    parentContextId : target.repo.contextId,
+    data            : dataBytes,
+    dataFormat      : 'application/json',
+    tags,
+    published       : true,
+    ...(patch.rawMessage.descriptor.recipient ? { recipient: patch.rawMessage.descriptor.recipient } : {}),
+    ...(protocolRole ? { protocolRole } : {}),
+    signer          : await messageSignerForContext(ctx),
+  });
+
+  await processMessageOnTargetEndpoints(ctx, target.ownerDid, write.message, 'PR update', bodyInit(dataBytes));
+}
+
+async function createEndpointBackedPatchChild(
+  ctx: AgentContext,
+  target: PatchTarget,
+  options: {
+    protocolPath: string;
+    schema: string;
+    data: unknown;
+    tags: Record<string, string>;
+    parentContextId: string;
+    protocolRole?: string;
+    label: string;
+  },
+): Promise<void> {
+  const dataBytes = jsonBody(options.data);
+  const write = await RecordsWrite.create({
+    protocol        : ForgePatchesDefinition.protocol,
+    protocolPath    : options.protocolPath,
+    schema          : options.schema,
+    parentContextId : options.parentContextId,
+    data            : dataBytes,
+    dataFormat      : 'application/json',
+    tags            : options.tags,
+    published       : true,
+    recipient       : target.ownerDid,
+    ...(options.protocolRole ? { protocolRole: options.protocolRole } : {}),
+    signer          : await messageSignerForContext(ctx),
+  });
+
+  await processMessageOnTargetEndpoints(ctx, target.ownerDid, write.message, options.label, bodyInit(dataBytes));
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  return new Uint8Array(Buffer.from(padded, 'base64'));
+}
+
+type PatchTarget = {
+  ownerDid : string;
+  repo : RepoContext;
+  from? : string;
+  remote : boolean;
+};
+
+async function resolvePatchTarget(ctx: AgentContext, args: string[]): Promise<PatchTarget> {
+  const ownerDid = resolveRepoOwner(args) ?? ctx.did;
+  const repo = await getRepoContextForDid(ctx, ownerDid, resolveRepoName(args));
+  const from = fromOpt(ctx, ownerDid);
+  return { ownerDid, repo, from, remote: ownerDid !== ctx.did };
+}
+
+async function patchCreateRole(ctx: AgentContext, target: PatchTarget): Promise<string | undefined> {
+  return resolvePatchRole(ctx, target, ['contributor', 'maintainer'], 'contributor');
+}
+
+async function ensureRepoWriteAllowed(ctx: AgentContext, target: PatchTarget): Promise<void> {
+  const block = await latestActiveBlock(ctx, target);
+  if (!block) {
+    return;
+  }
+
+  const reason = block.data.reason ? ` Reason: ${block.data.reason}` : '';
+  console.error(`You are blocked from writing to ${target.ownerDid}/${target.repo.name}.${reason}`);
+  process.exit(1);
+}
+
+async function patchDiscussionRole(ctx: AgentContext, target: PatchTarget): Promise<string | undefined> {
+  return resolvePatchRole(ctx, target, ['contributor', 'maintainer', 'moderator'], 'contributor');
+}
+
+async function patchMaintainerRole(
+  ctx: AgentContext,
+  target: PatchTarget,
+  fallback?: RepoRoleName,
+): Promise<string | undefined> {
+  return resolvePatchRole(ctx, target, ['maintainer'], fallback);
+}
+
+async function resolvePatchRole(
+  ctx: AgentContext,
+  target: PatchTarget,
+  candidates: readonly RepoRoleName[],
+  fallback?: RepoRoleName,
+): Promise<string | undefined> {
+  if (target.remote && fallback) {
+    return `repo:repo/${fallback}`;
+  }
+  return resolveRepoProtocolRole(ctx, target.ownerDid, target.repo.contextId, candidates, fallback);
 }
 
 function findExternalRecord(records: any[], idStr: string): any | undefined {

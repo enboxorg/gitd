@@ -1,9 +1,9 @@
 /**
- * Git ref → DWN sync — mirrors git branch/tag refs as ForgeRefs records.
+ * Git ref → DWN sync — mirrors git refs and checkpoints branch state.
  *
  * After a successful `git push`, this module reads the current refs from
- * the bare repository and creates or updates corresponding DWN records
- * using the ForgeRefsProtocol.
+ * the bare repository and creates or updates corresponding DWN records using
+ * the ForgeRefsProtocol.
  *
  * Ref sync flow:
  * 1. Run `git for-each-ref` on the bare repo to enumerate current refs
@@ -11,16 +11,20 @@
  * 3. Create new records for refs that don't exist in DWN
  * 4. Update existing records whose target (SHA) has changed
  * 5. Delete DWN records for refs that no longer exist in git
+ * 6. Ensure branch records exist and write `$squash` checkpoints for branch
+ *    targets under `repo/branch/state`
  *
  * @module
  */
 
 import type { TypedEnbox } from '@enbox/api';
+import type { PushRefUpdate } from './push-updates.js';
 
 import { spawn } from 'node:child_process';
 
+import { branchDataForRef, reduceBranchState } from '../branch-state.js';
 import type { ForgeRefsProtocol } from '../refs.js';
-import type { ForgeRefsSchemaMap } from '../refs.js';
+import type { BranchStateData, ForgeRefsSchemaMap } from '../refs.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,6 +46,8 @@ export type RefSyncOptions = {
   refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
   /** The repo's contextId (from the ForgeRepoProtocol repo record). */
   repoContextId: string;
+  /** Repo visibility controls whether ref and branch checkpoint records are published. */
+  visibility?: 'public' | 'private';
 };
 
 /** Callback for post-push ref synchronization. */
@@ -49,6 +55,9 @@ export type OnPushComplete = (
   did: string,
   repo: string,
   repoPath: string,
+  context?: {
+    updates?: readonly PushRefUpdate[];
+  },
 ) => Promise<void>;
 
 // ---------------------------------------------------------------------------
@@ -62,9 +71,10 @@ export type OnPushComplete = (
  * @returns An async callback to invoke after a successful push
  */
 export function createRefSyncer(options: RefSyncOptions): OnPushComplete {
-  const { refs, repoContextId } = options;
+  const { refs, repoContextId, visibility = 'public' } = options;
+  const publish = visibility === 'public';
 
-  return async (_did: string, _repo: string, repoPath: string): Promise<void> => {
+  return async (did: string, _repo: string, repoPath: string): Promise<void> => {
     // Read current git refs from the bare repository.
     // If git fails (corrupt repo, permission denied, etc.), abort the sync
     // to avoid deleting all DWN ref records due to an empty ref list.
@@ -101,6 +111,7 @@ export function createRefSyncer(options: RefSyncOptions): OnPushComplete {
           data            : { name: ref.name, target: ref.target, type: ref.type },
           tags            : { name: ref.name, type: ref.type, target: ref.target },
           parentContextId : repoContextId,
+          published       : publish,
         });
       } else if (existing.target !== ref.target) {
         // Update existing record with new target.
@@ -118,7 +129,131 @@ export function createRefSyncer(options: RefSyncOptions): OnPushComplete {
         await record.delete();
       }
     }
+
+    await syncBranchCheckpoints(refs, repoContextId, did, gitRefs, publish);
   };
+}
+
+// ---------------------------------------------------------------------------
+// Branch state sync
+// ---------------------------------------------------------------------------
+
+/** Ensure branch records and checkpoint state exist for current git branches. */
+async function syncBranchCheckpoints(
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>,
+  repoContextId: string,
+  ownerDid: string,
+  gitRefs: GitRef[],
+  publish: boolean,
+): Promise<void> {
+  const branchRefs = gitRefs.filter((ref) => ref.type === 'branch');
+  const branchRefNames = new Set(branchRefs.map((ref) => ref.name));
+  const { records: existingBranchRecords } = await refs.records.query('repo/branch' as any, {
+    filter: { contextId: repoContextId },
+  });
+
+  const branchRecords = new Map<string, any>();
+  for (const record of existingBranchRecords) {
+    const data = await record.data.json();
+    if (typeof data.refName === 'string') {
+      branchRecords.set(data.refName, record);
+    }
+  }
+
+  for (const ref of branchRefs) {
+    const branchRecord = await ensureBranchRecord(refs, repoContextId, ownerDid, ref.name, branchRecords, publish);
+    await writeCheckpointIfChanged(refs, branchRecord, ownerDid, ref.name, ref.target, publish);
+  }
+
+  for (const [refName, branchRecord] of branchRecords) {
+    if (!branchRefNames.has(refName)) {
+      await writeCheckpointIfChanged(refs, branchRecord, ownerDid, refName, null, publish);
+    }
+  }
+}
+
+async function ensureBranchRecord(
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>,
+  repoContextId: string,
+  ownerDid: string,
+  refName: string,
+  branchRecords: Map<string, any>,
+  publish: boolean,
+): Promise<any> {
+  const existing = branchRecords.get(refName);
+  if (existing) {
+    return existing;
+  }
+
+  const data = branchDataForRef(refName, ownerDid);
+  const { record } = await refs.records.create('repo/branch' as any, {
+    data,
+    tags: {
+      refName  : data.refName,
+      ownerDid : data.ownerDid,
+      kind     : data.kind,
+    },
+    parentContextId: repoContextId,
+    published      : publish,
+  });
+
+  branchRecords.set(refName, record);
+  return record;
+}
+
+async function writeCheckpointIfChanged(
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>,
+  branchRecord: any,
+  actorDid: string,
+  refName: string,
+  target: string | null,
+  publish: boolean,
+): Promise<void> {
+  const branchContextId = branchRecord.contextId;
+  if (!branchContextId) {
+    console.error(`ref-sync: branch record for ${refName} has no contextId; skipping branch state checkpoint`);
+    return;
+  }
+
+  const { records } = await refs.records.query('repo/branch/state' as any, {
+    filter: { contextId: branchContextId },
+  });
+  const stateRecords = await Promise.all(records.map(async (record: any) => ({
+    recordId    : record.id ?? '',
+    authorDid   : record.author ?? record.authorDid,
+    dateCreated : record.dateCreated,
+    data        : await record.data.json() as BranchStateData,
+  })));
+  const reduction = reduceBranchState(refName, stateRecords);
+  if (reduction.target === target && reduction.accepted.length > 0) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const data: BranchStateData = {
+    kind       : 'checkpoint',
+    refName,
+    target,
+    actorDid,
+    acceptedAt : now,
+    createdAt  : now,
+  };
+  const tags: Record<string, string> = {
+    kind: 'checkpoint',
+    refName,
+    actorDid,
+  };
+  if (target) {
+    tags.target = target;
+  }
+
+  await refs.records.create('repo/branch/state' as any, {
+    data,
+    tags,
+    parentContextId : branchContextId,
+    published       : publish,
+    squash          : true,
+  });
 }
 
 // ---------------------------------------------------------------------------

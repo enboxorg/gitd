@@ -60,6 +60,37 @@ export function resolveRepoName(args: string[]): string | undefined {
 }
 
 /**
+ * Resolve the canonical repo owner DID from CLI flags, env, or git config.
+ *
+ * Priority:
+ *   1. `--owner <did>` flag
+ *   2. `GITD_REPO_OWNER` env var
+ *   3. `git config enbox.owner` in the current working directory
+ *   4. `undefined` (caller uses the local DID)
+ */
+export function resolveRepoOwner(args: string[]): string | undefined {
+  const flag = flagValue(args, '--owner');
+  if (flag) { return flag; }
+
+  const env = process.env.GITD_REPO_OWNER;
+  if (env) { return env; }
+
+  try {
+    const result = spawnSync('git', ['config', 'enbox.owner'], {
+      encoding : 'utf-8',
+      timeout  : 2000,
+      stdio    : ['pipe', 'pipe', 'pipe'],
+    });
+    const value = result.stdout?.trim();
+    if (value && result.status === 0) { return value; }
+  } catch {
+    // Not in a git repo or git not available — fall through.
+  }
+
+  return undefined;
+}
+
+/**
  * Parse a port number string, validating that it's a valid TCP port.
  * Exits the process with an error if the value is not a valid port.
  *

@@ -65,9 +65,15 @@ export function createDidSignatureVerifier(options: DidSignatureVerifierOptions 
     try {
       const localDocument = localDocuments.get(did);
       if (localDocument) {
+        if (process.env.GITD_DEBUG === '1') {
+          console.error(`[auth] verifying ${did} with local DID document`);
+        }
         return verifyWithDocument(localDocument, payload, signature);
       }
 
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[auth] resolving ${did} for signature verification`);
+      }
       const { didDocument, didResolutionMetadata } = await Promise.race([
         getResolver().resolve(did),
         new Promise<never>((_, reject) =>
@@ -80,7 +86,10 @@ export function createDidSignatureVerifier(options: DidSignatureVerifierOptions 
       }
 
       return verifyWithDocument(didDocument, payload, signature);
-    } catch {
+    } catch (err) {
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[auth] signature verification error for ${did}: ${(err as Error).message}`);
+      }
       return false;
     }
   };

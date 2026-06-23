@@ -17,6 +17,8 @@
 
 import type { ForgeRepoProtocol } from '../repo.js';
 import type { ForgeRepoSchemaMap } from '../repo.js';
+import type { ForgeRefsProtocol } from '../refs.js';
+import type { ForgeRefsSchemaMap } from '../refs.js';
 import type { TypedEnbox } from '@enbox/api';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
@@ -34,6 +36,12 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 export type BundleRestoreOptions = {
   /** The typed ForgeRepoProtocol handle for the owner's DWN. */
   repo: TypedEnbox<typeof ForgeRepoProtocol.definition, ForgeRepoSchemaMap>;
+
+  /** Optional ForgeRefsProtocol handle used to restore branch-scoped bundles. */
+  refs?: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
+
+  /** Remote DID to query. Omit when restoring from the local DWN. */
+  from?: string;
 
   /** Path where the bare repository should be created. */
   repoPath: string;
@@ -73,13 +81,14 @@ export type BundleRestoreResult = {
 export async function restoreFromBundles(
   options: BundleRestoreOptions,
 ): Promise<BundleRestoreResult> {
-  const { repo, repoPath, repoContextId } = options;
+  const { repo, refs, from, repoPath, repoContextId } = options;
 
   // 1. Query for the most recent full bundle.
   const fullFilter: Record<string, unknown> = { tags: { isFull: true } };
   if (repoContextId) { fullFilter.contextId = repoContextId; }
 
   const { records: fullBundles } = await repo.records.query('repo/bundle', {
+    ...(from ? { from } : {}),
     filter   : fullFilter,
     dateSort : DateSort.CreatedDescending,
   });
@@ -109,6 +118,7 @@ export async function restoreFromBundles(
     if (repoContextId) { incFilter.contextId = repoContextId; }
 
     const { records: incrementals } = await repo.records.query('repo/bundle', {
+      ...(from ? { from } : {}),
       filter   : incFilter,
       dateSort : DateSort.CreatedAscending,
     });
@@ -134,6 +144,15 @@ export async function restoreFromBundles(
       }
     }
 
+    if (refs && repoContextId) {
+      bundlesApplied += await restoreBranchBundles({
+        refs,
+        from,
+        repoPath,
+        repoContextId,
+      });
+    }
+
     // 5. Get the tip commit.
     const tipCommit = await getTipCommit(repoPath);
 
@@ -150,8 +169,67 @@ export async function restoreFromBundles(
 }
 
 // ---------------------------------------------------------------------------
+// Branch-scoped bundle restore
+// ---------------------------------------------------------------------------
+
+type BranchBundleRestoreOptions = {
+  refs: TypedEnbox<typeof ForgeRefsProtocol.definition, ForgeRefsSchemaMap>;
+  from?: string;
+  repoPath: string;
+  repoContextId: string;
+};
+
+async function restoreBranchBundles(options: BranchBundleRestoreOptions): Promise<number> {
+  const { refs, from, repoPath, repoContextId } = options;
+  const { records: branches } = await refs.records.query('repo/branch' as any, {
+    ...(from ? { from } : {}),
+    filter: { contextId: repoContextId },
+  });
+
+  let applied = 0;
+  for (const branch of branches) {
+    const data = await branch.data.json();
+    if (typeof data.refName !== 'string' || !branch.contextId) {
+      continue;
+    }
+
+    const { records: bundles } = await refs.records.query('repo/branch/bundle' as any, {
+      ...(from ? { from } : {}),
+      filter   : { contextId: branch.contextId, tags: { refName: data.refName } },
+      dateSort : DateSort.CreatedDescending,
+    });
+    if (bundles.length === 0) {
+      continue;
+    }
+
+    const tipCommit = bundles[0].tags?.tipCommit as string | undefined;
+    if (tipCommit && await refAlreadyAt(repoPath, data.refName, tipCommit)) {
+      continue;
+    }
+
+    const branchPath = tempBundlePath();
+    try {
+      const blob = await bundles[0].data.blob();
+      const bytes = Buffer.from(await blob.arrayBuffer());
+      await writeFile(branchPath, bytes);
+      await spawnChecked('git', ['fetch', '--update-head-ok', branchPath, `${data.refName}:${data.refName}`], repoPath);
+      applied++;
+    } finally {
+      await unlink(branchPath).catch(() => {});
+    }
+  }
+
+  return applied;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function refAlreadyAt(repoPath: string, refName: string, target: string): Promise<boolean> {
+  const current = await spawnCollectOptional('git', ['rev-parse', '--verify', refName], repoPath);
+  return current === target;
+}
 
 /** Generate a unique temp file path for a bundle. */
 function tempBundlePath(): string {

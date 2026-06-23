@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 import { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from '../../daemon/lifecycle.js';
+import { flagValue } from '../flags.js';
 
 // ---------------------------------------------------------------------------
 // Command
@@ -24,19 +25,20 @@ import { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from '../../dae
 
 export async function serveDaemonCommand(args: string[]): Promise<void> {
   const sub = args[0];
+  const profileName = flagValue(args, '--profile') ?? undefined;
 
   switch (sub) {
     case 'status':
-      return statusCmd();
+      return statusCmd(profileName);
 
     case 'stop':
-      return stopCmd();
+      return stopCmd(profileName);
 
     case 'restart':
-      return restartCmd();
+      return restartCmd(profileName);
 
     case 'logs':
-      return logsCmd();
+      return logsCmd(profileName);
 
     default:
       console.error(`Unknown serve subcommand: ${sub}`);
@@ -49,8 +51,8 @@ export async function serveDaemonCommand(args: string[]): Promise<void> {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-function statusCmd(): void {
-  const status = daemonStatus();
+function statusCmd(profileName?: string): void {
+  const status = daemonStatus({ profileName });
 
   if (!status.running) {
     console.log('Daemon is not running.');
@@ -65,11 +67,11 @@ function statusCmd(): void {
     console.log(`  Version:  ${status.version}`);
   }
   console.log(`  Started:  ${status.startedAt}`);
-  console.log(`  Log:      ${daemonLogPath()}`);
+  console.log(`  Log:      ${daemonLogPath(profileName)}`);
 }
 
-function stopCmd(): void {
-  const stopped = stopDaemon();
+function stopCmd(profileName?: string): void {
+  const stopped = stopDaemon({ profileName });
   if (stopped) {
     console.log('Daemon stopped.');
   } else {
@@ -77,11 +79,11 @@ function stopCmd(): void {
   }
 }
 
-async function restartCmd(): Promise<void> {
-  stopDaemon();
+async function restartCmd(profileName?: string): Promise<void> {
+  stopDaemon({ profileName });
   console.log('Starting daemon...');
   try {
-    const result = await ensureDaemon();
+    const result = await ensureDaemon(undefined, { profileName });
     console.log(`Daemon started on port ${result.port}.`);
   } catch (err) {
     console.error(`Failed to start daemon: ${(err as Error).message}`);
@@ -89,8 +91,8 @@ async function restartCmd(): Promise<void> {
   }
 }
 
-function logsCmd(): void {
-  const logPath = daemonLogPath();
+function logsCmd(profileName?: string): void {
+  const logPath = daemonLogPath(profileName);
 
   if (!existsSync(logPath)) {
     console.log(`No log file found at ${logPath}`);

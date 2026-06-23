@@ -47,16 +47,19 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.types.readme).toBeDefined();
       expect(ForgeRepoDefinition.types.license).toBeDefined();
       expect(ForgeRepoDefinition.types.maintainer).toBeDefined();
+      expect(ForgeRepoDefinition.types.moderator).toBeDefined();
       expect(ForgeRepoDefinition.types.triager).toBeDefined();
       expect(ForgeRepoDefinition.types.contributor).toBeDefined();
       expect(ForgeRepoDefinition.types.viewer).toBeDefined();
       expect(ForgeRepoDefinition.types.topic).toBeDefined();
       expect(ForgeRepoDefinition.types.submissionDecision).toBeDefined();
+      expect(ForgeRepoDefinition.types.moderationEvent).toBeDefined();
       expect(ForgeRepoDefinition.types.webhook).toBeDefined();
     });
 
-    it('should mark maintainer, triager, contributor, and viewer as roles', () => {
+    it('should mark maintainer, moderator, triager, contributor, and viewer as roles', () => {
       expect(ForgeRepoDefinition.structure.repo.maintainer.$role).toBe(true);
+      expect(ForgeRepoDefinition.structure.repo.moderator.$role).toBe(true);
       expect(ForgeRepoDefinition.structure.repo.triager.$role).toBe(true);
       expect(ForgeRepoDefinition.structure.repo.contributor.$role).toBe(true);
       expect(ForgeRepoDefinition.structure.repo.viewer.$role).toBe(true);
@@ -87,6 +90,7 @@ describe('@enbox/gitd', () => {
 
     it('should require did tag on role records', () => {
       expect(ForgeRepoDefinition.structure.repo.maintainer.$tags?.$requiredTags).toContain('did');
+      expect(ForgeRepoDefinition.structure.repo.moderator.$tags?.$requiredTags).toContain('did');
       expect(ForgeRepoDefinition.structure.repo.triager.$tags?.$requiredTags).toContain('did');
       expect(ForgeRepoDefinition.structure.repo.contributor.$tags?.$requiredTags).toContain('did');
       expect(ForgeRepoDefinition.structure.repo.viewer.$tags?.$requiredTags).toContain('did');
@@ -110,6 +114,7 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.structure.repo.topic).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.webhook).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.bundle).toBeDefined();
+      expect(ForgeRepoDefinition.structure.repo.moderationEvent).toBeDefined();
     });
 
     it('should enable $squash on bundle records', () => {
@@ -151,6 +156,24 @@ describe('@enbox/gitd', () => {
       expect(maintainerAction?.can).toContain('create');
     });
 
+    it('should support immutable repo moderation events', () => {
+      const eventNode = ForgeRepoDefinition.structure.repo.moderationEvent;
+      expect(eventNode.$immutable).toBe(true);
+      expect(eventNode.$tags.$requiredTags).toEqual(['action', 'actorDid']);
+      expect(eventNode.$tags.action.enum).toContain('block');
+      expect(eventNode.$tags.action.enum).toContain('hideComment');
+      expect(eventNode.$tags.targetDid.type).toBe('string');
+      expect(eventNode.$tags.targetKind.enum).toContain('prComment');
+      expect(eventNode.$tags.reportStatus.enum).toEqual(['open', 'resolved', 'dismissed']);
+
+      const anyoneAction = eventNode.$actions.find((a) => 'who' in a && a.who === 'anyone');
+      const maintainerAction = eventNode.$actions.find((a) => 'role' in a && a.role === 'repo/maintainer');
+      const moderatorAction = eventNode.$actions.find((a) => 'role' in a && a.role === 'repo/moderator');
+      expect(anyoneAction?.can).toContain('read');
+      expect(maintainerAction?.can).toContain('create');
+      expect(moderatorAction?.can).toContain('create');
+    });
+
     it('should wrap definition via defineProtocol()', () => {
       expect(ForgeRepoProtocol.definition).toBe(ForgeRepoDefinition);
     });
@@ -174,10 +197,15 @@ describe('@enbox/gitd', () => {
       expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
     });
 
-    it('should define the ref type', () => {
+    it('should define the ref and branch state types', () => {
       expect(ForgeRefsDefinition.types.ref).toBeDefined();
       expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.org/schemas/forge/git-ref');
       expect(ForgeRefsDefinition.types.ref.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.branch.schema).toBe('https://enbox.org/schemas/forge/branch');
+      expect(ForgeRefsDefinition.types.branch.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.state.schema).toBe('https://enbox.org/schemas/forge/branch-state');
+      expect(ForgeRefsDefinition.types.state.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.bundle.dataFormats).toContain('application/x-git-bundle');
     });
 
     it('should use $ref to compose with repo protocol', () => {
@@ -185,9 +213,12 @@ describe('@enbox/gitd', () => {
       expect(repoNode.$ref).toBe('repo:repo');
     });
 
-    it('should nest ref under repo via $ref', () => {
+    it('should nest ref and branch state under repo via $ref', () => {
       const repoNode = ForgeRefsDefinition.structure.repo as any;
       expect(repoNode.ref).toBeDefined();
+      expect(repoNode.branch).toBeDefined();
+      expect(repoNode.branch.state).toBeDefined();
+      expect(repoNode.branch.bundle).toBeDefined();
     });
 
     it('should allow anyone to read refs', () => {
@@ -226,6 +257,49 @@ describe('@enbox/gitd', () => {
       const refNode = (ForgeRefsDefinition.structure.repo as any).ref;
       expect(refNode.$tags.target).toBeDefined();
       expect(refNode.$tags.target.type).toBe('string');
+    });
+
+    it('should require branch ownership tags', () => {
+      const branchNode = (ForgeRefsDefinition.structure.repo as any).branch;
+      expect(branchNode.$tags.$requiredTags).toContain('refName');
+      expect(branchNode.$tags.$requiredTags).toContain('ownerDid');
+      expect(branchNode.$tags.$requiredTags).toContain('kind');
+      expect(branchNode.$tags.kind.enum).toEqual(['contributor', 'protected', 'shared']);
+      expect(branchNode.$tags.$allowUndefinedTags).toBe(false);
+    });
+
+    it('should allow contributors to create branches and maintainers to delete them', () => {
+      const branchNode = (ForgeRefsDefinition.structure.repo as any).branch;
+      const contributorAction = branchNode.$actions.find((a: any) => a.role === 'repo:repo/contributor');
+      const maintainerAction = branchNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(contributorAction.can).toContain('create');
+      expect(contributorAction.can).toContain('read');
+      expect(maintainerAction.can).toContain('delete');
+    });
+
+    it('should squash branch state through branch authors or maintainers', () => {
+      const stateNode = (ForgeRefsDefinition.structure.repo as any).branch.state;
+      const authorAction = stateNode.$actions.find((a: any) => a.who === 'author' && a.of === 'repo/branch');
+      const maintainerAction = stateNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(stateNode.$squash).toBe(true);
+      expect(authorAction.can).toContain('create');
+      expect(authorAction.can).toContain('squash');
+      expect(maintainerAction.can).toContain('create');
+      expect(maintainerAction.can).toContain('squash');
+      expect(stateNode.$tags.kind.enum).toEqual(['refUpdate', 'checkpoint']);
+      expect(stateNode.$tags.acceptedStateRecordId.type).toBe('string');
+    });
+
+    it('should squash branch bundles through branch authors or maintainers', () => {
+      const bundleNode = (ForgeRefsDefinition.structure.repo as any).branch.bundle;
+      const authorAction = bundleNode.$actions.find((a: any) => a.who === 'author' && a.of === 'repo/branch');
+      const maintainerAction = bundleNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(bundleNode.$squash).toBe(true);
+      expect(authorAction.can).toContain('create');
+      expect(authorAction.can).toContain('squash');
+      expect(maintainerAction.can).toContain('create');
+      expect(maintainerAction.can).toContain('squash');
+      expect(bundleNode.$tags.$requiredTags).toContain('tipCommit');
     });
 
     it('should wrap definition via defineProtocol()', () => {
@@ -320,8 +394,12 @@ describe('@enbox/gitd', () => {
       const actions = ForgeIssuesDefinition.structure.repo.issue.$actions!;
       const contributorAction = actions.find((a) => a.role === 'repo:repo/contributor');
       const maintainerAction = actions.find((a) => a.role === 'repo:repo/maintainer');
+      const moderatorAction = actions.find((a) => a.role === 'repo:repo/moderator');
       expect(contributorAction).toBeDefined();
       expect(maintainerAction).toBeDefined();
+      expect(moderatorAction).toBeDefined();
+      expect(moderatorAction!.can).toContain('create');
+      expect(moderatorAction!.can).toContain('co-update');
     });
 
     it('should keep direct issue writes role-gated', () => {
@@ -507,10 +585,12 @@ describe('@enbox/gitd', () => {
       const reviewActions = ForgePatchesDefinition.structure.repo.patch.review.$actions!;
       expect(reviewActions.find((a) => a.who === 'anyone')!.can).not.toContain('create');
       expect(reviewActions.find((a) => a.role === 'repo:repo/contributor')!.can).toContain('create');
+      expect(reviewActions.find((a) => a.role === 'repo:repo/moderator')!.can).toContain('create');
 
       const commentActions = ForgePatchesDefinition.structure.repo.patch.review.reviewComment.$actions!;
       expect(commentActions.find((a) => a.who === 'anyone')!.can).not.toContain('create');
       expect(commentActions.find((a) => a.role === 'repo:repo/contributor')!.can).toContain('create');
+      expect(commentActions.find((a) => a.role === 'repo:repo/moderator')!.can).toContain('create');
     });
 
     it('should allow review comment authors and maintainers to update and delete review comments', () => {

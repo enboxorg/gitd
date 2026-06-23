@@ -25,6 +25,9 @@
 import { spawn } from 'node:child_process';
 
 import type { GitBackend } from './git-backend.js';
+import type { PushRefUpdate } from './push-updates.js';
+
+import { parseReceivePackUpdatesFromRequest } from './push-updates.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,7 +47,21 @@ export type GitHttpHandlerOptions = {
    * @param did - The repository owner's DID
    * @param repo - The repository name
    */
-  authenticatePush?: (request: Request, did: string, repo: string) => Promise<boolean>;
+  authenticatePush?: (
+    request: Request,
+    did: string,
+    repo: string,
+    updates?: readonly PushRefUpdate[],
+  ) => Promise<boolean>;
+
+  /**
+   * Whether `GET /info/refs?service=git-receive-pack` requires push auth.
+   * The POST receive-pack request is always authenticated when
+   * `authenticatePush` is configured.
+   *
+   * @default true
+   */
+  authenticateReceivePackDiscovery?: boolean;
 
   /**
    * Optional callback invoked after a successful `git receive-pack` (push).
@@ -54,7 +71,12 @@ export type GitHttpHandlerOptions = {
    * @param repo - The repository name
    * @param repoPath - Filesystem path to the bare repository
    */
-  onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
+  onPushComplete?: (
+    did: string,
+    repo: string,
+    repoPath: string,
+    context?: { updates?: readonly PushRefUpdate[] },
+  ) => Promise<void>;
 
   /**
    * Optional callback invoked when a clone/fetch request arrives for a
@@ -67,6 +89,13 @@ export type GitHttpHandlerOptions = {
    * @returns `true` if the repo was restored successfully
    */
   onRepoNotFound?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
+
+  /**
+   * Optional callback invoked before clone/fetch services are served for a
+   * repository that exists on disk. Implementations can refresh a stale mirror
+   * from DWN bundle records.
+   */
+  onRepoAccess?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
 
   /**
    * Optional path prefix to strip from incoming URLs.
@@ -97,7 +126,15 @@ type GitRoute = {
 export function createGitHttpHandler(
   options: GitHttpHandlerOptions,
 ): (request: Request) => Response | Promise<Response> {
-  const { backend, authenticatePush, onPushComplete, onRepoNotFound, pathPrefix = '' } = options;
+  const {
+    backend,
+    authenticatePush,
+    authenticateReceivePackDiscovery = true,
+    onPushComplete,
+    onRepoNotFound,
+    onRepoAccess,
+    pathPrefix = '',
+  } = options;
 
   /**
    * Ensure a repo exists on disk, attempting DWN bundle restore if absent.
@@ -117,6 +154,18 @@ export function createGitHttpHandler(
     }
 
     return false;
+  }
+
+  async function refreshRepo(did: string, repo: string): Promise<boolean> {
+    if (!onRepoAccess) { return true; }
+
+    const repoPath = backend.repoPath(did, repo);
+    try {
+      return await onRepoAccess(did, repo, repoPath);
+    } catch (err) {
+      console.error(`onRepoAccess error for ${did}/${repo}: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   return async (request: Request): Promise<Response> => {
@@ -146,19 +195,29 @@ export function createGitHttpHandler(
       }
 
       // Auth check for push ref discovery.
-      if (service === 'git-receive-pack' && authenticatePush) {
+      if (service === 'git-receive-pack' && authenticatePush && authenticateReceivePackDiscovery) {
+        if (process.env.GITD_DEBUG === '1') {
+          console.error(`[git-http] authenticating receive-pack discovery for ${did}/${repo}; auth=${request.headers.has('Authorization') ? 'present' : 'missing'}`);
+        }
         const authorized = await authenticatePush(request, did, repo);
         if (!authorized) {
           return new Response('Unauthorized', {
             status  : 401,
-            headers : { 'WWW-Authenticate': 'Basic realm="gitd"' },
+            headers : {
+              'WWW-Authenticate' : 'Basic realm="gitd"',
+              Connection         : 'close',
+            },
           });
         }
       }
 
       // Ensure repo exists (auto-restore from DWN if possible).
+      const existedBeforeRequest = backend.exists(did, repo);
       if (!(await ensureRepo(did, repo))) {
         return new Response('Repository not found', { status: 404 });
+      }
+      if (service === 'git-upload-pack' && existedBeforeRequest && !(await refreshRepo(did, repo))) {
+        return new Response('Repository refresh failed', { status: 500 });
       }
 
       return handleInfoRefs(backend, did, repo, service);
@@ -179,13 +238,18 @@ export function createGitHttpHandler(
     // POST /<did>/<repo>/git-receive-pack
     // -----------------------------------------------------------------------
     if (request.method === 'POST' && action === 'git-receive-pack') {
+      const updates = await parseReceivePackUpdatesFromRequest(request.clone());
+
       // Auth check for push.
       if (authenticatePush) {
-        const authorized = await authenticatePush(request, did, repo);
+        const authorized = await authenticatePush(request, did, repo, updates);
         if (!authorized) {
           return new Response('Unauthorized', {
             status  : 401,
-            headers : { 'WWW-Authenticate': 'Basic realm="gitd"' },
+            headers : {
+              'WWW-Authenticate' : 'Basic realm="gitd"',
+              Connection         : 'close',
+            },
           });
         }
       }
@@ -204,7 +268,7 @@ export function createGitHttpHandler(
         exitCode.then((code) => {
           if (code === 0) {
             const repoPath = backend.repoPath(did, repo);
-            return onPushComplete(did, repo, repoPath);
+            return onPushComplete(did, repo, repoPath, { updates });
           }
         }).catch((err) => {
           console.error(`onPushComplete error for ${did}/${repo}: ${(err as Error).message}`);
@@ -293,7 +357,6 @@ async function handleInfoRefs(
   const gitService = service === 'git-upload-pack' ? 'upload-pack' : 'receive-pack';
   const repoPath = backend.repoPath(did, repo);
 
-  // Run git with --advertise-refs to get the ref listing.
   const refData = await spawnAndCollect(gitService, repoPath);
 
   if (refData === null) {
@@ -314,6 +377,8 @@ async function handleInfoRefs(
     headers : {
       'Content-Type'  : `application/x-${service}-advertisement`,
       'Cache-Control' : 'no-cache',
+      'Content-Length': String(body.byteLength),
+      Connection      : 'close',
     },
   });
 }
@@ -364,6 +429,7 @@ async function handleServiceRpc(
     headers : {
       'Content-Type'  : `application/x-git-${service}-result`,
       'Cache-Control' : 'no-cache',
+      Connection      : 'close',
     },
   });
 
@@ -378,16 +444,21 @@ async function handleServiceRpc(
  * Spawn `git <service> --stateless-rpc --advertise-refs` and collect stdout.
  * Returns `null` if the process exits with a non-zero code.
  */
-function spawnAndCollect(service: string, repoPath: string): Promise<Uint8Array | null> {
+function spawnAndCollect(
+  service: string,
+  repoPath: string,
+): Promise<Uint8Array | null> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', [service, '--stateless-rpc', '--advertise-refs', repoPath], {
+      env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    child.stdin?.end();
 
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
-    // Drain stderr to prevent pipe buffer deadlocks.
-    child.stderr!.resume();
+    child.stderr!.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
 
     child.stdout!.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.stdout!.on('error', reject);
@@ -395,6 +466,8 @@ function spawnAndCollect(service: string, repoPath: string): Promise<Uint8Array 
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString('utf-8').trim();
+        console.error(`git ${service} --advertise-refs failed for ${repoPath} with code ${code}${stderr ? `: ${stderr}` : ''}`);
         resolve(null);
       } else {
         resolve(new Uint8Array(Buffer.concat(chunks)));
