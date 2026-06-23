@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/org-issue-type",
+  "$id": "https://enbox.id/schemas/forge/org-issue-type",
   "title": "OrgIssueTypeData",
   "description": "An organization-level issue type definition",
   "type": "object",

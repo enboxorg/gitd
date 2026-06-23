@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/merge-result",
+  "$id": "https://enbox.id/schemas/forge/merge-result",
   "title": "MergeResultData",
   "description": "The result of merging a patch, recording who performed the merge.",
   "type": "object",

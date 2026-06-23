@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/org-member",
+  "$id": "https://enbox.id/schemas/forge/org-member",
   "title": "OrgMemberData",
   "description": "A member of an organization",
   "type": "object",

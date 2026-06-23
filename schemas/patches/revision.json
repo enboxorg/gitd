@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/revision",
+  "$id": "https://enbox.id/schemas/forge/revision",
   "title": "RevisionData",
   "description": "A patch revision containing an optional description and diff statistics.",
   "type": "object",

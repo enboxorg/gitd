@@ -57,18 +57,18 @@ export type ForgeCiSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeCiDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/ci',
+  protocol  : 'https://enbox.id/protocols/forge/ci',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     checkSuite: {
-      schema      : 'https://enbox.org/schemas/forge/check-suite',
+      schema      : 'https://enbox.id/schemas/forge/check-suite',
       dataFormats : ['application/json'],
     },
     checkRun: {
-      schema      : 'https://enbox.org/schemas/forge/check-run',
+      schema      : 'https://enbox.id/schemas/forge/check-run',
       dataFormats : ['application/json'],
     },
     artifact: {

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/org-custom-property",
+  "$id": "https://enbox.id/schemas/forge/org-custom-property",
   "title": "OrgCustomPropertyData",
   "description": "An organization-level repository custom property definition",
   "type": "object",

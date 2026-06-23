@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/block",
+  "$id": "https://enbox.id/schemas/forge/block",
   "title": "BlockData",
   "description": "A user blocked by the local actor",
   "type": "object",

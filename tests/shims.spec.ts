@@ -505,7 +505,7 @@ describe('Package manager shims', () => {
         expect(res.status).toBe(200);
 
         const body = res.body as string;
-        expect(body).toContain(`module did.enbox.org/${testDid}/my-mod`);
+        expect(body).toContain(`module did.enbox.id/${testDid}/my-mod`);
         expect(body).toContain('go 1.21');
       });
 
@@ -518,7 +518,7 @@ describe('Package manager shims', () => {
 
         const body = res.body as string;
         expect(body).toContain('require (');
-        expect(body).toContain(`did.enbox.org/${testDid}/my-mod`);
+        expect(body).toContain(`did.enbox.id/${testDid}/my-mod`);
       });
     });
 

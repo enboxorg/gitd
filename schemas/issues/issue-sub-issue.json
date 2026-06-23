@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/issue-sub-issue",
+  "$id": "https://enbox.id/schemas/forge/issue-sub-issue",
   "title": "IssueSubIssueData",
   "description": "An ordered sub-issue edge from a parent issue to a child issue",
   "type": "object",

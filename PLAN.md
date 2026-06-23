@@ -130,7 +130,7 @@ Features that require global aggregation (star counts, cross-DWN search, trendin
 
 ## 4. Protocol Architecture
 
-All protocols use the `https://enbox.org/protocols/forge/` namespace. Each protocol definition follows the `@enbox/protocols` pattern: data types, SchemaMap, raw `ProtocolDefinition`, and typed protocol via `defineProtocol()`.
+All protocols use the `https://enbox.id/protocols/forge/` namespace. Each protocol definition follows the `@enbox/protocols` pattern: data types, SchemaMap, raw `ProtocolDefinition`, and typed protocol via `defineProtocol()`.
 
 ### 4.1 Repository Protocol (`forge-repo`)
 
@@ -138,19 +138,19 @@ The foundational protocol. Defines repository metadata, collaborator roles, and 
 
 ```typescript
 export const ForgeRepoDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/repo',
+  protocol  : 'https://enbox.id/protocols/forge/repo',
   published : true,
   types     : {
-    repo         : { schema: 'https://enbox.org/schemas/forge/repo',         dataFormats: ['application/json'] },
-    settings     : { schema: 'https://enbox.org/schemas/forge/settings',     dataFormats: ['application/json'] },
+    repo         : { schema: 'https://enbox.id/schemas/forge/repo',         dataFormats: ['application/json'] },
+    settings     : { schema: 'https://enbox.id/schemas/forge/settings',     dataFormats: ['application/json'] },
     readme       : { dataFormats: ['text/markdown', 'text/plain'] },
     license      : { dataFormats: ['text/plain'] },
     bundle       : { dataFormats: ['application/x-git-bundle'] },
-    maintainer   : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
-    triager      : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
-    contributor  : { schema: 'https://enbox.org/schemas/forge/collaborator', dataFormats: ['application/json'] },
-    topic        : { schema: 'https://enbox.org/schemas/forge/topic',        dataFormats: ['application/json'] },
-    webhook      : { schema: 'https://enbox.org/schemas/forge/webhook',      dataFormats: ['application/json'], encryptionRequired: true },
+    maintainer   : { schema: 'https://enbox.id/schemas/forge/collaborator', dataFormats: ['application/json'] },
+    triager      : { schema: 'https://enbox.id/schemas/forge/collaborator', dataFormats: ['application/json'] },
+    contributor  : { schema: 'https://enbox.id/schemas/forge/collaborator', dataFormats: ['application/json'] },
+    topic        : { schema: 'https://enbox.id/schemas/forge/topic',        dataFormats: ['application/json'] },
+    webhook      : { schema: 'https://enbox.id/schemas/forge/webhook',      dataFormats: ['application/json'], encryptionRequired: true },
   },
   structure: {
     repo: {
@@ -254,16 +254,16 @@ export type CollaboratorData = {
 
 ```typescript
 export const ForgeIssuesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/issues',
+  protocol  : 'https://enbox.id/protocols/forge/issues',
   published : true,
-  uses      : { repo: 'https://enbox.org/protocols/forge/repo' },
+  uses      : { repo: 'https://enbox.id/protocols/forge/repo' },
   types     : {
-    issue        : { schema: 'https://enbox.org/schemas/forge/issue',         dataFormats: ['application/json'] },
-    comment      : { schema: 'https://enbox.org/schemas/forge/comment',       dataFormats: ['application/json'] },
-    reaction     : { schema: 'https://enbox.org/schemas/forge/reaction',      dataFormats: ['application/json'] },
-    label        : { schema: 'https://enbox.org/schemas/forge/label',         dataFormats: ['application/json'] },
-    statusChange : { schema: 'https://enbox.org/schemas/forge/status-change', dataFormats: ['application/json'] },
-    assignment   : { schema: 'https://enbox.org/schemas/forge/assignment',    dataFormats: ['application/json'] },
+    issue        : { schema: 'https://enbox.id/schemas/forge/issue',         dataFormats: ['application/json'] },
+    comment      : { schema: 'https://enbox.id/schemas/forge/comment',       dataFormats: ['application/json'] },
+    reaction     : { schema: 'https://enbox.id/schemas/forge/reaction',      dataFormats: ['application/json'] },
+    label        : { schema: 'https://enbox.id/schemas/forge/label',         dataFormats: ['application/json'] },
+    statusChange : { schema: 'https://enbox.id/schemas/forge/status-change', dataFormats: ['application/json'] },
+    assignment   : { schema: 'https://enbox.id/schemas/forge/assignment',    dataFormats: ['application/json'] },
   },
   structure: {
     repo: {
@@ -393,16 +393,16 @@ Pull requests, code review, and merge tracking.
 
 ```typescript
 export const ForgePatchesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/patches',
+  protocol  : 'https://enbox.id/protocols/forge/patches',
   published : true,
-  uses      : { repo: 'https://enbox.org/protocols/forge/repo' },
+  uses      : { repo: 'https://enbox.id/protocols/forge/repo' },
   types     : {
-    patch         : { schema: 'https://enbox.org/schemas/forge/patch',              dataFormats: ['application/json'] },
-    revision      : { schema: 'https://enbox.org/schemas/forge/revision',           dataFormats: ['application/json'] },
-    review        : { schema: 'https://enbox.org/schemas/forge/review',             dataFormats: ['application/json'] },
-    reviewComment : { schema: 'https://enbox.org/schemas/forge/review-comment',     dataFormats: ['application/json'] },
-    statusChange  : { schema: 'https://enbox.org/schemas/forge/patch-status-change', dataFormats: ['application/json'] },
-    mergeResult   : { schema: 'https://enbox.org/schemas/forge/merge-result',       dataFormats: ['application/json'] },
+    patch         : { schema: 'https://enbox.id/schemas/forge/patch',              dataFormats: ['application/json'] },
+    revision      : { schema: 'https://enbox.id/schemas/forge/revision',           dataFormats: ['application/json'] },
+    review        : { schema: 'https://enbox.id/schemas/forge/review',             dataFormats: ['application/json'] },
+    reviewComment : { schema: 'https://enbox.id/schemas/forge/review-comment',     dataFormats: ['application/json'] },
+    statusChange  : { schema: 'https://enbox.id/schemas/forge/patch-status-change', dataFormats: ['application/json'] },
+    mergeResult   : { schema: 'https://enbox.id/schemas/forge/merge-result',       dataFormats: ['application/json'] },
   },
   structure: {
     repo: {
@@ -530,12 +530,12 @@ export type MergeResultData = { mergedBy: string };
 
 ```typescript
 export const ForgeCiDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/ci',
+  protocol  : 'https://enbox.id/protocols/forge/ci',
   published : true,
-  uses      : { repo: 'https://enbox.org/protocols/forge/repo' },
+  uses      : { repo: 'https://enbox.id/protocols/forge/repo' },
   types     : {
-    checkSuite : { schema: 'https://enbox.org/schemas/forge/check-suite', dataFormats: ['application/json'] },
-    checkRun   : { schema: 'https://enbox.org/schemas/forge/check-run',   dataFormats: ['application/json'] },
+    checkSuite : { schema: 'https://enbox.id/schemas/forge/check-suite', dataFormats: ['application/json'] },
+    checkRun   : { schema: 'https://enbox.id/schemas/forge/check-run',   dataFormats: ['application/json'] },
     artifact   : { dataFormats: ['application/octet-stream', 'application/gzip', 'application/zip'] },
   },
   structure: {
@@ -601,11 +601,11 @@ export const ForgeCiDefinition = {
 
 ```typescript
 export const ForgeReleasesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/releases',
+  protocol  : 'https://enbox.id/protocols/forge/releases',
   published : true,
-  uses      : { repo: 'https://enbox.org/protocols/forge/repo' },
+  uses      : { repo: 'https://enbox.id/protocols/forge/repo' },
   types     : {
-    release   : { schema: 'https://enbox.org/schemas/forge/release', dataFormats: ['application/json'] },
+    release   : { schema: 'https://enbox.id/schemas/forge/release', dataFormats: ['application/json'] },
     asset     : { dataFormats: ['application/octet-stream', 'application/gzip', 'application/zip', 'application/x-tar'] },
     signature : { dataFormats: ['application/pgp-signature', 'application/json'] },
   },
@@ -662,13 +662,13 @@ export const ForgeReleasesDefinition = {
 
 ```typescript
 export const ForgeRegistryDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/registry',
+  protocol  : 'https://enbox.id/protocols/forge/registry',
   published : true,
   types     : {
-    package     : { schema: 'https://enbox.org/schemas/forge/package',         dataFormats: ['application/json'] },
-    version     : { schema: 'https://enbox.org/schemas/forge/package-version', dataFormats: ['application/json'] },
+    package     : { schema: 'https://enbox.id/schemas/forge/package',         dataFormats: ['application/json'] },
+    version     : { schema: 'https://enbox.id/schemas/forge/package-version', dataFormats: ['application/json'] },
     tarball     : { dataFormats: ['application/gzip', 'application/octet-stream'] },
-    attestation : { schema: 'https://enbox.org/schemas/forge/attestation',     dataFormats: ['application/json'] },
+    attestation : { schema: 'https://enbox.id/schemas/forge/attestation',     dataFormats: ['application/json'] },
   },
   structure: {
     package: {
@@ -727,12 +727,12 @@ export const ForgeRegistryDefinition = {
 
 ```typescript
 export const ForgeSocialDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/social',
+  protocol  : 'https://enbox.id/protocols/forge/social',
   published : true,
   types     : {
-    star     : { schema: 'https://enbox.org/schemas/forge/star',     dataFormats: ['application/json'] },
-    follow   : { schema: 'https://enbox.org/schemas/forge/follow',   dataFormats: ['application/json'] },
-    activity : { schema: 'https://enbox.org/schemas/forge/activity', dataFormats: ['application/json'] },
+    star     : { schema: 'https://enbox.id/schemas/forge/star',     dataFormats: ['application/json'] },
+    follow   : { schema: 'https://enbox.id/schemas/forge/follow',   dataFormats: ['application/json'] },
+    activity : { schema: 'https://enbox.id/schemas/forge/activity', dataFormats: ['application/json'] },
   },
   structure: {
     star: {
@@ -775,10 +775,10 @@ export const ForgeSocialDefinition = {
 
 ```typescript
 export const ForgeNotificationsDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/notifications',
+  protocol  : 'https://enbox.id/protocols/forge/notifications',
   published : false,   // Private — notifications are personal
   types     : {
-    notification: { schema: 'https://enbox.org/schemas/forge/notification', dataFormats: ['application/json'] },
+    notification: { schema: 'https://enbox.id/schemas/forge/notification', dataFormats: ['application/json'] },
   },
   structure: {
     notification: {
@@ -807,12 +807,12 @@ export const ForgeNotificationsDefinition = {
 
 ```typescript
 export const ForgeWikiDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/wiki',
+  protocol  : 'https://enbox.id/protocols/forge/wiki',
   published : true,
-  uses      : { repo: 'https://enbox.org/protocols/forge/repo' },
+  uses      : { repo: 'https://enbox.id/protocols/forge/repo' },
   types     : {
-    page        : { schema: 'https://enbox.org/schemas/forge/wiki-page',    dataFormats: ['text/markdown'] },
-    pageHistory : { schema: 'https://enbox.org/schemas/forge/wiki-history', dataFormats: ['application/json'] },
+    page        : { schema: 'https://enbox.id/schemas/forge/wiki-page',    dataFormats: ['text/markdown'] },
+    pageHistory : { schema: 'https://enbox.id/schemas/forge/wiki-history', dataFormats: ['application/json'] },
   },
   structure: {
     repo: {
@@ -851,14 +851,14 @@ Wiki pages are mutable (updated in place), but each edit creates an `$immutable`
 
 ```typescript
 export const ForgeOrgDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/org',
+  protocol  : 'https://enbox.id/protocols/forge/org',
   published : true,
   types     : {
-    org        : { schema: 'https://enbox.org/schemas/forge/org',         dataFormats: ['application/json'] },
-    owner      : { schema: 'https://enbox.org/schemas/forge/org-member',  dataFormats: ['application/json'] },
-    member     : { schema: 'https://enbox.org/schemas/forge/org-member',  dataFormats: ['application/json'] },
-    team       : { schema: 'https://enbox.org/schemas/forge/team',        dataFormats: ['application/json'] },
-    teamMember : { schema: 'https://enbox.org/schemas/forge/team-member', dataFormats: ['application/json'] },
+    org        : { schema: 'https://enbox.id/schemas/forge/org',         dataFormats: ['application/json'] },
+    owner      : { schema: 'https://enbox.id/schemas/forge/org-member',  dataFormats: ['application/json'] },
+    member     : { schema: 'https://enbox.id/schemas/forge/org-member',  dataFormats: ['application/json'] },
+    team       : { schema: 'https://enbox.id/schemas/forge/team',        dataFormats: ['application/json'] },
+    teamMember : { schema: 'https://enbox.id/schemas/forge/team-member', dataFormats: ['application/json'] },
   },
   structure: {
     org: {
@@ -946,7 +946,7 @@ Query the DWN for the repo record:
 
 ```
 RecordsQuery {
-  protocol     : 'https://enbox.org/protocols/forge/repo',
+  protocol     : 'https://enbox.id/protocols/forge/repo',
   protocolPath : 'repo',
   filter       : { tags: { name: '<repo-name>' } }
 }
@@ -982,7 +982,7 @@ While git objects stay in native git storage, **branch ref pointers** can be mir
 ```typescript
 // Track branch heads for subscription-based push notifications
 types: {
-  ref: { schema: 'https://enbox.org/schemas/forge/git-ref', dataFormats: ['application/json'] }
+  ref: { schema: 'https://enbox.id/schemas/forge/git-ref', dataFormats: ['application/json'] }
 }
 // Data: { name: "refs/heads/main", target: "abc123def...", type: "branch" }
 ```
@@ -1119,10 +1119,10 @@ The DID is embedded in the npm scope: `@did:dht:abc123` → DID `did:dht:abc123`
 
 ```bash
 gitd shim go --port 4874
-GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0
+GOPROXY=http://localhost:4874 go get did.enbox.id/did:dht:abc123/my-mod@v1.0.0
 ```
 
-Module paths use `did.enbox.org/` as a virtual domain prefix. The shim generates `go.mod` files with DID-scoped dependencies mapped to `did.enbox.org/` paths:
+Module paths use `did.enbox.id/` as a virtual domain prefix. The shim generates `go.mod` files with DID-scoped dependencies mapped to `did.enbox.id/` paths:
 - `GET /{module}/@v/list` → version listing
 - `GET /{module}/@v/{ver}.info` → version JSON (Version + Time)
 - `GET /{module}/@v/{ver}.mod` → generated go.mod
@@ -1234,7 +1234,7 @@ await agent.dwn.processRequest({
   target       : ownerDid,
   messageType  : DwnInterface.RecordsWrite,
   messageParams: {
-    protocol        : 'https://enbox.org/protocols/forge/repo',
+    protocol        : 'https://enbox.id/protocols/forge/repo',
     protocolPath    : 'repo/maintainer',
     parentContextId : repoContextId,
     recipient       : aliceDid,
@@ -1264,7 +1264,7 @@ await agent.dwn.processRequest({
   target       : bobDid,          // Writing to Bob's DWN
   messageType  : DwnInterface.RecordsWrite,
   messageParams: {
-    protocol        : 'https://enbox.org/protocols/forge/patches',
+    protocol        : 'https://enbox.id/protocols/forge/patches',
     protocolPath    : 'repo/patch',
     protocolRole    : 'repo:repo/contributor',
     parentContextId : bobsRepoContextId,  // Links to repo via $ref

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/team",
+  "$id": "https://enbox.id/schemas/forge/team",
   "title": "TeamData",
   "description": "A team within an organization",
   "type": "object",

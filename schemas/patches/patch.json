@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/patch",
+  "$id": "https://enbox.id/schemas/forge/patch",
   "title": "PatchData",
   "description": "A forge patch proposal containing a title, body, and optional sequence number.",
   "type": "object",

@@ -81,37 +81,37 @@ export type ForgePatchesSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgePatchesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/patches',
+  protocol  : 'https://enbox.id/protocols/forge/patches',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     patch: {
-      schema      : 'https://enbox.org/schemas/forge/patch',
+      schema      : 'https://enbox.id/schemas/forge/patch',
       dataFormats : ['application/json'],
     },
     revision: {
-      schema      : 'https://enbox.org/schemas/forge/revision',
+      schema      : 'https://enbox.id/schemas/forge/revision',
       dataFormats : ['application/json'],
     },
     revisionBundle: {
       dataFormats: ['application/x-git-bundle'],
     },
     review: {
-      schema      : 'https://enbox.org/schemas/forge/review',
+      schema      : 'https://enbox.id/schemas/forge/review',
       dataFormats : ['application/json'],
     },
     reviewComment: {
-      schema      : 'https://enbox.org/schemas/forge/review-comment',
+      schema      : 'https://enbox.id/schemas/forge/review-comment',
       dataFormats : ['application/json'],
     },
     statusChange: {
-      schema      : 'https://enbox.org/schemas/forge/patch-status-change',
+      schema      : 'https://enbox.id/schemas/forge/patch-status-change',
       dataFormats : ['application/json'],
     },
     mergeResult: {
-      schema      : 'https://enbox.org/schemas/forge/merge-result',
+      schema      : 'https://enbox.id/schemas/forge/merge-result',
       dataFormats : ['application/json'],
     },
   },

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/settings",
+  "$id": "https://enbox.id/schemas/forge/settings",
   "title": "SettingsData",
   "description": "Repository settings including branch protection rules, merge strategies, and auto-delete behavior.",
   "type": "object",

@@ -592,15 +592,15 @@ export type ForgeRepoSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeRepoDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/repo',
+  protocol  : 'https://enbox.id/protocols/forge/repo',
   published : true,
   types     : {
     repo: {
-      schema      : 'https://enbox.org/schemas/forge/repo',
+      schema      : 'https://enbox.id/schemas/forge/repo',
       dataFormats : ['application/json'],
     },
     settings: {
-      schema      : 'https://enbox.org/schemas/forge/settings',
+      schema      : 'https://enbox.id/schemas/forge/settings',
       dataFormats : ['application/json'],
     },
     readme: {
@@ -610,42 +610,42 @@ export const ForgeRepoDefinition = {
       dataFormats: ['text/plain'],
     },
     maintainer: {
-      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      schema      : 'https://enbox.id/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
     moderator: {
-      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      schema      : 'https://enbox.id/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
     triager: {
-      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      schema      : 'https://enbox.id/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
     contributor: {
-      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      schema      : 'https://enbox.id/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
     viewer: {
-      schema      : 'https://enbox.org/schemas/forge/collaborator',
+      schema      : 'https://enbox.id/schemas/forge/collaborator',
       dataFormats : ['application/json'],
     },
     topic: {
-      schema      : 'https://enbox.org/schemas/forge/topic',
+      schema      : 'https://enbox.id/schemas/forge/topic',
       dataFormats : ['application/json'],
     },
     submissionDecision: {
-      schema      : 'https://enbox.org/schemas/forge/submission-decision',
+      schema      : 'https://enbox.id/schemas/forge/submission-decision',
       dataFormats : ['application/json'],
     },
     moderationEvent: {
-      schema      : 'https://enbox.org/schemas/forge/moderation-event',
+      schema      : 'https://enbox.id/schemas/forge/moderation-event',
       dataFormats : ['application/json'],
     },
     bundle: {
       dataFormats: ['application/x-git-bundle'],
     },
     webhook: {
-      schema             : 'https://enbox.org/schemas/forge/webhook',
+      schema             : 'https://enbox.id/schemas/forge/webhook',
       dataFormats        : ['application/json'],
       encryptionRequired : true,
     },

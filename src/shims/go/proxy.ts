@@ -4,9 +4,9 @@
  *
  * Implements the GOPROXY protocol (https://go.dev/ref/mod#goproxy-protocol)
  * for DID-scoped Go modules.  Module paths use the format:
- *   `did.enbox.org/did:<method>:<id>/<module>`
+ *   `did.enbox.id/did:<method>:<id>/<module>`
  *
- * The `did.enbox.org` prefix is a virtual domain that the shim
+ * The `did.enbox.id` prefix is a virtual domain that the shim
  * intercepts.  The DID and module name are extracted from the path.
  *
  * Endpoints:
@@ -75,9 +75,9 @@ function gone(message: string): GoProxyResponse {
  * Go module paths are URL-encoded in the GOPROXY protocol — uppercase
  * letters become `!` + lowercase (Go module proxy encoding).
  *
- * Format: `did.enbox.org/did:<method>:<id>/<module>`
+ * Format: `did.enbox.id/did:<method>:<id>/<module>`
  *
- * The `did.enbox.org/` prefix is stripped by the time it reaches us
+ * The `did.enbox.id/` prefix is stripped by the time it reaches us
  * (it's part of the GOPROXY URL, not the request path).  The path
  * starts with `did:<method>:<id>/<module>`.
  */
@@ -120,15 +120,15 @@ function stripV(version: string): string {
  * Generate a minimal `go.mod` file for a DID-scoped module.
  */
 function generateGoMod(did: string, name: string, deps: Record<string, string>): string {
-  const modulePath = `did.enbox.org/${did}/${name}`;
+  const modulePath = `did.enbox.id/${did}/${name}`;
   const lines = [`module ${modulePath}`, '', 'go 1.21', ''];
 
   const depEntries = Object.entries(deps);
   if (depEntries.length > 0) {
     lines.push('require (');
     for (const [dep, ver] of depEntries) {
-      // DID-scoped deps: did:dht:abc/utils → did.enbox.org/did:dht:abc/utils
-      const goPath = dep.startsWith('did:') ? `did.enbox.org/${dep}` : dep;
+      // DID-scoped deps: did:dht:abc/utils → did.enbox.id/did:dht:abc/utils
+      const goPath = dep.startsWith('did:') ? `did.enbox.id/${dep}` : dep;
       const goVer = ver.startsWith('v') ? ver : `v${ver}`;
       lines.push(`\t${goPath} ${goVer}`);
     }
@@ -151,7 +151,7 @@ async function handleVersionList(
 ): Promise<GoProxyResponse> {
   const pkg = await resolvePackage(ctx, did, name, 'go');
   if (!pkg) {
-    return gone(`module not found: did.enbox.org/${did}/${name}`);
+    return gone(`module not found: did.enbox.id/${did}/${name}`);
   }
 
   const versions = await listVersions(ctx, did, pkg.contextId);
@@ -176,7 +176,7 @@ async function handleVersionInfo(
 ): Promise<GoProxyResponse> {
   const pkg = await resolvePackage(ctx, did, name, 'go');
   if (!pkg) {
-    return gone(`module not found: did.enbox.org/${did}/${name}`);
+    return gone(`module not found: did.enbox.id/${did}/${name}`);
   }
 
   const ver = await resolveVersion(ctx, did, pkg.contextId, stripV(version));
@@ -200,7 +200,7 @@ async function handleGoMod(
 ): Promise<GoProxyResponse> {
   const pkg = await resolvePackage(ctx, did, name, 'go');
   if (!pkg) {
-    return gone(`module not found: did.enbox.org/${did}/${name}`);
+    return gone(`module not found: did.enbox.id/${did}/${name}`);
   }
 
   const ver = await resolveVersion(ctx, did, pkg.contextId, stripV(version));
@@ -224,7 +224,7 @@ async function handleModuleZip(
 ): Promise<GoProxyResponse> {
   const pkg = await resolvePackage(ctx, did, name, 'go');
   if (!pkg) {
-    return gone(`module not found: did.enbox.org/${did}/${name}`);
+    return gone(`module not found: did.enbox.id/${did}/${name}`);
   }
 
   const ver = await resolveVersion(ctx, did, pkg.contextId, stripV(version));
@@ -256,7 +256,7 @@ async function handleLatest(
 ): Promise<GoProxyResponse> {
   const pkg = await resolvePackage(ctx, did, name, 'go');
   if (!pkg) {
-    return gone(`module not found: did.enbox.org/${did}/${name}`);
+    return gone(`module not found: did.enbox.id/${did}/${name}`);
   }
 
   const versions = await listVersions(ctx, did, pkg.contextId);

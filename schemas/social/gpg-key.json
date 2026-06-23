@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/gpg-key",
+  "$id": "https://enbox.id/schemas/forge/gpg-key",
   "title": "GpgKeyData",
   "type": "object",
   "properties": {

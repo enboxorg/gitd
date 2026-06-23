@@ -41,11 +41,11 @@ export type ForgeNotificationsSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeNotificationsDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/notifications',
+  protocol  : 'https://enbox.id/protocols/forge/notifications',
   published : false,
   types     : {
     notification: {
-      schema      : 'https://enbox.org/schemas/forge/notification',
+      schema      : 'https://enbox.id/schemas/forge/notification',
       dataFormats : ['application/json'],
     },
   },

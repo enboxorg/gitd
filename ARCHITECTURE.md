@@ -45,7 +45,7 @@ This document provides a high-level overview of how `gitd` works. For detailed p
 
 ## Protocols
 
-`gitd` defines a set of DWN protocols under the `https://enbox.org/protocols/forge/` namespace. Each protocol is self-contained with its own types, schemas, and authorization rules.
+`gitd` defines a set of DWN protocols under the `https://enbox.id/protocols/forge/` namespace. Each protocol is self-contained with its own types, schemas, and authorization rules.
 
 | Protocol | Purpose |
 |---|---|

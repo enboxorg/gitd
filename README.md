@@ -129,7 +129,7 @@ Local proxies that let existing tools talk to DWN without modification. Run them
 |---|---|
 | **GitHub API** | `gh repo view did:dht:abc/my-repo` |
 | **npm** | `npm install --registry=http://localhost:4873 @did:dht:abc/my-pkg` |
-| **Go** | `GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc/my-mod` |
+| **Go** | `GOPROXY=http://localhost:4874 go get did.enbox.id/did:dht:abc/my-mod` |
 | **OCI** | `docker pull localhost:5555/did:dht:abc/my-image:v1.0.0` |
 
 ## Web UI

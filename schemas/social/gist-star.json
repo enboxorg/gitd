@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/gist-star",
+  "$id": "https://enbox.id/schemas/forge/gist-star",
   "title": "GistStarData",
   "description": "A gist starred by a DID",
   "type": "object",

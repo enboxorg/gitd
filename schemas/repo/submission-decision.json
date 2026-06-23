@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/submission-decision",
+  "$id": "https://enbox.id/schemas/forge/submission-decision",
   "title": "SubmissionDecisionData",
   "description": "A repo-owner decision for an external issue or patch submission.",
   "type": "object",

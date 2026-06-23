@@ -201,59 +201,59 @@ export type ForgeSocialSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeSocialDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/social',
+  protocol  : 'https://enbox.id/protocols/forge/social',
   published : true,
   types     : {
     star: {
-      schema      : 'https://enbox.org/schemas/forge/star',
+      schema      : 'https://enbox.id/schemas/forge/star',
       dataFormats : ['application/json'],
     },
     follow: {
-      schema      : 'https://enbox.org/schemas/forge/follow',
+      schema      : 'https://enbox.id/schemas/forge/follow',
       dataFormats : ['application/json'],
     },
     block: {
-      schema      : 'https://enbox.org/schemas/forge/block',
+      schema      : 'https://enbox.id/schemas/forge/block',
       dataFormats : ['application/json'],
     },
     sshKey: {
-      schema      : 'https://enbox.org/schemas/forge/ssh-key',
+      schema      : 'https://enbox.id/schemas/forge/ssh-key',
       dataFormats : ['application/json'],
     },
     sshSigningKey: {
-      schema      : 'https://enbox.org/schemas/forge/ssh-signing-key',
+      schema      : 'https://enbox.id/schemas/forge/ssh-signing-key',
       dataFormats : ['application/json'],
     },
     gpgKey: {
-      schema      : 'https://enbox.org/schemas/forge/gpg-key',
+      schema      : 'https://enbox.id/schemas/forge/gpg-key',
       dataFormats : ['application/json'],
     },
     email: {
-      schema      : 'https://enbox.org/schemas/forge/email',
+      schema      : 'https://enbox.id/schemas/forge/email',
       dataFormats : ['application/json'],
     },
     profile: {
-      schema      : 'https://enbox.org/schemas/forge/profile',
+      schema      : 'https://enbox.id/schemas/forge/profile',
       dataFormats : ['application/json'],
     },
     socialAccount: {
-      schema      : 'https://enbox.org/schemas/forge/social-account',
+      schema      : 'https://enbox.id/schemas/forge/social-account',
       dataFormats : ['application/json'],
     },
     gist: {
-      schema      : 'https://enbox.org/schemas/forge/gist',
+      schema      : 'https://enbox.id/schemas/forge/gist',
       dataFormats : ['application/json'],
     },
     gistComment: {
-      schema      : 'https://enbox.org/schemas/forge/gist-comment',
+      schema      : 'https://enbox.id/schemas/forge/gist-comment',
       dataFormats : ['application/json'],
     },
     gistStar: {
-      schema      : 'https://enbox.org/schemas/forge/gist-star',
+      schema      : 'https://enbox.id/schemas/forge/gist-star',
       dataFormats : ['application/json'],
     },
     activity: {
-      schema      : 'https://enbox.org/schemas/forge/activity',
+      schema      : 'https://enbox.id/schemas/forge/activity',
       dataFormats : ['application/json'],
     },
   },

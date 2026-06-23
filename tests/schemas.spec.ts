@@ -56,7 +56,7 @@ describe('JSON Schemas', () => {
           const schema = readSchema(subdir, file);
           expect(schema.$schema).toBe('http://json-schema.org/draft-07/schema#');
           expect(schema.$id).toBeDefined();
-          expect(schema.$id).toMatch(/^https:\/\/enbox\.org\/schemas\/forge\//);
+          expect(schema.$id).toMatch(/^https:\/\/enbox\.id\/schemas\/forge\//);
           expect(schema.type).toBe('object');
           expect(schema.title).toBeDefined();
           expect(typeof schema.title).toBe('string');

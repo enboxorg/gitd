@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/assignment",
+  "$id": "https://enbox.id/schemas/forge/assignment",
   "title": "AssignmentData",
   "description": "An assignment of a user to an issue",
   "type": "object",

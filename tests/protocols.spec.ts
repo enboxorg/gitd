@@ -33,7 +33,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRepoProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRepoDefinition.protocol).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeRepoDefinition.protocol).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should be a published protocol', () => {
@@ -185,7 +185,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRefsProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRefsDefinition.protocol).toBe('https://enbox.org/protocols/forge/refs');
+      expect(ForgeRefsDefinition.protocol).toBe('https://enbox.id/protocols/forge/refs');
     });
 
     it('should be a published protocol', () => {
@@ -194,16 +194,16 @@ describe('@enbox/gitd', () => {
 
     it('should compose with Forge Repo via uses', () => {
       expect(ForgeRefsDefinition.uses).toBeDefined();
-      expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define the ref and branch state types', () => {
       expect(ForgeRefsDefinition.types.ref).toBeDefined();
-      expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.org/schemas/forge/git-ref');
+      expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.id/schemas/forge/git-ref');
       expect(ForgeRefsDefinition.types.ref.dataFormats).toContain('application/json');
-      expect(ForgeRefsDefinition.types.branch.schema).toBe('https://enbox.org/schemas/forge/branch');
+      expect(ForgeRefsDefinition.types.branch.schema).toBe('https://enbox.id/schemas/forge/branch');
       expect(ForgeRefsDefinition.types.branch.dataFormats).toContain('application/json');
-      expect(ForgeRefsDefinition.types.state.schema).toBe('https://enbox.org/schemas/forge/branch-state');
+      expect(ForgeRefsDefinition.types.state.schema).toBe('https://enbox.id/schemas/forge/branch-state');
       expect(ForgeRefsDefinition.types.state.dataFormats).toContain('application/json');
       expect(ForgeRefsDefinition.types.bundle.dataFormats).toContain('application/x-git-bundle');
     });
@@ -313,7 +313,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeIssuesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeIssuesDefinition.protocol).toBe('https://enbox.org/protocols/forge/issues');
+      expect(ForgeIssuesDefinition.protocol).toBe('https://enbox.id/protocols/forge/issues');
     });
 
     it('should be a published protocol', () => {
@@ -322,7 +322,7 @@ describe('@enbox/gitd', () => {
 
     it('should compose with Forge Repo via uses', () => {
       expect(ForgeIssuesDefinition.uses).toBeDefined();
-      expect(ForgeIssuesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeIssuesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define all expected types', () => {
@@ -428,7 +428,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgePatchesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgePatchesDefinition.protocol).toBe('https://enbox.org/protocols/forge/patches');
+      expect(ForgePatchesDefinition.protocol).toBe('https://enbox.id/protocols/forge/patches');
     });
 
     it('should be a published protocol', () => {
@@ -436,7 +436,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgePatchesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgePatchesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define all expected types', () => {
@@ -626,7 +626,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeCiProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeCiDefinition.protocol).toBe('https://enbox.org/protocols/forge/ci');
+      expect(ForgeCiDefinition.protocol).toBe('https://enbox.id/protocols/forge/ci');
     });
 
     it('should be a published protocol', () => {
@@ -634,7 +634,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeCiDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeCiDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define checkSuite, checkRun, and artifact types', () => {
@@ -702,7 +702,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeReleasesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeReleasesDefinition.protocol).toBe('https://enbox.org/protocols/forge/releases');
+      expect(ForgeReleasesDefinition.protocol).toBe('https://enbox.id/protocols/forge/releases');
     });
 
     it('should be a published protocol', () => {
@@ -710,7 +710,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeReleasesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeReleasesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define release, asset, and signature types', () => {
@@ -775,7 +775,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRegistryProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRegistryDefinition.protocol).toBe('https://enbox.org/protocols/forge/registry');
+      expect(ForgeRegistryDefinition.protocol).toBe('https://enbox.id/protocols/forge/registry');
     });
 
     it('should be a published protocol', () => {
@@ -857,7 +857,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeSocialProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeSocialDefinition.protocol).toBe('https://enbox.org/protocols/forge/social');
+      expect(ForgeSocialDefinition.protocol).toBe('https://enbox.id/protocols/forge/social');
     });
 
     it('should be a published protocol', () => {
@@ -961,7 +961,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeNotificationsProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeNotificationsDefinition.protocol).toBe('https://enbox.org/protocols/forge/notifications');
+      expect(ForgeNotificationsDefinition.protocol).toBe('https://enbox.id/protocols/forge/notifications');
     });
 
     it('should be a private (not published) protocol', () => {
@@ -1012,7 +1012,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeWikiProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeWikiDefinition.protocol).toBe('https://enbox.org/protocols/forge/wiki');
+      expect(ForgeWikiDefinition.protocol).toBe('https://enbox.id/protocols/forge/wiki');
     });
 
     it('should be a published protocol', () => {
@@ -1020,7 +1020,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeWikiDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeWikiDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define page and pageHistory types', () => {
@@ -1077,7 +1077,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeOrgProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeOrgDefinition.protocol).toBe('https://enbox.org/protocols/forge/org');
+      expect(ForgeOrgDefinition.protocol).toBe('https://enbox.id/protocols/forge/org');
     });
 
     it('should be a published protocol', () => {
@@ -1181,22 +1181,22 @@ describe('@enbox/gitd', () => {
       const uniqueUris = new Set(uris);
       expect(uniqueUris.size).toBe(11);
       for (const uri of uris) {
-        expect(uri).toMatch(/^https:\/\/enbox\.org\/protocols\/forge\//);
+        expect(uri).toMatch(/^https:\/\/enbox\.id\/protocols\/forge\//);
       }
     });
 
-    it('should use https://enbox.org/schemas/forge/ for all schema URIs', () => {
+    it('should use https://enbox.id/schemas/forge/ for all schema URIs', () => {
       for (const def of allDefinitions) {
         for (const [, typeConfig] of Object.entries(def.types)) {
           if ('schema' in typeConfig && typeConfig.schema !== undefined) {
-            expect(typeConfig.schema).toMatch(/^https:\/\/enbox\.org\/schemas\/forge\//);
+            expect(typeConfig.schema).toMatch(/^https:\/\/enbox\.id\/schemas\/forge\//);
           }
         }
       }
     });
 
     it('should only reference repo protocol in uses declarations', () => {
-      const repoUri = 'https://enbox.org/protocols/forge/repo';
+      const repoUri = 'https://enbox.id/protocols/forge/repo';
       for (const def of allDefinitions) {
         if (def.uses !== undefined) {
           for (const [, uri] of Object.entries(def.uses)) {
@@ -1209,7 +1209,7 @@ describe('@enbox/gitd', () => {
     it('should have notifications as the only private protocol', () => {
       const privateProtocols = allDefinitions.filter((d) => d.published === false);
       expect(privateProtocols).toHaveLength(1);
-      expect(privateProtocols[0].protocol).toBe('https://enbox.org/protocols/forge/notifications');
+      expect(privateProtocols[0].protocol).toBe('https://enbox.id/protocols/forge/notifications');
     });
 
     it('should have all Protocol wrappers referencing their definitions', () => {

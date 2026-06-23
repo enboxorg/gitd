@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/branch-state",
+  "$id": "https://enbox.id/schemas/forge/branch-state",
   "title": "BranchStateData",
   "description": "A branch ref update or authoritative checkpoint for a branch-owned git state log.",
   "type": "object",

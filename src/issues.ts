@@ -96,46 +96,46 @@ export type ForgeIssuesSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeIssuesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/issues',
+  protocol  : 'https://enbox.id/protocols/forge/issues',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     issue: {
-      schema      : 'https://enbox.org/schemas/forge/issue',
+      schema      : 'https://enbox.id/schemas/forge/issue',
       dataFormats : ['application/json'],
     },
     comment: {
-      schema      : 'https://enbox.org/schemas/forge/comment',
+      schema      : 'https://enbox.id/schemas/forge/comment',
       dataFormats : ['application/json'],
     },
     reaction: {
-      schema      : 'https://enbox.org/schemas/forge/reaction',
+      schema      : 'https://enbox.id/schemas/forge/reaction',
       dataFormats : ['application/json'],
     },
     label: {
-      schema      : 'https://enbox.org/schemas/forge/label',
+      schema      : 'https://enbox.id/schemas/forge/label',
       dataFormats : ['application/json'],
     },
     statusChange: {
-      schema      : 'https://enbox.org/schemas/forge/status-change',
+      schema      : 'https://enbox.id/schemas/forge/status-change',
       dataFormats : ['application/json'],
     },
     assignment: {
-      schema      : 'https://enbox.org/schemas/forge/assignment',
+      schema      : 'https://enbox.id/schemas/forge/assignment',
       dataFormats : ['application/json'],
     },
     issueDependency: {
-      schema      : 'https://enbox.org/schemas/forge/issue-dependency',
+      schema      : 'https://enbox.id/schemas/forge/issue-dependency',
       dataFormats : ['application/json'],
     },
     subIssue: {
-      schema      : 'https://enbox.org/schemas/forge/issue-sub-issue',
+      schema      : 'https://enbox.id/schemas/forge/issue-sub-issue',
       dataFormats : ['application/json'],
     },
     issueFieldValue: {
-      schema      : 'https://enbox.org/schemas/forge/issue-field-value',
+      schema      : 'https://enbox.id/schemas/forge/issue-field-value',
       dataFormats : ['application/json'],
     },
   },

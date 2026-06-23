@@ -103,22 +103,22 @@ export type ForgeRefsSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeRefsDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/refs',
+  protocol  : 'https://enbox.id/protocols/forge/refs',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     ref: {
-      schema      : 'https://enbox.org/schemas/forge/git-ref',
+      schema      : 'https://enbox.id/schemas/forge/git-ref',
       dataFormats : ['application/json'],
     },
     branch: {
-      schema      : 'https://enbox.org/schemas/forge/branch',
+      schema      : 'https://enbox.id/schemas/forge/branch',
       dataFormats : ['application/json'],
     },
     state: {
-      schema      : 'https://enbox.org/schemas/forge/branch-state',
+      schema      : 'https://enbox.id/schemas/forge/branch-state',
       dataFormats : ['application/json'],
     },
     bundle: {

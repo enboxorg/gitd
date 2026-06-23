@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/org",
+  "$id": "https://enbox.id/schemas/forge/org",
   "title": "OrgData",
   "description": "An organization that owns repositories and has members",
   "type": "object",

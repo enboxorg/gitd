@@ -610,8 +610,8 @@ describe('GitHub API compatibility shim', () => {
       data: {
         name        : ORG_NAME,
         description : 'Decentralized forge organization',
-        homepage    : 'https://enbox.org',
-        avatar      : 'https://enbox.org/avatar.png',
+        homepage    : 'https://enbox.id',
+        avatar      : 'https://enbox.id/avatar.png',
       },
     });
     const orgContextId = orgRec!.contextId ?? '';
@@ -934,13 +934,13 @@ describe('GitHub API compatibility shim', () => {
       const res = await handleShimRequest(ctx, orgUrl('/repos'), 'POST', {
         name        : ORG_API_REPO_NAME,
         description : 'Organization route repository',
-        homepage    : 'https://enbox.org/repos/org-api-repo',
+        homepage    : 'https://enbox.id/repos/org-api-repo',
         visibility  : 'public',
       }, null, shimOptions());
       expect(res.status).toBe(201);
       const created = parse(res);
       expect(created.name).toBe(ORG_API_REPO_NAME);
-      expect(created.homepage).toBe('https://enbox.org/repos/org-api-repo');
+      expect(created.homepage).toBe('https://enbox.id/repos/org-api-repo');
       expect(created.visibility).toBe('public');
 
       const list = parse(await handleShimRequest(ctx, orgUrl('/repos?type=public')));
@@ -1050,7 +1050,7 @@ describe('GitHub API compatibility shim', () => {
         has_projects                 : true,
         has_pull_requests            : false,
         has_wiki                     : false,
-        homepage                     : 'https://enbox.org/repos/repo-lifecycle-renamed',
+        homepage                     : 'https://enbox.id/repos/repo-lifecycle-renamed',
         is_template                  : true,
         name                         : REPO_LIFECYCLE_RENAMED_REPO_NAME,
         private                      : false,
@@ -1062,7 +1062,7 @@ describe('GitHub API compatibility shim', () => {
       expect(updated.name).toBe(REPO_LIFECYCLE_RENAMED_REPO_NAME);
       expect(updated.full_name).toBe(`${testDid}/${REPO_LIFECYCLE_RENAMED_REPO_NAME}`);
       expect(updated.description).toBe('Updated through PATCH /repos');
-      expect(updated.homepage).toBe('https://enbox.org/repos/repo-lifecycle-renamed');
+      expect(updated.homepage).toBe('https://enbox.id/repos/repo-lifecycle-renamed');
       expect(updated.private).toBe(false);
       expect(updated.visibility).toBe('public');
       expect(updated.default_branch).toBe('trunk');
@@ -2410,16 +2410,16 @@ describe('GitHub API compatibility shim', () => {
       expect(initialData.login).toBe(ORG_NAME);
       expect(initialData.type).toBe('Organization');
       expect(initialData.members_url).toContain('/members{/member}');
-      expect(initialData.blog).toBe('https://enbox.org');
+      expect(initialData.blog).toBe('https://enbox.id');
 
       const updated = await handleShimRequest(ctx, orgUrl(''), 'PATCH', {
         description : 'Updated decentralized forge organization',
-        blog        : 'https://forge.enbox.org',
+        blog        : 'https://forge.enbox.id',
       });
       expect(updated.status).toBe(200);
       const updatedData = parse(updated);
       expect(updatedData.description).toBe('Updated decentralized forge organization');
-      expect(updatedData.blog).toBe('https://forge.enbox.org');
+      expect(updatedData.blog).toBe('https://forge.enbox.id');
 
       const missing = await handleShimRequest(ctx, url('/orgs/missing-org'));
       expect(missing.status).toBe(404);

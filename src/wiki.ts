@@ -46,18 +46,18 @@ export type ForgeWikiSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeWikiDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/wiki',
+  protocol  : 'https://enbox.id/protocols/forge/wiki',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     page: {
-      schema      : 'https://enbox.org/schemas/forge/wiki-page',
+      schema      : 'https://enbox.id/schemas/forge/wiki-page',
       dataFormats : ['text/markdown'],
     },
     pageHistory: {
-      schema      : 'https://enbox.org/schemas/forge/wiki-history',
+      schema      : 'https://enbox.id/schemas/forge/wiki-history',
       dataFormats : ['application/json'],
     },
   },

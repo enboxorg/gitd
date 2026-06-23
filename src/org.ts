@@ -148,48 +148,48 @@ export type ForgeOrgSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeOrgDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/org',
+  protocol  : 'https://enbox.id/protocols/forge/org',
   published : true,
   types     : {
     org: {
-      schema      : 'https://enbox.org/schemas/forge/org',
+      schema      : 'https://enbox.id/schemas/forge/org',
       dataFormats : ['application/json'],
     },
     owner: {
-      schema      : 'https://enbox.org/schemas/forge/org-member',
+      schema      : 'https://enbox.id/schemas/forge/org-member',
       dataFormats : ['application/json'],
     },
     member: {
-      schema      : 'https://enbox.org/schemas/forge/org-member',
+      schema      : 'https://enbox.id/schemas/forge/org-member',
       dataFormats : ['application/json'],
     },
     blockedUser: {
-      schema      : 'https://enbox.org/schemas/forge/org-blocked-user',
+      schema      : 'https://enbox.id/schemas/forge/org-blocked-user',
       dataFormats : ['application/json'],
     },
     team: {
-      schema      : 'https://enbox.org/schemas/forge/team',
+      schema      : 'https://enbox.id/schemas/forge/team',
       dataFormats : ['application/json'],
     },
     teamMember: {
-      schema      : 'https://enbox.org/schemas/forge/team-member',
+      schema      : 'https://enbox.id/schemas/forge/team-member',
       dataFormats : ['application/json'],
     },
     webhook: {
-      schema             : 'https://enbox.org/schemas/forge/org-webhook',
+      schema             : 'https://enbox.id/schemas/forge/org-webhook',
       dataFormats        : ['application/json'],
       encryptionRequired : true,
     },
     issueField: {
-      schema      : 'https://enbox.org/schemas/forge/org-issue-field',
+      schema      : 'https://enbox.id/schemas/forge/org-issue-field',
       dataFormats : ['application/json'],
     },
     issueType: {
-      schema      : 'https://enbox.org/schemas/forge/org-issue-type',
+      schema      : 'https://enbox.id/schemas/forge/org-issue-type',
       dataFormats : ['application/json'],
     },
     customProperty: {
-      schema      : 'https://enbox.org/schemas/forge/org-custom-property',
+      schema      : 'https://enbox.id/schemas/forge/org-custom-property',
       dataFormats : ['application/json'],
     },
   },
