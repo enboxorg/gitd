@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 import { flagValue } from '../flags.js';
+import { getVaultPassword } from '../../git-remote/tty-prompt.js';
 import { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from '../../daemon/lifecycle.js';
 
 // ---------------------------------------------------------------------------
@@ -83,7 +84,8 @@ async function restartCmd(profileName?: string): Promise<void> {
   stopDaemon({ profileName });
   console.log('Starting daemon...');
   try {
-    const result = await ensureDaemon(undefined, { profileName });
+    const password = getVaultPassword() ?? undefined;
+    const result = await ensureDaemon(password, { profileName });
     console.log(`Daemon started on port ${result.port}.`);
   } catch (err) {
     console.error(`Failed to start daemon: ${(err as Error).message}`);

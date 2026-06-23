@@ -710,6 +710,29 @@ describe('gitd CLI commands', () => {
         rmSync(tmpDir, { recursive: true, force: true });
       }
     });
+
+    it('should store the active profile in local git config', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const absReposPath = resolve(REPOS_PATH);
+      const tmpDir = join(absReposPath, '__profile-local-test');
+      mkdirSync(tmpDir, { recursive: true });
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpDir);
+        await captureLog(() =>
+          initCommand({ ...ctx, profileName: 'alice' }, ['profile-local-test', '--repos', absReposPath]),
+        );
+        const profileCheck = spawnSync('git', ['config', '--local', 'enbox.profile'], {
+          cwd   : tmpDir,
+          stdio : 'pipe',
+        });
+        expect(profileCheck.status).toBe(0);
+        expect(profileCheck.stdout.toString().trim()).toBe('alice');
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
   });
 
   // =========================================================================

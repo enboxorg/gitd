@@ -117,6 +117,9 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
 
     // Store the repo name in git config so subsequent commands can auto-detect it.
     spawnSync('git', ['config', 'enbox.repo', name], { stdio: 'pipe' });
+    if (ctx.profileName) {
+      spawnSync('git', ['config', 'enbox.profile', ctx.profileName], { stdio: 'pipe' });
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -195,4 +198,3 @@ function setupLocalRepo(branch: string, remoteUrl: string): LocalSetupResult {
 
   return result;
 }
-

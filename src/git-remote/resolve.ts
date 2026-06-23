@@ -20,6 +20,7 @@ import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 import { ensureDaemon } from '../daemon/lifecycle.js';
 import { getVaultPassword } from './tty-prompt.js';
 import { readLockfile } from '../daemon/lockfile.js';
+import { resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -179,8 +180,10 @@ async function resolveLocalDaemon(
   repo?: string,
   mode: LocalDaemonMode = 'owner-only',
 ): Promise<GitEndpoint | null> {
+  const profileName = resolveProfile() ?? undefined;
+
   // Fast path: check for an already-running daemon.
-  const lock = readLockfile();
+  const lock = readLockfile(profileName) ?? (profileName ? readLockfile() : null);
   if (lock) {
     // Only use the local daemon when the requested DID matches the
     // daemon's owner.  Cloning someone else's repo must fall through
@@ -221,8 +224,8 @@ async function resolveLocalDaemon(
   if (!password) { return null; }
 
   try {
-    const result = await ensureDaemon(password);
-    const spawnedLock = readLockfile();
+    const result = await ensureDaemon(password, { profileName });
+    const spawnedLock = readLockfile(profileName);
     if (mode === 'owner-only' && spawnedLock?.ownerDid && spawnedLock.ownerDid !== did) {
       return null;
     }

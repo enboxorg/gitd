@@ -383,8 +383,9 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
 
 import { createServer } from 'node:http';
 import { dirname } from 'node:path';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
 
+import { writeConfig } from '../src/profiles/config.js';
 import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
 describe('daemon lockfile', () => {
@@ -472,6 +473,86 @@ describe('resolveGitEndpoint with local daemon', () => {
     const result = await resolveGitEndpoint('did:dht:abc123');
     expect(result.source).toBe('LocalDaemon');
     expect(result.url).toBe(`http://127.0.0.1:${port}/did%3Adht%3Aabc123`);
+  });
+});
+
+describe('resolveGitEndpoint with a default profile daemon', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  const envHome = process.env.ENBOX_HOME;
+  const envGitdProfile = process.env.GITD_PROFILE;
+  const envEnboxProfile = process.env.ENBOX_PROFILE;
+  const envGitdPassword = process.env.GITD_PASSWORD;
+  const ownerDid = 'did:dht:profileowner';
+  const testHome = '__TESTDATA__/git-remote-profile-home';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+  });
+
+  beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    delete process.env.GITD_PROFILE;
+    delete process.env.ENBOX_PROFILE;
+    delete process.env.GITD_PASSWORD;
+    writeConfig({
+      version        : 1,
+      defaultProfile : 'default',
+      profiles       : {
+        default: {
+          name      : 'default',
+          did       : ownerDid,
+          createdAt : new Date().toISOString(),
+        },
+      },
+    });
+    writeLockfile(port, '1.0.0', ownerDid, { profileName: 'default' });
+  });
+
+  afterEach(() => {
+    removeLockfile('default');
+    rmSync(testHome, { recursive: true, force: true });
+    if (envHome !== undefined) {
+      process.env.ENBOX_HOME = envHome;
+    } else {
+      delete process.env.ENBOX_HOME;
+    }
+    if (envGitdProfile !== undefined) {
+      process.env.GITD_PROFILE = envGitdProfile;
+    } else {
+      delete process.env.GITD_PROFILE;
+    }
+    if (envEnboxProfile !== undefined) {
+      process.env.ENBOX_PROFILE = envEnboxProfile;
+    } else {
+      delete process.env.ENBOX_PROFILE;
+    }
+    if (envGitdPassword !== undefined) {
+      process.env.GITD_PASSWORD = envGitdPassword;
+    } else {
+      delete process.env.GITD_PASSWORD;
+    }
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('should resolve through the profile-scoped daemon without GITD_PROFILE set', async () => {
+    const result = await resolveGitEndpoint(ownerDid, 'my-repo');
+    expect(result.source).toBe('LocalDaemon');
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(ownerDid)}/my-repo`);
   });
 });
 
