@@ -45,6 +45,7 @@ describe('@enbox/gitd/git-server exports', () => {
     expect(typeof mod.createBundleSyncer).toBe('function');
     expect(typeof mod.createFullBundle).toBe('function');
     expect(typeof mod.createIncrementalBundle).toBe('function');
+    expect(typeof mod.createBranchBundle).toBe('function');
     expect(typeof mod.restoreFromBundles).toBe('function');
   });
 
@@ -61,12 +62,23 @@ describe('@enbox/gitd/git-server exports', () => {
     expect(typeof mod.createDidSignatureVerifier).toBe('function');
   });
 
+  it('should export push update parsing utilities', async () => {
+    const mod = await import('../src/git-server/index.js');
+    expect(typeof mod.parseReceivePackUpdates).toBe('function');
+    expect(typeof mod.parseReceivePackUpdatesFromRequest).toBe('function');
+  });
+
+  it('should export remote branch sync utilities', async () => {
+    const mod = await import('../src/git-server/index.js');
+    expect(typeof mod.syncRemoteBranchPush).toBe('function');
+  });
+
   it('should export exactly the expected number of symbols', async () => {
     const mod = await import('../src/git-server/index.js');
     const exported = Object.keys(mod);
-    // 20 functions + 1 constant + 1 class = 22 runtime exports
+    // 24 functions + 1 constant + 1 class = 26 runtime exports
     // (types are erased at runtime)
-    expect(exported.length).toBe(22);
+    expect(exported.length).toBe(26);
   });
 });
 

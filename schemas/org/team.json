@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/team",
+  "$id": "https://enbox.id/schemas/forge/team",
   "title": "TeamData",
   "description": "A team within an organization",
   "type": "object",
@@ -10,6 +10,31 @@
     },
     "description": {
       "type": "string"
+    },
+    "privacy": {
+      "type": "string",
+      "enum": ["visible", "secret"]
+    },
+    "repositories": {
+      "type": "object",
+      "description": "GitHub-compatible team repository grants keyed by owner/repo",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string",
+            "enum": ["pull", "triage", "push", "maintain", "admin"]
+          }
+        },
+        "required": ["owner", "repo", "permission"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["name"],

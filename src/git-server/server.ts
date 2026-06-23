@@ -20,9 +20,12 @@
  */
 
 import type { IncomingMessage } from 'node:http';
+import type { PushRefUpdate } from './push-updates.js';
+import type { CliRpcRequest, CliRpcResponse } from '../cli/local-rpc.js';
 
 import { createServer } from 'node:http';
 
+import { CLI_RPC_PATH } from '../cli/local-rpc.js';
 import { createGitHttpHandler } from './http-handler.js';
 import { GitBackend } from './git-backend.js';
 
@@ -54,13 +57,30 @@ export type GitServerOptions = {
    * Optional authentication callback for push operations.
    * @see GitHttpHandlerOptions.authenticatePush
    */
-  authenticatePush?: (request: Request, did: string, repo: string) => Promise<boolean>;
+  authenticatePush?: (
+    request: Request,
+    did: string,
+    repo: string,
+    updates?: readonly PushRefUpdate[],
+  ) => Promise<boolean>;
+
+  /**
+   * Whether receive-pack ref discovery requires push auth. Actual
+   * receive-pack POST requests remain authenticated when `authenticatePush`
+   * is configured.
+   */
+  authenticateReceivePackDiscovery?: boolean;
 
   /**
    * Optional callback invoked after a successful push.
    * @see GitHttpHandlerOptions.onPushComplete
    */
-  onPushComplete?: (did: string, repo: string, repoPath: string) => Promise<void>;
+  onPushComplete?: (
+    did: string,
+    repo: string,
+    repoPath: string,
+    context?: { updates?: readonly PushRefUpdate[] },
+  ) => Promise<void>;
 
   /**
    * Optional callback invoked when a repo is not found on disk.
@@ -68,6 +88,12 @@ export type GitServerOptions = {
    * @see GitHttpHandlerOptions.onRepoNotFound
    */
   onRepoNotFound?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
+
+  /**
+   * Optional callback invoked before serving clone/fetch for an existing repo.
+   * Implementations can refresh stale remote mirrors from DWN bundle records.
+   */
+  onRepoAccess?: (did: string, repo: string, repoPath: string) => Promise<boolean>;
 
   /**
    * Maximum request body size in bytes for POST requests (git pack data).
@@ -93,6 +119,12 @@ export type GitServerOptions = {
    * @returns Push credentials (username + password) or null if generation fails
    */
   generateToken?: (owner: string, repo: string) => Promise<{ username: string; password: string } | null>;
+
+  /**
+   * Optional local-only command executor used by one-shot CLI invocations
+   * when the profile helper already owns the agent stores.
+   */
+  handleCliCommand?: (request: CliRpcRequest) => Promise<CliRpcResponse>;
 };
 
 /** A running git server instance. */
@@ -124,11 +156,14 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     hostname = '0.0.0.0',
     pathPrefix,
     authenticatePush,
+    authenticateReceivePackDiscovery,
     onPushComplete,
     onRepoNotFound,
+    onRepoAccess,
     maxBodySize = DEFAULT_MAX_BODY_GIT,
     onRequest,
     generateToken,
+    handleCliCommand,
   } = options;
 
   const backend = new GitBackend({ basePath });
@@ -137,8 +172,10 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     backend,
     pathPrefix,
     authenticatePush,
+    authenticateReceivePackDiscovery,
     onPushComplete,
     onRepoNotFound,
+    onRepoAccess,
   });
 
   const server = createServer(async (req, res) => {
@@ -148,6 +185,37 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', service: 'git-server' }));
+      return;
+    }
+
+    if (req.url === CLI_RPC_PATH && req.method === 'POST') {
+      if (!handleCliCommand) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'cli rpc not configured' }));
+        return;
+      }
+      if (!isLocalRequest(req)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'cli rpc is local-only' }));
+        return;
+      }
+
+      try {
+        const bodyBuf = await collectRequestBody(req, 1_000_000);
+        if (!bodyBuf) {
+          res.writeHead(413, { 'Content-Type': 'text/plain' });
+          res.end('Payload Too Large');
+          return;
+        }
+
+        const commandRequest = JSON.parse(new TextDecoder().decode(bodyBuf)) as CliRpcRequest;
+        const commandResponse = await handleCliCommand(commandRequest);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(commandResponse));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: (err as Error).message }));
+      }
       return;
     }
 
@@ -195,6 +263,9 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
     try {
       // Build a Request object from the Node.js IncomingMessage.
       const url = `http://${req.headers.host ?? 'localhost'}${req.url ?? '/'}`;
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[http] ${req.method ?? 'GET'} ${req.url ?? '/'} auth=${req.headers.authorization ? 'present' : 'missing'}`);
+      }
       const headers = new Headers();
       for (const [key, value] of Object.entries(req.headers)) {
         if (value) {
@@ -223,10 +294,16 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
       const response = await fetchHandler(request);
 
       // Write response back to Node.js ServerResponse.
+      res.shouldKeepAlive = false;
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => { responseHeaders[key] = value; });
       res.writeHead(response.status, responseHeaders);
       if (response.body) {
+        if (response.headers.has('content-length')) {
+          res.end(Buffer.from(await response.arrayBuffer()));
+          return;
+        }
+
         const reader = response.body.getReader();
         try {
           while (true) {
@@ -283,6 +360,13 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function isLocalRequest(req: IncomingMessage): boolean {
+  const address = req.socket.remoteAddress;
+  return address === '127.0.0.1'
+    || address === '::1'
+    || address === '::ffff:127.0.0.1';
+}
 
 /**
  * Collect the full request body from a Node.js IncomingMessage.

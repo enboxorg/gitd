@@ -16,8 +16,12 @@
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
+import { cacheAgentDid } from './identity.js';
+import { createTestIdentity } from './identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
+
+import type { PushRefUpdate } from '../../src/git-server/push-updates.js';
 
 import { createDidSignatureVerifier } from '../../src/git-server/verify.js';
 import { createDwnPushAuthorizer } from '../../src/git-server/push-authorizer.js';
@@ -64,18 +68,15 @@ async function main(): Promise<void> {
     await agent.initialize({ password });
     await agent.start({ password });
   }
+  await cacheAgentDid(agent);
 
   const identities = await agent.identity.list();
   let identity = identities[0];
   if (!identity) {
-    identity = await agent.identity.create({
-      didMethod  : 'jwk',
-      metadata   : { name: 'Test Daemon' },
-      didOptions : { algorithm: 'Ed25519' },
-    });
+    identity = await createTestIdentity(agent, 'Test Daemon');
   }
 
-  const enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+  const enbox = new Enbox({ agent, connectedDid: identity.did.uri });
   const repoHandle = enbox.using(ForgeRepoProtocol);
   const refsHandle = enbox.using(ForgeRefsProtocol);
   await repoHandle.configure();
@@ -101,13 +102,20 @@ async function main(): Promise<void> {
   // Push authentication — inline authenticator WITHOUT nonce replay protection.
   // Git reuses the same credentials for both ref discovery GET and receive-pack
   // POST within a single push, so nonce-tracking would reject the second call.
-  const verifySignature = createDidSignatureVerifier();
+  const verifySignature = createDidSignatureVerifier({
+    didDocuments: [identity.did.document],
+  });
   const authorizePush = createDwnPushAuthorizer({
     repo     : repoHandle,
     ownerDid : identity.did.uri,
   });
 
-  const authenticatePush = async (request: Request, did: string, repo: string): Promise<boolean> => {
+  const authenticatePush = async (
+    request: Request,
+    did: string,
+    repo: string,
+    updates?: readonly PushRefUpdate[],
+  ): Promise<boolean> => {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader?.startsWith('Basic ')) { return false; }
 
@@ -132,7 +140,7 @@ async function main(): Promise<void> {
     const signatureBytes = new Uint8Array(Buffer.from(signed.signature, 'base64url'));
     if (!(await verifySignature(payload.did, tokenBytes, signatureBytes))) { return false; }
 
-    return authorizePush(payload.did, did, repo);
+    return authorizePush(payload.did, did, repo, updates);
   };
 
   // Token generation — the credential helper calls this via /auth/token.

@@ -8,7 +8,7 @@
  *   gitd shim go [--port 4874]
  *
  * Then:
- *   GOPROXY=http://localhost:4874 go get did.enbox.org/did:dht:abc123/my-mod@v1.0.0
+ *   GOPROXY=http://localhost:4874 go get did.enbox.id/did:dht:abc123/my-mod@v1.0.0
  *
  * @module
  */
@@ -74,7 +74,7 @@ export function startGoShim(options: GoShimOptions): Server {
   server.listen(port, () => {
     console.log(`[go-shim] Go module proxy running at http://localhost:${port}`);
     console.log('[go-shim] Usage:');
-    console.log(`  GOPROXY=http://localhost:${port} go get did.enbox.org/did:dht:<id>/<module>@v1.0.0`);
+    console.log(`  GOPROXY=http://localhost:${port} go get did.enbox.id/did:dht:<id>/<module>@v1.0.0`);
     console.log('');
   });
 

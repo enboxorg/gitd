@@ -2,9 +2,9 @@
  * Daemon lockfile — discovery mechanism for the local gitd server.
  *
  * When `gitd serve` starts, it writes a JSON lockfile to
- * `~/.enbox/daemon.lock` containing `{ pid, port, startedAt }`.
+ * `~/.enbox/daemon.lock` containing `{ pid, port, startedAt, ownerDid }`.
  * `git-remote-did` reads this file to discover a running local daemon
- * and resolve `did::` remotes to `http://localhost:<port>/...` instead
+ * and resolve `did::` remotes to `http://127.0.0.1:<port>/...` instead
  * of performing DID document resolution.
  *
  * The lockfile is removed on graceful shutdown and validated (PID check)
@@ -16,7 +16,7 @@
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
-import { enboxHome } from '../profiles/config.js';
+import { enboxHome, profilesDir } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,14 +35,32 @@ export type DaemonLock = {
 
   /** The gitd version that started this daemon (for upgrade detection). */
   version?: string;
+
+  /** The DID of the identity that owns this daemon. */
+  ownerDid?: string;
+
+  /**
+   * True when this daemon can serve as a local DWN-backed helper for repos
+   * owned by DIDs other than `ownerDid`.
+   */
+  dwnHelper?: boolean;
 };
 
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
+/** Resolve the profile whose daemon lockfile should be used, if any. */
+function lockfileProfile(profileName?: string): string | undefined {
+  return profileName || process.env.GITD_PROFILE || process.env.ENBOX_PROFILE || undefined;
+}
+
 /** Path to the daemon lockfile. */
-export function lockfilePath(): string {
+export function lockfilePath(profileName?: string): string {
+  const profile = lockfileProfile(profileName);
+  if (profile) {
+    return join(profilesDir(), profile, 'daemon.lock');
+  }
   return join(enboxHome(), 'daemon.lock');
 }
 
@@ -50,22 +68,37 @@ export function lockfilePath(): string {
 // Write / remove
 // ---------------------------------------------------------------------------
 
+/** Additional advertised daemon capabilities. */
+export type WriteLockfileOptions = {
+  /** Advertise that this daemon can restore/fetch remote-owner repos from DWN records. */
+  dwnHelper?: boolean;
+  /** Named profile this daemon serves. Defaults to the active GITD/ENBOX profile env. */
+  profileName?: string;
+};
+
 /** Write the daemon lockfile. Overwrites any existing file. */
-export function writeLockfile(port: number, version?: string): void {
+export function writeLockfile(
+  port: number,
+  version?: string,
+  ownerDid?: string,
+  options: WriteLockfileOptions = {},
+): void {
   const lock: DaemonLock = {
     pid       : process.pid,
     port,
     startedAt : new Date().toISOString(),
     ...(version ? { version } : {}),
+    ...(ownerDid ? { ownerDid } : {}),
+    ...(options.dwnHelper ? { dwnHelper: true } : {}),
   };
-  const path = lockfilePath();
+  const path = lockfilePath(options.profileName);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(lock, null, 2) + '\n', { mode: 0o644 });
 }
 
 /** Remove the daemon lockfile if it exists and belongs to this process. */
-export function removeLockfile(): void {
-  const path = lockfilePath();
+export function removeLockfile(profileName?: string): void {
+  const path = lockfilePath(profileName);
   if (!existsSync(path)) { return; }
 
   try {
@@ -92,8 +125,8 @@ export function removeLockfile(): void {
  * Returns `null` if the lockfile doesn't exist, is corrupt, or the
  * recorded PID is no longer running (stale lockfile).
  */
-export function readLockfile(): DaemonLock | null {
-  const path = lockfilePath();
+export function readLockfile(profileName?: string): DaemonLock | null {
+  const path = lockfilePath(profileName);
   if (!existsSync(path)) { return null; }
 
   try {

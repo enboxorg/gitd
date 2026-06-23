@@ -242,13 +242,15 @@ describe('createPushAuthenticator', () => {
 
   it('should call authorizePush when provided and signature is valid', async () => {
     let authorizeCalled = false;
+    const updates = [{ oldTarget: null, newTarget: 'a'.repeat(40), refName: 'refs/heads/main' }];
     const authenticator = createPushAuthenticator({
       verifySignature : alwaysValid,
-      authorizePush   : async (did, owner, repo) => {
+      authorizePush   : async (did, owner, repo, receivedUpdates) => {
         authorizeCalled = true;
         expect(did).toBe(TEST_DID);
         expect(owner).toBe(OWNER_DID);
         expect(repo).toBe(REPO);
+        expect(receivedUpdates).toEqual(updates);
         return true;
       },
     });
@@ -258,7 +260,7 @@ describe('createPushAuthenticator', () => {
     const signed = { signature: 'fake-sig', token };
     const request = makeAuthRequest(signed);
 
-    const result = await authenticator(request, OWNER_DID, REPO);
+    const result = await authenticator(request, OWNER_DID, REPO, updates);
     expect(result).toBe(true);
     expect(authorizeCalled).toBe(true);
   });

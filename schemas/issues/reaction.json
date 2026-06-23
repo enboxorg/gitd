@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/reaction",
+  "$id": "https://enbox.id/schemas/forge/reaction",
   "title": "ReactionData",
   "description": "An emoji reaction on an issue or comment",
   "type": "object",

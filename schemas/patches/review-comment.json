@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/review-comment",
+  "$id": "https://enbox.id/schemas/forge/review-comment",
   "title": "ReviewCommentData",
   "description": "A comment on a patch review with a required body and optional diff hunk context.",
   "type": "object",

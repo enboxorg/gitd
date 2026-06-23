@@ -290,6 +290,23 @@ describe('createGitHttpHandler', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should allow receive-pack ref discovery when discovery auth is disabled', async () => {
+      let authCalled = false;
+      const authHandler = createGitHttpHandler({
+        backend,
+        authenticatePush: async () => {
+          authCalled = true;
+          return false;
+        },
+        authenticateReceivePackDiscovery: false,
+      });
+
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/info/refs?service=git-receive-pack`);
+      const res = await authHandler(req);
+      expect(res.status).toBe(200);
+      expect(authCalled).toBe(false);
+    });
+
     it('should not call auth for upload-pack (read operations)', async () => {
       let authCalled = false;
       const authHandler = createGitHttpHandler({
@@ -304,6 +321,31 @@ describe('createGitHttpHandler', () => {
       const res = await authHandler(req);
       expect(res.status).toBe(200);
       expect(authCalled).toBe(false);
+    });
+
+    it('should pass receive-pack ref updates to auth callback', async () => {
+      let refName: string | undefined;
+      const authHandler = createGitHttpHandler({
+        backend,
+        authenticatePush: async (_request, _did, _repo, updates) => {
+          refName = updates?.[0]?.refName;
+          return false;
+        },
+      });
+
+      const oldTarget = '0'.repeat(40);
+      const newTarget = '1'.repeat(40);
+      const command = `${oldTarget} ${newTarget} refs/heads/main\0report-status\n`;
+      const body = (command.length + 4).toString(16).padStart(4, '0') + command + '0000';
+
+      const req = new Request(`http://localhost/${TEST_DID}/${TEST_REPO}/git-receive-pack`, {
+        method  : 'POST',
+        body,
+        headers : { 'Content-Type': 'application/x-git-receive-pack-request' },
+      });
+      const res = await authHandler(req);
+      expect(res.status).toBe(401);
+      expect(refName).toBe('refs/heads/main');
     });
   });
 

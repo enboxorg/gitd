@@ -76,7 +76,8 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
       defaultBranch : branch,
       dwnEndpoints,
     },
-    tags: {
+    published : visibility === 'public',
+    tags      : {
       name,
       visibility,
     },
@@ -194,5 +195,4 @@ function setupLocalRepo(branch: string, remoteUrl: string): LocalSetupResult {
 
   return result;
 }
-
 

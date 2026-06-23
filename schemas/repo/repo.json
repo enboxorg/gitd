@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/repo",
+  "$id": "https://enbox.id/schemas/forge/repo",
   "title": "RepoData",
   "description": "Repository metadata including name, description, default branch, and endpoints.",
   "type": "object",
@@ -28,6 +28,58 @@
       "items": {
         "type": "string"
       }
+    },
+    "hasIssues": {
+      "type": "boolean"
+    },
+    "hasProjects": {
+      "type": "boolean"
+    },
+    "hasWiki": {
+      "type": "boolean"
+    },
+    "hasDownloads": {
+      "type": "boolean"
+    },
+    "hasPullRequests": {
+      "type": "boolean"
+    },
+    "isTemplate": {
+      "type": "boolean"
+    },
+    "allowSquashMerge": {
+      "type": "boolean"
+    },
+    "allowMergeCommit": {
+      "type": "boolean"
+    },
+    "allowRebaseMerge": {
+      "type": "boolean"
+    },
+    "allowAutoMerge": {
+      "type": "boolean"
+    },
+    "allowForking": {
+      "type": "boolean"
+    },
+    "deleteBranchOnMerge": {
+      "type": "boolean"
+    },
+    "webCommitSignoffRequired": {
+      "type": "boolean"
+    },
+    "pullRequestCreationPolicy": {
+      "type": "string",
+      "enum": ["all", "collaborators_only"]
+    },
+    "forkedFromDid": {
+      "type": "string"
+    },
+    "forkedFromRepoName": {
+      "type": "string"
+    },
+    "forkedFromRecordId": {
+      "type": "string"
     }
   },
   "required": ["name", "defaultBranch", "dwnEndpoints"],

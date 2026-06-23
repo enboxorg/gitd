@@ -1,12 +1,31 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/check-suite",
+  "$id": "https://enbox.id/schemas/forge/check-suite",
   "title": "CheckSuiteData",
   "description": "A CI check suite associated with a branch",
   "type": "object",
   "properties": {
+    "app": {
+      "type": "string"
+    },
     "headBranch": {
       "type": "string"
+    },
+    "event": {
+      "type": "string"
+    },
+    "displayTitle": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object",
+      "maxProperties": 25,
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
     },
     "conclusion": {
       "type": "string"

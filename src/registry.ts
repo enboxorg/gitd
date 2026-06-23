@@ -56,22 +56,22 @@ export type ForgeRegistrySchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeRegistryDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/registry',
+  protocol  : 'https://enbox.id/protocols/forge/registry',
   published : true,
   types     : {
     package: {
-      schema      : 'https://enbox.org/schemas/forge/package',
+      schema      : 'https://enbox.id/schemas/forge/package',
       dataFormats : ['application/json'],
     },
     version: {
-      schema      : 'https://enbox.org/schemas/forge/package-version',
+      schema      : 'https://enbox.id/schemas/forge/package-version',
       dataFormats : ['application/json'],
     },
     tarball: {
       dataFormats: ['application/gzip', 'application/octet-stream'],
     },
     attestation: {
-      schema      : 'https://enbox.org/schemas/forge/attestation',
+      schema      : 'https://enbox.id/schemas/forge/attestation',
       dataFormats : ['application/json'],
     },
   },

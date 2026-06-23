@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/release",
+  "$id": "https://enbox.id/schemas/forge/release",
   "title": "ReleaseData",
   "description": "A versioned release of a repository",
   "type": "object",
@@ -10,8 +10,48 @@
     },
     "body": {
       "type": "string"
+    },
+    "discussionCategoryName": {
+      "type": "string"
+    },
+    "publishedAt": {
+      "type": "string"
+    },
+    "makeLatest": {
+      "type": "string",
+      "enum": ["true", "false", "legacy"]
+    },
+    "reactions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/releaseReaction"
+      }
     }
   },
   "required": ["name"],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "releaseReaction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "userDid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "type": "string",
+          "enum": ["+1", "laugh", "heart", "hooray", "rocket", "eyes"]
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "userDid", "content", "createdAt"],
+      "additionalProperties": false
+    }
+  }
 }

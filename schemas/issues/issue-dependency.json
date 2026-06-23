@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.id/schemas/forge/issue-dependency",
+  "title": "IssueDependencyData",
+  "description": "A dependency edge from an issue to a blocking issue",
+  "type": "object",
+  "properties": {
+    "issueId": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": ["issueId"],
+  "additionalProperties": false
+}

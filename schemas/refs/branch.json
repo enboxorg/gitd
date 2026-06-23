@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.id/schemas/forge/branch",
+  "title": "BranchData",
+  "description": "Stable metadata for a branch-owned git state log.",
+  "type": "object",
+  "properties": {
+    "refName": {
+      "type": "string",
+      "description": "Full branch ref name, e.g. refs/heads/main"
+    },
+    "ownerDid": {
+      "type": "string",
+      "description": "DID that owns this branch log"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["contributor", "protected", "shared"],
+      "description": "Branch ownership class"
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "Optional ISO timestamp for helper reconciliation"
+    }
+  },
+  "required": ["refName", "ownerDid", "kind"],
+  "additionalProperties": false
+}

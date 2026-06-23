@@ -5,12 +5,87 @@
  * 1. Validates the DID/repo argument
  * 2. Spawns `git clone did::<did>/<repo>` with inherited stdio
  *
- * Usage: gitd clone <did>/<repo> [-- <git-clone-args...>]
+ * Usage: gitd clone <did>/<repo> [git-clone-args...]
  *
  * @module
  */
 
 import { spawn, spawnSync } from 'node:child_process';
+
+// ---------------------------------------------------------------------------
+// Argument helpers
+// ---------------------------------------------------------------------------
+
+const CLONE_OPTIONS_WITH_VALUE = new Set([
+  '--also-filter-submodules',
+  '--branch',
+  '--config',
+  '--depth',
+  '--filter',
+  '--jobs',
+  '--origin',
+  '--reference',
+  '--reference-if-able',
+  '--recurse-submodules',
+  '--separate-git-dir',
+  '--server-option',
+  '--shallow-exclude',
+  '--shallow-since',
+  '--template',
+  '--upload-pack',
+  '-b',
+  '-c',
+  '-j',
+  '-o',
+  '-u',
+]);
+
+/** Drop an optional separator kept for backwards-compatible usage. */
+export function gitCloneArgs(args: string[]): string[] {
+  return args[0] === '--' ? args.slice(1) : args;
+}
+
+/** Infer the working-tree path that `git clone` will create. */
+export function inferCloneDirectory(repoName: string, args: string[]): string {
+  const positionals: string[] = [];
+  let consumeNext = false;
+  let onlyPositionals = false;
+
+  for (const arg of args) {
+    if (consumeNext) {
+      consumeNext = false;
+      continue;
+    }
+
+    if (onlyPositionals) {
+      positionals.push(arg);
+      continue;
+    }
+
+    if (arg === '--') {
+      onlyPositionals = true;
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      if (!arg.includes('=') && CLONE_OPTIONS_WITH_VALUE.has(arg)) {
+        consumeNext = true;
+      }
+      continue;
+    }
+
+    if (arg.startsWith('-') && arg !== '-') {
+      if (CLONE_OPTIONS_WITH_VALUE.has(arg)) {
+        consumeNext = true;
+      }
+      continue;
+    }
+
+    positionals.push(arg);
+  }
+
+  return positionals.at(-1) ?? repoName;
+}
 
 // ---------------------------------------------------------------------------
 // Command
@@ -20,11 +95,12 @@ export async function cloneCommand(args: string[]): Promise<void> {
   const target = args[0];
 
   if (!target) {
-    console.error('Usage: gitd clone <did>/<repo> [-- <git-clone-args...>]');
+    console.error('Usage: gitd clone <did>/<repo> [git-clone-args...]');
     console.error('');
     console.error('Examples:');
     console.error('  gitd clone did:dht:abc123/my-repo');
-    console.error('  gitd clone did:dht:abc123/my-repo -- --depth 1');
+    console.error('  gitd clone did:dht:abc123/my-repo --depth 1');
+    console.error('  gitd clone did:dht:abc123/my-repo my-local-dir');
     process.exit(1);
   }
 
@@ -52,9 +128,9 @@ export async function cloneCommand(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Collect any extra git args after `--`.
-  const dashDashIdx = args.indexOf('--');
-  const extraArgs = dashDashIdx !== -1 ? args.slice(dashDashIdx + 1) : [];
+  // Collect extra git args. A leading `--` remains supported from the
+  // original command shape, but it is no longer required.
+  const extraArgs = gitCloneArgs(args.slice(1));
 
   // Build the DID transport URL: `did::<did>/<repo>`
   const didUrl = `did::${didPart}/${repoPart}`;
@@ -78,10 +154,14 @@ export async function cloneCommand(args: string[]): Promise<void> {
 
   // Determine the clone directory (git uses the repo name by default,
   // unless the user specified a destination in extraArgs).
-  const cloneDir = extraArgs.find(a => !a.startsWith('-')) ?? repoPart;
+  const cloneDir = inferCloneDirectory(repoPart, extraArgs);
 
   // Store the repo name in git config so subsequent commands can auto-detect it.
   spawnSync('git', ['config', 'enbox.repo', repoPart], {
+    cwd   : cloneDir,
+    stdio : 'pipe',
+  });
+  spawnSync('git', ['config', 'enbox.owner', didPart], {
     cwd   : cloneDir,
     stdio : 'pipe',
   });

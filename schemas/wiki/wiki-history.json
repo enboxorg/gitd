@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/wiki-history",
+  "$id": "https://enbox.id/schemas/forge/wiki-history",
   "title": "PageHistoryData",
   "description": "A historical edit record for a wiki page",
   "type": "object",

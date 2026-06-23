@@ -3,24 +3,34 @@
  *
  * Usage:
  *   gitd repo info                           Show repository metadata
+ *   gitd repo add-moderator <did>            Grant moderator role
+ *   gitd repo remove-moderator <did>         Revoke moderator role
+ *   gitd repo add-contributor <did>          Grant contributor role
+ *   gitd repo remove-contributor <did>       Revoke contributor role
  *   gitd repo add-collaborator <did> <role>  Grant a role
  *   gitd repo remove-collaborator <did>      Revoke a collaborator role
  *
- * Roles: maintainer, triager, contributor
+ * Roles: maintainer, moderator, contributor, viewer. Legacy triager is still
+ * accepted by add-collaborator for compatibility.
  *
  * @module
  */
 
 import type { AgentContext } from '../agent.js';
+import type { RepoContext } from '../repo-context.js';
 
-import { getRepoContextId } from '../repo-context.js';
+import { getDwnEndpoints } from '../../git-server/did-service.js';
+import { applyMessageToDwnEndpoint, applyRecordToDwnEndpoint } from '../record-send.js';
 import { flagValue, resolveRepoName } from '../flags.js';
+import { getRepoContext, getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Valid roles
 // ---------------------------------------------------------------------------
 
-const VALID_ROLES = ['maintainer', 'triager', 'contributor'] as const;
+const PRIMARY_ROLES = ['maintainer', 'moderator', 'contributor', 'viewer'] as const;
+const COMPATIBILITY_ROLES = ['triager'] as const;
+const VALID_ROLES = [...PRIMARY_ROLES, ...COMPATIBILITY_ROLES] as const;
 type Role = typeof VALID_ROLES[number];
 
 // ---------------------------------------------------------------------------
@@ -34,10 +44,14 @@ export async function repoCommand(ctx: AgentContext, args: string[]): Promise<vo
   switch (sub) {
     case 'info': return repoInfo(ctx, rest);
     case 'list': return repoList(ctx);
+    case 'add-moderator': return addRole(ctx, rest, 'moderator');
+    case 'remove-moderator': return removeRole(ctx, rest, 'moderator');
+    case 'add-contributor': return addRole(ctx, rest, 'contributor');
+    case 'remove-contributor': return removeRole(ctx, rest, 'contributor');
     case 'add-collaborator': return addCollaborator(ctx, rest);
     case 'remove-collaborator': return removeCollaborator(ctx, rest);
     default:
-      console.error('Usage: gitd repo <info|list|add-collaborator|remove-collaborator>');
+      console.error('Usage: gitd repo <info|list|add-moderator|remove-moderator|add-contributor|remove-contributor|add-collaborator|remove-collaborator>');
       process.exit(1);
   }
 }
@@ -88,7 +102,9 @@ async function repoInfo(ctx: AgentContext, args: string[]): Promise<void> {
 
   // List collaborators per role.
   for (const role of VALID_ROLES) {
-    const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any);
+    const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any, {
+      filter: { contextId: record.contextId },
+    });
     if (collabs.length > 0) {
       console.log(`\n  ${role}s:`);
       for (const collab of collabs) {
@@ -129,11 +145,10 @@ async function repoList(ctx: AgentContext): Promise<void> {
 async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void> {
   const did = args[0];
   const role = args[1] as Role | undefined;
-  const alias = flagValue(args, '--alias') ?? flagValue(args, '-a');
 
   if (!did || !role) {
     console.error('Usage: gitd repo add-collaborator <did> <role> [--alias <name>]');
-    console.error(`  Roles: ${VALID_ROLES.join(', ')}`);
+    console.error(`  Roles: ${PRIMARY_ROLES.join(', ')} (legacy: ${COMPATIBILITY_ROLES.join(', ')})`);
     process.exit(1);
   }
 
@@ -142,24 +157,101 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  await addRole(ctx, args, role);
+}
+
+async function addRole(ctx: AgentContext, args: string[], role: Role): Promise<void> {
+  const did = args[0];
+  const alias = flagValue(args, '--alias') ?? flagValue(args, '-a');
+
+  if (!did) {
+    console.error(`Usage: gitd repo add-${role} <did> [--alias <name>]`);
+    process.exit(1);
+  }
+
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
 
   const { status, record } = await ctx.repo.records.create(`repo/${role}` as any, {
     data            : { did, alias: alias ?? '' },
     tags            : { did },
-    parentContextId : repoContextId,
+    parentContextId : repo.contextId,
     recipient       : did,
+    ...(repo.visibility === 'public' ? { published: true } : {}),
   });
 
   if (status.code >= 300) {
+    if (status.detail?.includes('ProtocolAuthorizationDuplicateRoleRecipient')) {
+      const existing = await findRoleGrant(ctx, repo, role, did);
+      if (existing) {
+        await publishRoleGrant(ctx, repo, existing, role);
+        console.log(`Added ${role}: ${did}`);
+        console.log(`  Record ID: ${existing.id}`);
+        return;
+      }
+    }
     console.error(`Failed to add collaborator: ${status.code} ${status.detail}`);
     process.exit(1);
   }
 
   if (!record) {throw new Error('Failed to create collaborator record');}
 
+  await publishRoleGrant(ctx, repo, record, role);
+
   console.log(`Added ${role}: ${did}`);
   console.log(`  Record ID: ${record.id}`);
+}
+
+async function findRoleGrant(
+  ctx: AgentContext,
+  repo: RepoContext,
+  role: Role,
+  did: string,
+): Promise<any | undefined> {
+  const { records } = await ctx.repo.records.query(`repo/${role}` as any, {
+    filter: {
+      contextId : repo.contextId,
+      tags      : { did },
+    },
+  });
+  return records[0];
+}
+
+async function publishRoleGrant(
+  ctx: AgentContext,
+  repo: RepoContext,
+  roleRecord: any,
+  role: Role,
+): Promise<void> {
+  if (repo.visibility !== 'public') {
+    return;
+  }
+
+  const dwnEndpoints = getDwnEndpoints(ctx.enbox);
+  if (dwnEndpoints.length === 0) {
+    return;
+  }
+
+  const { records: repoRecords } = await ctx.repo.records.query('repo', {
+    filter: { tags: { name: repo.name } },
+  });
+  const repoRecord = repoRecords.find((record: any) => record.id === repo.recordId) ?? repoRecords[0];
+  if (!repoRecord) {
+    console.warn(`Warning: could not publish ${role} grant: repo record not found locally.`);
+    return;
+  }
+
+  const protocolResult = await ctx.repo.configure({ encryption: true });
+  for (const endpoint of dwnEndpoints) {
+    try {
+      if (protocolResult.protocol) {
+        await applyMessageToDwnEndpoint(endpoint, ctx.did, protocolResult.protocol.toJSON(), 'repo protocol');
+      }
+      await applyRecordToDwnEndpoint(endpoint, ctx.did, repoRecord, 'repo record');
+      await applyRecordToDwnEndpoint(endpoint, ctx.did, roleRecord, `${role} grant`);
+    } catch (err) {
+      console.warn(`Warning: could not publish ${role} grant to ${endpoint}: ${(err as Error).message}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -167,18 +259,26 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
 // ---------------------------------------------------------------------------
 
 async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<void> {
+  return removeRole(ctx, args);
+}
+
+async function removeRole(ctx: AgentContext, args: string[], onlyRole?: Role): Promise<void> {
   const did = args[0];
 
   if (!did) {
-    console.error('Usage: gitd repo remove-collaborator <did>');
+    const usage = onlyRole
+      ? `Usage: gitd repo remove-${onlyRole} <did>`
+      : 'Usage: gitd repo remove-collaborator <did>';
+    console.error(usage);
     process.exit(1);
   }
 
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
   let found = false;
 
-  for (const role of VALID_ROLES) {
+  for (const role of onlyRole ? [onlyRole] : VALID_ROLES) {
     const { records: collabs } = await ctx.repo.records.query(`repo/${role}` as any, {
-      filter: { tags: { did } },
+      filter: { contextId: repoContextId, tags: { did } },
     });
 
     for (const collab of collabs) {
@@ -195,5 +295,3 @@ async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<vo
     process.exit(1);
   }
 }
-
-

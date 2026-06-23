@@ -126,16 +126,12 @@ async function ciShow(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { records: suites } = await ctx.ci.records.query('repo/checkSuite' as any, {
-    filter: { recordId: suiteId },
-  });
-
-  if (suites.length === 0) {
+  const suite = await findCheckSuite(ctx, args, suiteId);
+  if (!suite) {
     console.error(`Check suite ${suiteId} not found.`);
     process.exit(1);
   }
 
-  const suite = suites[0];
   const data = await suite.data.json();
   const tags = suite.tags as Record<string, string> | undefined;
   const status = tags?.status ?? 'unknown';
@@ -227,12 +223,8 @@ async function ciRun(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Look up the suite to get its contextId.
-  const { records: suites } = await ctx.ci.records.query('repo/checkSuite' as any, {
-    filter: { recordId: suiteId },
-  });
-
-  if (suites.length === 0) {
+  const suite = await findCheckSuite(ctx, args, suiteId);
+  if (!suite) {
     console.error(`Check suite ${suiteId} not found.`);
     process.exit(1);
   }
@@ -240,7 +232,7 @@ async function ciRun(ctx: AgentContext, args: string[]): Promise<void> {
   const { status, record } = await ctx.ci.records.create('repo/checkSuite/checkRun' as any, {
     data            : {},
     tags            : { name, status: 'queued' },
-    parentContextId : suites[0].contextId,
+    parentContextId : suite.contextId,
   } as any);
 
   if (status.code >= 300) {
@@ -273,17 +265,12 @@ async function ciUpdate(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Find the run record.
-  const { records: runs } = await ctx.ci.records.query('repo/checkSuite/checkRun' as any, {
-    filter: { recordId: runId },
-  });
-
-  if (runs.length === 0) {
+  const run = await findCheckRun(ctx, args, runId);
+  if (!run) {
     console.error(`Check run ${runId} not found.`);
     process.exit(1);
   }
 
-  const run = runs[0];
   const existingData = await run.data.json();
   const existingTags = run.tags as Record<string, string> | undefined;
 
@@ -301,4 +288,30 @@ async function ciUpdate(ctx: AgentContext, args: string[]): Promise<void> {
   }
 
   console.log(`Updated check run ${runId.slice(0, 8)}... → ${newStatus}${conclusion ? ` (${conclusion})` : ''}`);
+}
+
+async function findCheckSuite(ctx: AgentContext, args: string[], suiteId: string): Promise<any | undefined> {
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const { records } = await ctx.ci.records.query('repo/checkSuite' as any, {
+    filter: { contextId: repoContextId, recordId: suiteId },
+  });
+  return records[0];
+}
+
+async function findCheckRun(ctx: AgentContext, args: string[], runId: string): Promise<any | undefined> {
+  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const { records: suites } = await ctx.ci.records.query('repo/checkSuite' as any, {
+    filter: { contextId: repoContextId },
+  });
+
+  for (const suite of suites) {
+    const { records: runs } = await ctx.ci.records.query('repo/checkSuite/checkRun' as any, {
+      filter: { contextId: suite.contextId, recordId: runId },
+    });
+    if (runs[0]) {
+      return runs[0];
+    }
+  }
+
+  return undefined;
 }

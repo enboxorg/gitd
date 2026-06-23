@@ -36,6 +36,12 @@ export type CrawlResult = {
   newRepos : number;
   newStars : number;
   newFollows : number;
+  newIssues : number;
+  newPatches : number;
+  newReleases : number;
+  newIssueSubmissions : number;
+  newPatchSubmissions : number;
+  newSubmissionDecisions : number;
   errors : { did: string; error: string }[];
 };
 
@@ -62,11 +68,17 @@ export class IndexerCrawler {
   public async crawl(options?: CrawlOptions): Promise<CrawlResult> {
     const dids = (options?.dids ?? this._store.getDids()).slice(0, options?.maxDids);
     const result: CrawlResult = {
-      crawledDids : 0,
-      newRepos    : 0,
-      newStars    : 0,
-      newFollows  : 0,
-      errors      : [],
+      crawledDids            : 0,
+      newRepos               : 0,
+      newStars               : 0,
+      newFollows             : 0,
+      newIssues              : 0,
+      newPatches             : 0,
+      newReleases            : 0,
+      newIssueSubmissions    : 0,
+      newPatchSubmissions    : 0,
+      newSubmissionDecisions : 0,
+      errors                 : [],
     };
 
     for (const did of dids) {
@@ -75,6 +87,12 @@ export class IndexerCrawler {
         result.newRepos += counts.repos;
         result.newStars += counts.stars;
         result.newFollows += counts.follows;
+        result.newIssues += counts.issues;
+        result.newPatches += counts.patches;
+        result.newReleases += counts.releases;
+        result.newIssueSubmissions += counts.issueSubmissions;
+        result.newPatchSubmissions += counts.patchSubmissions;
+        result.newSubmissionDecisions += counts.submissionDecisions;
         result.crawledDids++;
         this._store.setCursor(did, new Date().toISOString());
       } catch (err) {
@@ -89,11 +107,21 @@ export class IndexerCrawler {
    * Crawl a single DID — queries repos, stars, follows, and repo
    * metadata (issues, patches, releases counts).
    */
-  public async crawlDid(did: string): Promise<{ repos: number; stars: number; follows: number }> {
+  public async crawlDid(did: string): Promise<{
+    repos: number; stars: number; follows: number;
+    issues: number; patches: number; releases: number;
+    issueSubmissions: number; patchSubmissions: number; submissionDecisions: number;
+  }> {
     const from = did === this._ctx.did ? undefined : did;
     let repos = 0;
     let stars = 0;
     let follows = 0;
+    let indexedIssues = 0;
+    let indexedPatches = 0;
+    let indexedReleases = 0;
+    let indexedIssueSubmissions = 0;
+    let indexedPatchSubmissions = 0;
+    let indexedSubmissionDecisions = 0;
 
     // ---------------------------------------------------------------
     // Repos
@@ -105,19 +133,19 @@ export class IndexerCrawler {
       const tags = rec.tags as Record<string, string> | undefined;
       const contextId = rec.contextId ?? '';
 
-      // Count open issues.
+      // Fetch issues.
       const { records: issues } = await this._ctx.issues.records.query('repo/issue', {
         from,
-        filter: { contextId, tags: { status: 'open' } },
+        filter: { contextId },
       });
 
-      // Count open patches.
+      // Fetch patches.
       const { records: patches } = await this._ctx.patches.records.query('repo/patch', {
         from,
-        filter: { contextId, tags: { status: 'open' } },
+        filter: { contextId },
       });
 
-      // Count releases.
+      // Fetch releases.
       const { records: releases } = await this._ctx.releases.records.query('repo/release' as any, {
         from,
         filter: { contextId },
@@ -134,25 +162,172 @@ export class IndexerCrawler {
         if (tTags?.name) { topics.push(tTags.name); }
       }
 
+      const { records: submissionDecisions } = await this._ctx.repo.records.query('repo/submissionDecision' as any, {
+        from,
+        filter: { contextId },
+      });
+
+      const repoName = data.name ?? 'unnamed';
+      const indexedAt = new Date().toISOString();
       const indexed: IndexedRepo = {
         did,
         recordId      : rec.id,
         contextId,
-        name          : data.name ?? 'unnamed',
+        name          : repoName,
         description   : data.description ?? '',
         defaultBranch : data.defaultBranch ?? 'main',
         visibility    : tags?.visibility ?? 'public',
         language      : tags?.language ?? '',
         topics,
-        openIssues    : issues.length,
-        openPatches   : patches.length,
+        openIssues    : issues.filter(recordHasOpenStatus).length,
+        openPatches   : patches.filter(recordHasOpenStatus).length,
         releaseCount  : releases.length,
         lastUpdated   : rec.dateCreated ?? new Date().toISOString(),
-        indexedAt     : new Date().toISOString(),
+        indexedAt,
       };
 
       this._store.putRepo(indexed);
+
+      for (const decision of submissionDecisions) {
+        const decisionTags = decision.tags as Record<string, unknown> | undefined;
+        const kind = submissionKind(decisionTags?.kind);
+        const decisionValue = stringOr(decisionTags?.decision, '');
+        const submitterDid = stringOr(decisionTags?.submitterDid, '');
+        const submissionRecordId = stringOr(decisionTags?.submissionRecordId, '');
+        if (!kind || decisionValue !== 'ignored' || !submitterDid || !submissionRecordId) { continue; }
+
+        const decisionData = await decision.data.json();
+        this._store.putSubmissionDecision({
+          ownerDid            : did,
+          repoRecordId        : rec.id,
+          repoName,
+          kind,
+          decision            : 'ignored',
+          submitterDid,
+          submissionRecordId,
+          submissionContextId : stringOr(decisionTags?.submissionContextId, stringOr(decisionData.submissionContextId, '')),
+          reason              : stringOr(decisionData.reason, ''),
+          dateCreated         : decision.dateCreated ?? '',
+          indexedAt,
+        });
+        indexedSubmissionDecisions++;
+      }
+
+      for (const issue of issues) {
+        const issueData = await issue.data.json();
+        const issueTags = issue.tags as Record<string, unknown> | undefined;
+        this._store.putIssue({
+          did,
+          repoRecordId : rec.id,
+          repoName,
+          recordId     : issue.id,
+          contextId    : issue.contextId ?? '',
+          title        : stringOr(issueData.title, 'Untitled issue'),
+          body         : stringOr(issueData.body, ''),
+          status       : stringOr(issueTags?.status, 'open'),
+          dateCreated  : issue.dateCreated ?? '',
+          indexedAt,
+        });
+        indexedIssues++;
+      }
+
+      for (const patch of patches) {
+        const patchData = await patch.data.json();
+        const patchTags = patch.tags as Record<string, unknown> | undefined;
+        this._store.putPatch({
+          did,
+          repoRecordId : rec.id,
+          repoName,
+          recordId     : patch.id,
+          contextId    : patch.contextId ?? '',
+          title        : stringOr(patchData.title, 'Untitled patch'),
+          body         : stringOr(patchData.body, ''),
+          status       : stringOr(patchTags?.status, 'open'),
+          baseBranch   : stringOr(patchTags?.baseBranch, ''),
+          headBranch   : stringOr(patchTags?.headBranch, ''),
+          dateCreated  : patch.dateCreated ?? '',
+          indexedAt,
+        });
+        indexedPatches++;
+      }
+
+      for (const release of releases) {
+        const releaseData = await release.data.json();
+        const releaseTags = release.tags as Record<string, unknown> | undefined;
+        const tagName = stringOr(releaseTags?.tagName, stringOr(releaseData.tagName, ''));
+        this._store.putRelease({
+          did,
+          repoRecordId : rec.id,
+          repoName,
+          recordId     : release.id,
+          contextId    : release.contextId ?? '',
+          tagName,
+          name         : stringOr(releaseData.name, tagName || 'Untitled release'),
+          body         : stringOr(releaseData.body, ''),
+          draft        : booleanTag(releaseTags?.draft),
+          prerelease   : booleanTag(releaseTags?.prerelease),
+          dateCreated  : release.dateCreated ?? '',
+          indexedAt,
+        });
+        indexedReleases++;
+      }
+
       repos++;
+    }
+
+    // ---------------------------------------------------------------
+    // External issue and patch submissions (on this user's DWN)
+    // ---------------------------------------------------------------
+    const submissionIndexedAt = new Date().toISOString();
+    const { records: issueSubmissions } = await this._ctx.issues.records.query('repo/issue', { from });
+
+    for (const issue of issueSubmissions) {
+      const issueTags = issue.tags as Record<string, unknown> | undefined;
+      const target = targetRepo(issueTags);
+      if (!target) { continue; }
+
+      const issueData = await issue.data.json();
+      this._store.putIssueSubmission({
+        submitterDid       : did,
+        targetDid          : target.did,
+        targetRepoRecordId : target.repoRecordId,
+        targetRepoName     : target.name || this._store.getRepoByRecord(target.did, target.repoRecordId)?.name || '',
+        recordId           : issue.id,
+        contextId          : issue.contextId ?? '',
+        title              : stringOr(issueData.title, 'Untitled issue'),
+        body               : stringOr(issueData.body, ''),
+        status             : stringOr(issueTags?.status, 'open'),
+        dateCreated        : issue.dateCreated ?? '',
+        indexedAt          : submissionIndexedAt,
+      });
+      indexedIssueSubmissions++;
+    }
+
+    const { records: patchSubmissions } = await this._ctx.patches.records.query('repo/patch', { from });
+
+    for (const patch of patchSubmissions) {
+      const patchTags = patch.tags as Record<string, unknown> | undefined;
+      const target = targetRepo(patchTags);
+      if (!target) { continue; }
+
+      const patchData = await patch.data.json();
+      this._store.putPatchSubmission({
+        submitterDid       : did,
+        targetDid          : target.did,
+        targetRepoRecordId : target.repoRecordId,
+        targetRepoName     : target.name || this._store.getRepoByRecord(target.did, target.repoRecordId)?.name || '',
+        sourceDid          : stringOr(patchTags?.sourceDid, did),
+        recordId           : patch.id,
+        contextId          : patch.contextId ?? '',
+        title              : stringOr(patchData.title, 'Untitled patch'),
+        body               : stringOr(patchData.body, ''),
+        status             : stringOr(patchTags?.status, 'open'),
+        baseBranch         : stringOr(patchTags?.baseBranch, ''),
+        headBranch         : stringOr(patchTags?.headBranch, ''),
+        dateCreated        : patch.dateCreated ?? '',
+        indexedAt          : submissionIndexedAt,
+      });
+      indexedPatchSubmissions++;
     }
 
     // ---------------------------------------------------------------
@@ -196,7 +371,17 @@ export class IndexerCrawler {
       }
     }
 
-    return { repos, stars, follows };
+    return {
+      repos,
+      stars,
+      follows,
+      issues              : indexedIssues,
+      patches             : indexedPatches,
+      releases            : indexedReleases,
+      issueSubmissions    : indexedIssueSubmissions,
+      patchSubmissions    : indexedPatchSubmissions,
+      submissionDecisions : indexedSubmissionDecisions,
+    };
   }
 
   /**
@@ -266,6 +451,8 @@ export class IndexerCrawler {
           console.log(
             `[indexer] Crawled ${result.crawledDids} DIDs: `
             + `${result.newRepos} repos, ${result.newStars} stars, ${result.newFollows} follows`
+            + `, ${result.newIssues} issues, ${result.newPatches} patches, ${result.newReleases} releases`
+            + `, ${result.newIssueSubmissions} issue submissions, ${result.newPatchSubmissions} patch submissions`
             + (result.errors.length > 0 ? ` (${result.errors.length} errors)` : '')
             + ` | Total: ${stats.dids} DIDs, ${stats.repos} repos, ${stats.stars} stars`,
           );
@@ -287,4 +474,32 @@ export class IndexerCrawler {
 
     return (): void => { running = false; };
   }
+}
+
+function recordHasOpenStatus(record: { tags?: unknown }): boolean {
+  const tags = record.tags as Record<string, unknown> | undefined;
+  return tags?.status === 'open';
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function booleanTag(value: unknown): boolean {
+  return value === true || value === 'true';
+}
+
+function targetRepo(tags: Record<string, unknown> | undefined): { did: string; repoRecordId: string; name: string } | null {
+  const did = stringOr(tags?.repoDid, '');
+  const repoRecordId = stringOr(tags?.repoRecordId, '');
+  if (!did || !repoRecordId) { return null; }
+  return {
+    did,
+    repoRecordId,
+    name: stringOr(tags?.repoName, ''),
+  };
+}
+
+function submissionKind(value: unknown): 'issue' | 'patch' | undefined {
+  return value === 'issue' || value === 'patch' ? value : undefined;
 }

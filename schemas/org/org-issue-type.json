@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.id/schemas/forge/org-issue-type",
+  "title": "OrgIssueTypeData",
+  "description": "An organization-level issue type definition",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": ["string", "null"]
+    },
+    "color": {
+      "type": ["string", "null"],
+      "enum": ["gray", "blue", "green", "yellow", "orange", "red", "pink", "purple", null]
+    },
+    "isEnabled": {
+      "type": "boolean"
+    }
+  },
+  "required": ["name", "isEnabled"],
+  "additionalProperties": false
+}

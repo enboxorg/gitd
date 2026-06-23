@@ -3,12 +3,14 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
-import { createGitServer } from '../src/git-server/server.js';
 import { createServer } from 'node:http';
-import { dirname } from 'node:path';
-import { getVersion } from '../src/version.js';
-import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
+import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+
+import { createGitServer } from '../src/git-server/server.js';
+import { getVersion } from '../src/version.js';
+import { profilesDir } from '../src/profiles/config.js';
+import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
 import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,47 @@ describe('lockfile version field', () => {
     const lock = readLockfile();
     expect(lock).not.toBeNull();
     expect(lock!.version).toBeUndefined();
+    removeLockfile();
+  });
+
+  it('should write ownerDid to lockfile when provided', () => {
+    writeLockfile(9418, '1.0.0', 'did:dht:owner123');
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.ownerDid).toBe('did:dht:owner123');
+    removeLockfile();
+  });
+
+  it('should write DWN helper capability when advertised', () => {
+    writeLockfile(9418, '1.0.0', 'did:dht:owner123', { dwnHelper: true });
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.dwnHelper).toBe(true);
+    removeLockfile();
+  });
+
+  it('should isolate lockfiles by profile name', () => {
+    const alicePath = lockfilePath('alice');
+    const bobPath = lockfilePath('bob');
+    writeLockfile(9418, '1.0.0', 'did:dht:alice', { profileName: 'alice' });
+    writeLockfile(9419, '1.0.0', 'did:dht:bob', { profileName: 'bob' });
+
+    expect(alicePath).toBe(join(profilesDir(), 'alice', 'daemon.lock'));
+    expect(bobPath).toBe(join(profilesDir(), 'bob', 'daemon.lock'));
+    expect(readLockfile('alice')!.ownerDid).toBe('did:dht:alice');
+    expect(readLockfile('alice')!.port).toBe(9418);
+    expect(readLockfile('bob')!.ownerDid).toBe('did:dht:bob');
+    expect(readLockfile('bob')!.port).toBe(9419);
+
+    removeLockfile('alice');
+    removeLockfile('bob');
+  });
+
+  it('should omit ownerDid when not provided', () => {
+    writeLockfile(9418, '1.0.0');
+    const lock = readLockfile();
+    expect(lock).not.toBeNull();
+    expect(lock!.ownerDid).toBeUndefined();
     removeLockfile();
   });
 });
@@ -112,6 +155,10 @@ describe('daemonLogPath', () => {
     const logPath = daemonLogPath();
     expect(logPath).toContain('gitd');
     expect(logPath).toContain('daemon.log');
+  });
+
+  it('should return a profile-scoped path when profile is provided', () => {
+    expect(daemonLogPath('alice')).toBe(join(profilesDir(), 'alice', 'gitd', 'daemon.log'));
   });
 });
 

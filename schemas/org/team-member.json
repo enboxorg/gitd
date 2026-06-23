@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/team-member",
+  "$id": "https://enbox.id/schemas/forge/team-member",
   "title": "TeamMemberData",
   "description": "A member of a team within an organization",
   "type": "object",
@@ -10,6 +10,14 @@
     },
     "alias": {
       "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["member", "maintainer"]
+    },
+    "state": {
+      "type": "string",
+      "enum": ["active", "pending"]
     }
   },
   "required": ["did"],

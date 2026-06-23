@@ -20,6 +20,8 @@
 
 import { randomBytes } from 'node:crypto';
 
+import type { PushRefUpdate } from './push-updates.js';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -90,6 +92,7 @@ export type PushAuthorizer = (
   did: string,
   owner: string,
   repo: string,
+  updates?: readonly PushRefUpdate[],
 ) => Promise<boolean>;
 
 /** Options for creating a push authenticator. */
@@ -212,10 +215,20 @@ export function parseAuthPassword(password: string): SignedPushToken {
  */
 export function createPushAuthenticator(
   options: PushAuthenticatorOptions,
-): (request: Request, did: string, repo: string) => Promise<boolean> {
+): (
+  request: Request,
+  did: string,
+  repo: string,
+  updates?: readonly PushRefUpdate[],
+) => Promise<boolean> {
   const { verifySignature, authorizePush, maxTokenAge = 300 } = options;
 
-  return async (request: Request, ownerDid: string, repo: string): Promise<boolean> => {
+  return async (
+    request: Request,
+    ownerDid: string,
+    repo: string,
+    updates?: readonly PushRefUpdate[],
+  ): Promise<boolean> => {
     // Extract HTTP Basic auth credentials.
     // Username is fixed to "did-auth" (DIDs contain colons, which conflict
     // with HTTP Basic auth's colon separator). The DID is inside the token.
@@ -253,6 +266,9 @@ export function createPushAuthenticator(
     } catch {
       return false;
     }
+    if (process.env.GITD_DEBUG === '1') {
+      console.error(`[auth] token DID ${payload.did} for ${ownerDid}/${repo}`);
+    }
 
     // Verify the token targets the correct owner and repo.
     if (payload.owner !== ownerDid || payload.repo !== repo) {
@@ -276,6 +292,9 @@ export function createPushAuthenticator(
 
     const signatureValid = await verifySignature(payload.did, tokenBytes, signatureBytes);
     if (!signatureValid) {
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[auth] signature verification failed for ${payload.did}`);
+      }
       return false;
     }
 
@@ -287,7 +306,7 @@ export function createPushAuthenticator(
 
     // Optional: Check role-based push authorization.
     if (authorizePush) {
-      return authorizePush(payload.did, ownerDid, repo);
+      return authorizePush(payload.did, ownerDid, repo, updates);
     }
 
     return true;

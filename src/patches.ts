@@ -81,37 +81,37 @@ export type ForgePatchesSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgePatchesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/patches',
+  protocol  : 'https://enbox.id/protocols/forge/patches',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     patch: {
-      schema      : 'https://enbox.org/schemas/forge/patch',
+      schema      : 'https://enbox.id/schemas/forge/patch',
       dataFormats : ['application/json'],
     },
     revision: {
-      schema      : 'https://enbox.org/schemas/forge/revision',
+      schema      : 'https://enbox.id/schemas/forge/revision',
       dataFormats : ['application/json'],
     },
     revisionBundle: {
       dataFormats: ['application/x-git-bundle'],
     },
     review: {
-      schema      : 'https://enbox.org/schemas/forge/review',
+      schema      : 'https://enbox.id/schemas/forge/review',
       dataFormats : ['application/json'],
     },
     reviewComment: {
-      schema      : 'https://enbox.org/schemas/forge/review-comment',
+      schema      : 'https://enbox.id/schemas/forge/review-comment',
       dataFormats : ['application/json'],
     },
     statusChange: {
-      schema      : 'https://enbox.org/schemas/forge/patch-status-change',
+      schema      : 'https://enbox.id/schemas/forge/patch-status-change',
       dataFormats : ['application/json'],
     },
     mergeResult: {
-      schema      : 'https://enbox.org/schemas/forge/merge-result',
+      schema      : 'https://enbox.id/schemas/forge/merge-result',
       dataFormats : ['application/json'],
     },
   },
@@ -121,7 +121,8 @@ export const ForgePatchesDefinition = {
 
       patch: {
         $actions: [
-          { who: 'anyone', can: ['create', 'read'] },
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo:repo/contributor', can: ['create', 'read'] },
           { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
           { who: 'author', of: 'repo/patch', can: ['create', 'update'] },
         ],
@@ -132,6 +133,12 @@ export const ForgePatchesDefinition = {
           baseBranch          : { type: 'string' },
           headBranch          : { type: 'string' },
           sourceDid           : { type: 'string' },
+          repoDid             : { type: 'string' },
+          repoRecordId        : { type: 'string' },
+          repoName            : { type: 'string' },
+          submitterDid        : { type: 'string' },
+          submissionRecordId  : { type: 'string' },
+          submissionContextId : { type: 'string' },
         },
 
         revision: {
@@ -169,8 +176,10 @@ export const ForgePatchesDefinition = {
         review: {
           $immutable : true,
           $actions   : [
-            { who: 'anyone', can: ['create', 'read'] },
+            { who: 'anyone', can: ['read'] },
+            { role: 'repo:repo/contributor', can: ['create', 'read'] },
             { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+            { role: 'repo:repo/moderator', can: ['create', 'read'] },
           ],
           $tags: {
             $requiredTags       : ['verdict'],
@@ -181,8 +190,11 @@ export const ForgePatchesDefinition = {
 
           reviewComment: {
             $actions: [
-              { who: 'anyone', can: ['create', 'read'] },
-              { role: 'repo:repo/maintainer', can: ['create', 'read'] },
+              { who: 'anyone', can: ['read'] },
+              { role: 'repo:repo/contributor', can: ['create', 'read'] },
+              { role: 'repo:repo/maintainer', can: ['create', 'read', 'update', 'delete'] },
+              { role: 'repo:repo/moderator', can: ['create', 'read'] },
+              { who: 'author', of: 'repo/patch/review/reviewComment', can: ['create', 'update', 'delete'] },
             ],
             $tags: {
               $allowUndefinedTags : true,

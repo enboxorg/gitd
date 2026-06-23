@@ -2,11 +2,11 @@
  * SQLite-backed DWN store factory.
  *
  * Replaces the default LevelDB stores (`MessageStoreLevel`, `DataStoreLevel`,
- * `StateIndexLevel`, `ResumableTaskStoreLevel`) with their SQL equivalents
+ * `ResumableTaskStoreLevel`) with their SQL equivalents
  * from `@enbox/dwn-sql-store`, backed by Bun's native `bun:sqlite`.
  *
  * This eliminates the `classic-level` / `node-gyp` native dependency for
- * the four core DWN stores.  The remaining Level-based components
+ * the core DWN stores.  The remaining Level-based components
  * (`SyncEngineLevel`, `LevelStore` for the vault, `AgentDidResolverCache`)
  * stay on LevelDB until SQL alternatives are available upstream.
  *
@@ -28,7 +28,6 @@ import {
   ResumableTaskStoreSql,
   runDwnStoreMigrations,
   SqliteDialect,
-  StateIndexSql,
 } from '@enbox/dwn-sql-store';
 import {
   DidDht,
@@ -38,7 +37,7 @@ import {
   DidWeb,
   UniversalResolver,
 } from '@enbox/dids';
-import { Dwn, EventEmitterEventLog } from '@enbox/dwn-sdk-js';
+import { DurableEventLog, Dwn, EventEmitterWakePublisher } from '@enbox/dwn-sdk-js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -70,11 +69,11 @@ export async function createSqliteDwnApi(
   const migrationDb = new Kysely<Record<string, unknown>>({ dialect });
   await runDwnStoreMigrations(migrationDb, dialect);
 
-  const messageStore = new MessageStoreSql(dialect);
+  const wakePublisher = new EventEmitterWakePublisher();
+  const messageStore = new MessageStoreSql(dialect, wakePublisher);
   const dataStore = new DataStoreSql(dialect);
-  const stateIndex = new StateIndexSql(dialect);
   const resumableTaskStore = new ResumableTaskStoreSql(dialect);
-  const eventLog = new EventEmitterEventLog();
+  const eventLog = new DurableEventLog(messageStore, wakePublisher);
 
   // Create a profile-scoped DID resolver with its cache inside the
   // agent data directory.  Without this, Dwn.create() falls back to a
@@ -87,7 +86,6 @@ export async function createSqliteDwnApi(
   const dwn = await Dwn.create({
     dataStore,
     messageStore,
-    stateIndex,
     resumableTaskStore,
     eventLog,
     didResolver,

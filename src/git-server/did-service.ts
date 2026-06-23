@@ -137,6 +137,11 @@ export function startDidRepublisher(
   web5: Enbox,
   intervalMs: number = DEFAULT_REPUBLISH_INTERVAL_MS,
 ): () => void {
+  const republishSetting = process.env.GITD_DID_REPUBLISH?.toLowerCase();
+  if (republishSetting === 'off' || republishSetting === '0' || republishSetting === 'false') {
+    return (): void => {};
+  }
+
   const agent = web5.agent as any;
   const bearerDid = agent?.agentDid;
 

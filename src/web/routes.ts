@@ -426,9 +426,14 @@ export async function wikiListPage(ctx: AgentContext, targetDid: string, repoNam
   const from = fromOpt(ctx, targetDid);
   const repo = await getRepoRecord(ctx, targetDid, repoName);
 
+  if (!repo) {
+    return layout('Wiki', repoTitle(repo), '<div class="card"><p class="empty">No wiki pages yet.</p></div>', basePath);
+  }
+
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
     from,
-    dateSort: DateSort.CreatedDescending,
+    filter   : { contextId: repo.contextId },
+    dateSort : DateSort.CreatedDescending,
   });
 
   if (records.length === 0) {
@@ -468,9 +473,11 @@ export async function wikiDetailPage(
   const from = fromOpt(ctx, targetDid);
   const repo = await getRepoRecord(ctx, targetDid, repoName);
 
+  if (!repo) { return null; }
+
   const { records } = await ctx.wiki.records.query('repo/page' as any, {
     from,
-    filter: { tags: { slug } },
+    filter: { contextId: repo.contextId, tags: { slug } },
   });
 
   if (records.length === 0) { return null; }

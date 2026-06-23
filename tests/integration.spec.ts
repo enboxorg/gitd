@@ -6,6 +6,9 @@
  * role composition functions as designed.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+
+import { rmSync } from 'node:fs';
+
 import { DidKey, UniversalResolver } from '@enbox/dids';
 
 import type { Persona } from '@enbox/dwn-sdk-js';
@@ -13,8 +16,9 @@ import type { Persona } from '@enbox/dwn-sdk-js';
 import {
   DataStoreLevel,
   DataStream,
+  DurableEventLog,
   Dwn,
-  EventEmitterEventLog,
+  EventEmitterWakePublisher,
   Jws,
   MessageStoreLevel,
   ProtocolsConfigure,
@@ -23,7 +27,6 @@ import {
   RecordsRead,
   RecordsWrite,
   ResumableTaskStoreLevel,
-  StateIndexLevel,
   TestDataGenerator,
 } from '@enbox/dwn-sdk-js';
 
@@ -39,6 +42,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const encoder = new TextEncoder();
+const MESSAGE_STORE_PATH = '__TESTDATA__/int-msg';
+const DATA_STORE_PATH = '__TESTDATA__/int-data';
+const TASK_STORE_PATH = '__TESTDATA__/int-tasks';
 
 /** Creates a ProtocolsConfigure, processes it, and asserts success. */
 async function installProtocol(
@@ -115,7 +121,6 @@ describe('gitd integration', () => {
   let dwn: Dwn;
   let messageStore: MessageStoreLevel;
   let dataStore: DataStoreLevel;
-  let stateIndex: StateIndexLevel;
   let resumableTaskStore: ResumableTaskStoreLevel;
 
   // Personas
@@ -125,20 +130,23 @@ describe('gitd integration', () => {
   let stranger: Persona; // No role
 
   beforeAll(async () => {
-    const didResolver = new UniversalResolver({ didResolvers: [DidKey] });
-    messageStore = new MessageStoreLevel({ blockstoreLocation: '__TESTDATA__/int-msg', indexLocation: '__TESTDATA__/int-idx' });
-    dataStore = new DataStoreLevel({ blockstoreLocation: '__TESTDATA__/int-data' });
-    stateIndex = new StateIndexLevel({ location: '__TESTDATA__/int-state' });
-    resumableTaskStore = new ResumableTaskStoreLevel({ location: '__TESTDATA__/int-tasks' });
-    const eventLog = new EventEmitterEventLog();
+    rmSync(MESSAGE_STORE_PATH, { recursive: true, force: true });
+    rmSync(DATA_STORE_PATH, { recursive: true, force: true });
+    rmSync(TASK_STORE_PATH, { recursive: true, force: true });
 
-    dwn = await Dwn.create({ didResolver, messageStore, dataStore, stateIndex, resumableTaskStore, eventLog });
+    const didResolver = new UniversalResolver({ didResolvers: [DidKey] });
+    const wakePublisher = new EventEmitterWakePublisher();
+    messageStore = new MessageStoreLevel({ location: MESSAGE_STORE_PATH, wakePublisher });
+    dataStore = new DataStoreLevel({ blockstoreLocation: DATA_STORE_PATH });
+    resumableTaskStore = new ResumableTaskStoreLevel({ location: TASK_STORE_PATH });
+    const eventLog = new DurableEventLog(messageStore, wakePublisher);
+
+    dwn = await Dwn.create({ didResolver, messageStore, dataStore, resumableTaskStore, eventLog });
   });
 
   beforeEach(async () => {
     await messageStore.clear();
     await dataStore.clear();
-    await stateIndex.clear();
     await resumableTaskStore.clear();
 
     // Create fresh personas for each test
@@ -149,7 +157,10 @@ describe('gitd integration', () => {
   });
 
   afterAll(async () => {
-    await dwn.close();
+    if (dwn) { await dwn.close(); }
+    rmSync(MESSAGE_STORE_PATH, { recursive: true, force: true });
+    rmSync(DATA_STORE_PATH, { recursive: true, force: true });
+    rmSync(TASK_STORE_PATH, { recursive: true, force: true });
   });
 
   // =========================================================================
@@ -164,7 +175,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -186,7 +197,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'repo-1', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'repo-1', visibility: 'public' },
       });
@@ -197,7 +208,7 @@ describe('gitd integration', () => {
       const write2 = await RecordsWrite.create({
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         dataFormat   : 'application/json',
         data,
         tags         : { name: 'repo-2', visibility: 'public' },
@@ -215,7 +226,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -226,7 +237,7 @@ describe('gitd integration', () => {
         recipient       : maintainer.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/maintainer',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: maintainer.did, alias: 'alice' })),
         tags            : { did: maintainer.did },
         parentContextId : repo.message.contextId,
@@ -247,6 +258,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo/readme',
+        contextId    : repo.message.contextId,
       });
       expect(reply.entries?.length).toBe(1);
     });
@@ -258,7 +270,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'public-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'public-repo', visibility: 'public' },
       });
@@ -279,7 +291,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -290,7 +302,7 @@ describe('gitd integration', () => {
         recipient       : contributor.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/contributor',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: contributor.did })),
         tags            : { did: contributor.did },
         parentContextId : repo.message.contextId,
@@ -300,6 +312,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo/contributor',
+        contextId    : repo.message.contextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(roleWrite.message.recordId);
@@ -322,7 +335,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -333,7 +346,7 @@ describe('gitd integration', () => {
         recipient       : maintainer.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/maintainer',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: maintainer.did })),
         tags            : { did: maintainer.did },
         parentContextId : repo.message.contextId,
@@ -345,7 +358,7 @@ describe('gitd integration', () => {
         recipient       : contributor.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/contributor',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: contributor.did })),
         tags            : { did: contributor.did },
         parentContextId : repo.message.contextId,
@@ -362,7 +375,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Bug report', body: 'Something is broken' })),
         tags            : { status: 'open' },
         parentContextId : repoContextId,
@@ -373,6 +386,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeIssuesDefinition.protocol,
         protocolPath : 'repo/issue',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(issue.message.recordId);
@@ -385,7 +399,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Feature request', body: 'Please add X' })),
         tags            : { status: 'open' },
         parentContextId : repoContextId,
@@ -395,18 +409,19 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgeIssuesDefinition.protocol,
         protocolPath : 'repo/issue',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
     });
 
-    it('should allow issue creation from anyone (open model)', async () => {
+    it('should reject issue creation from non-collaborators', async () => {
       const { repoContextId } = await setupRepoWithRoles();
 
       const data = encoder.encode(JSON.stringify({ title: 'External report', body: 'Found a bug' }));
       const write = await RecordsWrite.create({
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         dataFormat      : 'application/json',
         data,
         tags            : { status: 'open' },
@@ -414,7 +429,7 @@ describe('gitd integration', () => {
         signer          : Jws.createSigner(stranger),
       });
       const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      expect(reply.status.code).toBe(202);
+      expect(reply.status.code).toBeGreaterThanOrEqual(400);
     });
 
     it('should create nested comments on issues', async () => {
@@ -425,7 +440,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Bug', body: 'Broken' })),
         tags            : { status: 'open' },
         parentContextId : repoContextId,
@@ -437,7 +452,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue/comment',
-        schema          : 'https://enbox.org/schemas/forge/comment',
+        schema          : 'https://enbox.id/schemas/forge/comment',
         data            : encoder.encode(JSON.stringify({ body: 'I can reproduce this.' })),
         parentContextId : issue.message.contextId,
         protocolRole    : 'repo:repo/contributor',
@@ -461,7 +476,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Bug', body: 'Broken' })),
         tags            : { status: 'open' },
         parentContextId : repoContextId,
@@ -473,7 +488,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue/label',
-        schema          : 'https://enbox.org/schemas/forge/label',
+        schema          : 'https://enbox.id/schemas/forge/label',
         data            : encoder.encode(JSON.stringify({ name: 'bug', color: '#ff0000' })),
         tags            : { name: 'bug', color: '#ff0000' },
         parentContextId : issue.message.contextId,
@@ -501,7 +516,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Bug', body: 'Fixed it' })),
         tags            : { status: 'open' },
         parentContextId : repoContextId,
@@ -513,7 +528,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue/statusChange',
-        schema          : 'https://enbox.org/schemas/forge/status-change',
+        schema          : 'https://enbox.id/schemas/forge/status-change',
         data            : encoder.encode(JSON.stringify({ reason: 'Fixed in PR #1' })),
         tags            : { from: 'open', to: 'closed' },
         parentContextId : issue.message.contextId,
@@ -543,7 +558,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -553,7 +568,7 @@ describe('gitd integration', () => {
         recipient       : maintainer.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/maintainer',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: maintainer.did })),
         tags            : { did: maintainer.did },
         parentContextId : repo.message.contextId,
@@ -564,7 +579,7 @@ describe('gitd integration', () => {
         recipient       : contributor.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/contributor',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: contributor.did })),
         tags            : { did: contributor.did },
         parentContextId : repo.message.contextId,
@@ -580,7 +595,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch',
-        schema          : 'https://enbox.org/schemas/forge/patch',
+        schema          : 'https://enbox.id/schemas/forge/patch',
         data            : encoder.encode(JSON.stringify({ title: 'Add feature X', body: 'This adds feature X.' })),
         tags            : { status: 'open', baseBranch: 'main', headBranch: 'feature-x' },
         parentContextId : repoContextId,
@@ -590,6 +605,7 @@ describe('gitd integration', () => {
       const reply = await queryRecords(dwn, owner.did, owner, {
         protocol     : ForgePatchesDefinition.protocol,
         protocolPath : 'repo/patch',
+        contextId    : repoContextId,
       });
       expect(reply.entries?.length).toBe(1);
       expect(reply.entries![0].recordId).toBe(patch.message.recordId);
@@ -602,7 +618,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch',
-        schema          : 'https://enbox.org/schemas/forge/patch',
+        schema          : 'https://enbox.id/schemas/forge/patch',
         data            : encoder.encode(JSON.stringify({ title: 'Feature X', body: 'Adds X' })),
         tags            : { status: 'open', baseBranch: 'main' },
         parentContextId : repoContextId,
@@ -614,7 +630,7 @@ describe('gitd integration', () => {
         author       : contributor,
         protocol     : ForgePatchesDefinition.protocol,
         protocolPath : 'repo/patch/revision',
-        schema       : 'https://enbox.org/schemas/forge/revision',
+        schema       : 'https://enbox.id/schemas/forge/revision',
         data         : encoder.encode(JSON.stringify({
           diffStat: { additions: 50, deletions: 10, filesChanged: 3 },
         })),
@@ -637,7 +653,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch',
-        schema          : 'https://enbox.org/schemas/forge/patch',
+        schema          : 'https://enbox.id/schemas/forge/patch',
         data            : encoder.encode(JSON.stringify({ title: 'Feature X', body: 'Adds X' })),
         tags            : { status: 'open', baseBranch: 'main' },
         parentContextId : repoContextId,
@@ -649,7 +665,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch/review',
-        schema          : 'https://enbox.org/schemas/forge/review',
+        schema          : 'https://enbox.id/schemas/forge/review',
         data            : encoder.encode(JSON.stringify({ body: 'LGTM!' })),
         tags            : { verdict: 'approve' },
         parentContextId : patch.message.contextId,
@@ -661,7 +677,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch/mergeResult',
-        schema          : 'https://enbox.org/schemas/forge/merge-result',
+        schema          : 'https://enbox.id/schemas/forge/merge-result',
         data            : encoder.encode(JSON.stringify({ mergedBy: maintainer.did })),
         tags            : { mergeCommit: 'deadbeef', strategy: 'squash' },
         parentContextId : patch.message.contextId,
@@ -684,31 +700,31 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch',
-        schema          : 'https://enbox.org/schemas/forge/patch',
+        schema          : 'https://enbox.id/schemas/forge/patch',
         data            : encoder.encode(JSON.stringify({ title: 'Feature X', body: 'Adds X' })),
         tags            : { status: 'open', baseBranch: 'main' },
         parentContextId : repoContextId,
         protocolRole    : 'repo:repo/contributor',
       });
 
-      // First merge result succeeds
-      await writeRecord(dwn, owner.did, {
+      // First merge result succeeds.
+      const firstMerge = await writeRecord(dwn, owner.did, {
         author          : maintainer,
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch/mergeResult',
-        schema          : 'https://enbox.org/schemas/forge/merge-result',
+        schema          : 'https://enbox.id/schemas/forge/merge-result',
         data            : encoder.encode(JSON.stringify({ mergedBy: maintainer.did })),
         tags            : { mergeCommit: 'deadbeef', strategy: 'squash' },
         parentContextId : patch.message.contextId,
         protocolRole    : 'repo:repo/maintainer',
       });
 
-      // Second merge result should be rejected
+      // `$recordLimit` candidates are accepted and projected at read time.
       const data = encoder.encode(JSON.stringify({ mergedBy: maintainer.did }));
       const write = await RecordsWrite.create({
         protocol        : ForgePatchesDefinition.protocol,
         protocolPath    : 'repo/patch/mergeResult',
-        schema          : 'https://enbox.org/schemas/forge/merge-result',
+        schema          : 'https://enbox.id/schemas/forge/merge-result',
         dataFormat      : 'application/json',
         data,
         tags            : { mergeCommit: 'cafebabe', strategy: 'merge' },
@@ -717,8 +733,15 @@ describe('gitd integration', () => {
         signer          : Jws.createSigner(maintainer),
       });
       const reply = await dwn.processMessage(owner.did, write.message, { dataStream: DataStream.fromBytes(data) });
-      // $recordLimit exceeded — DWN rejects with non-202 status
-      expect(reply.status.code).not.toBe(202);
+      expect(reply.status.code).toBe(202);
+
+      const projected = await queryRecords(dwn, owner.did, owner, {
+        protocol     : ForgePatchesDefinition.protocol,
+        protocolPath : 'repo/patch/mergeResult',
+        contextId    : patch.message.contextId,
+      });
+      expect(projected.entries?.length).toBe(1);
+      expect(projected.entries![0].recordId).toBe(firstMerge.message.recordId);
     });
   });
 
@@ -735,7 +758,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'my-repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'my-repo', visibility: 'public' },
       });
@@ -746,7 +769,7 @@ describe('gitd integration', () => {
         recipient       : maintainer.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/maintainer',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: maintainer.did })),
         tags            : { did: maintainer.did },
         parentContextId : repo.message.contextId,
@@ -757,7 +780,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeCiDefinition.protocol,
         protocolPath    : 'repo/checkSuite',
-        schema          : 'https://enbox.org/schemas/forge/check-suite',
+        schema          : 'https://enbox.id/schemas/forge/check-suite',
         data            : encoder.encode(JSON.stringify({ headBranch: 'main' })),
         tags            : { commitSha: 'abc123', status: 'queued' },
         parentContextId : repo.message.contextId,
@@ -769,7 +792,7 @@ describe('gitd integration', () => {
         author          : maintainer,
         protocol        : ForgeCiDefinition.protocol,
         protocolPath    : 'repo/checkSuite/checkRun',
-        schema          : 'https://enbox.org/schemas/forge/check-run',
+        schema          : 'https://enbox.id/schemas/forge/check-run',
         data            : encoder.encode(JSON.stringify({ summary: 'Running lint...' })),
         tags            : { name: 'lint', status: 'in_progress' },
         parentContextId : suite.message.contextId,
@@ -797,7 +820,7 @@ describe('gitd integration', () => {
         author       : owner,
         protocol     : ForgeRepoDefinition.protocol,
         protocolPath : 'repo',
-        schema       : 'https://enbox.org/schemas/forge/repo',
+        schema       : 'https://enbox.id/schemas/forge/repo',
         data         : encoder.encode(JSON.stringify({ name: 'repo', defaultBranch: 'main', dwnEndpoints: [] })),
         tags         : { name: 'repo', visibility: 'public' },
       });
@@ -808,7 +831,7 @@ describe('gitd integration', () => {
         recipient       : contributor.did,
         protocol        : ForgeRepoDefinition.protocol,
         protocolPath    : 'repo/contributor',
-        schema          : 'https://enbox.org/schemas/forge/collaborator',
+        schema          : 'https://enbox.id/schemas/forge/collaborator',
         data            : encoder.encode(JSON.stringify({ did: contributor.did })),
         tags            : { did: contributor.did },
         parentContextId : repo.message.contextId,
@@ -819,7 +842,7 @@ describe('gitd integration', () => {
         author          : contributor,
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         data            : encoder.encode(JSON.stringify({ title: 'Before revoke', body: 'Works' })),
         tags            : { status: 'open' },
         parentContextId : repo.message.contextId,
@@ -838,7 +861,7 @@ describe('gitd integration', () => {
       const write = await RecordsWrite.create({
         protocol        : ForgeIssuesDefinition.protocol,
         protocolPath    : 'repo/issue',
-        schema          : 'https://enbox.org/schemas/forge/issue',
+        schema          : 'https://enbox.id/schemas/forge/issue',
         dataFormat      : 'application/json',
         data,
         tags            : { status: 'open' },

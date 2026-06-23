@@ -1,7 +1,7 @@
 /**
  * CLI command tests — exercises command functions against a real Enbox agent.
  *
- * Uses `Enbox.connect()` to create an ephemeral agent,
+ * Uses a directly constructed `Enbox` instance with an ephemeral agent,
  * then tests each command function directly.  The agent's data directory
  * (`__TESTDATA__/cli`) is cleaned before and after the suite.
  */
@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { createTestIdentity } from './helpers/identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
@@ -30,6 +31,7 @@ import { ForgeReleasesProtocol } from '../src/releases.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
 import { ForgeSocialProtocol } from '../src/social.js';
 import { ForgeWikiProtocol } from '../src/wiki.js';
+import { shortId } from '../src/github-shim/helpers.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,6 +84,221 @@ function captureError(fn: () => Promise<void>): Promise<{ errors: string[]; exit
   })();
 }
 
+function fakeJsonRecord(
+  id: string,
+  contextId: string,
+  data: Record<string, unknown>,
+  tags: Record<string, unknown>,
+): any {
+  return {
+    id,
+    contextId,
+    dateCreated : '2026-06-22T00:00:00.000Z',
+    tags,
+    data        : {
+      json: async () => data,
+    },
+  };
+}
+
+function fakeBlobRecord(
+  id: string,
+  contextId: string,
+  bytes: Uint8Array,
+  tags: Record<string, unknown>,
+): any {
+  return {
+    id,
+    contextId,
+    dateCreated : '2026-06-22T00:00:00.000Z',
+    tags,
+    data        : {
+      blob: async () => new Blob([bytes]),
+    },
+  };
+}
+
+function matchingContext(records: any[], options?: any): any[] {
+  const contextId = options?.filter?.contextId;
+  if (typeof contextId !== 'string') { return records; }
+  return records.filter((record) => record.contextId === contextId);
+}
+
+function withExternalIssueRecords(
+  ctx: AgentContext,
+  submitterDid: string,
+  records: any[],
+  commentRecords: any[] = [],
+  statusChangeRecords: any[] = [],
+): AgentContext {
+  return {
+    ...ctx,
+    issues: {
+      ...ctx.issues,
+      records: {
+        ...ctx.issues.records,
+        query: async (path: string, options?: any) => {
+          if (options?.from === submitterDid) {
+            if (path === 'repo/issue') { return { records: matchingContext(records, options) }; }
+            if (path === 'repo/issue/comment') { return { records: matchingContext(commentRecords, options) }; }
+            if (path === 'repo/issue/statusChange') { return { records: matchingContext(statusChangeRecords, options) }; }
+          }
+          return (ctx.issues.records.query as any)(path, options);
+        },
+      },
+    },
+  } as unknown as AgentContext;
+}
+
+function withExternalPatchRecords(
+  ctx: AgentContext,
+  submitterDid: string,
+  patchRecords: any[],
+  revisionRecords: any[],
+  bundleRecords: any[],
+  reviewRecords: any[] = [],
+  reviewCommentRecords: any[] = [],
+  statusChangeRecords: any[] = [],
+): AgentContext {
+  return {
+    ...ctx,
+    patches: {
+      ...ctx.patches,
+      records: {
+        ...ctx.patches.records,
+        query: async (path: string, options?: any) => {
+          if (options?.from === submitterDid) {
+            if (path === 'repo/patch') { return { records: matchingContext(patchRecords, options) }; }
+            if (path === 'repo/patch/revision') { return { records: revisionRecords }; }
+            if (path === 'repo/patch/revision/revisionBundle') { return { records: bundleRecords }; }
+            if (path === 'repo/patch/review') { return { records: matchingContext(reviewRecords, options) }; }
+            if (path === 'repo/patch/review/reviewComment') { return { records: matchingContext(reviewCommentRecords, options) }; }
+            if (path === 'repo/patch/statusChange') { return { records: matchingContext(statusChangeRecords, options) }; }
+          }
+          return (ctx.patches.records.query as any)(path, options);
+        },
+      },
+    },
+  } as unknown as AgentContext;
+}
+
+type SentRecord = { record: any; targetDid: string };
+type CapturedCreate = { path: string; options: any };
+
+function withRemoteOwnerRecords(
+  ctx: AgentContext,
+  ownerDid: string,
+  repoRecord: any,
+  role: 'contributor' | 'maintainer' | 'moderator' = 'contributor',
+  sentRecords: SentRecord[] = [],
+  capturedCreates: CapturedCreate[] = [],
+): AgentContext {
+  const remoteRecordsForPath = (path: string): any[] =>
+    sentRecords
+      .map(entry => entry.record)
+      .filter(record => recordProtocolPath(record) === path);
+
+  const remoteQuery = async (protocol: 'issues' | 'patches', path: string, options?: any): Promise<{ records: any[] }> => {
+    if (options?.from === ownerDid) {
+      if (protocol === 'issues' && path === 'repo/issue') {
+        return { records: remoteRecordsForPath(path) };
+      }
+      if (protocol === 'issues' && path === 'repo/issue/comment') {
+        return { records: matchingContext(remoteRecordsForPath(path), options) };
+      }
+      if (protocol === 'patches' && path === 'repo/patch') {
+        return { records: remoteRecordsForPath(path) };
+      }
+      if (protocol === 'patches' && path === 'repo/patch/review') {
+        return { records: matchingContext(remoteRecordsForPath(path), options) };
+      }
+      if (protocol === 'patches' && path === 'repo/patch/revision') {
+        return { records: matchingContext(remoteRecordsForPath(path), options) };
+      }
+      if (protocol === 'patches' && path === 'repo/patch/revision/revisionBundle') {
+        return { records: matchingContext(remoteRecordsForPath(path), options) };
+      }
+    }
+
+    const api = protocol === 'issues' ? ctx.issues : ctx.patches;
+    return (api.records.query as any)(path, options);
+  };
+
+  return {
+    ...ctx,
+    sendRecord: async (record: any, targetDid: string): Promise<void> => {
+      sentRecords.push({ record, targetDid });
+    },
+    repo: {
+      ...ctx.repo,
+      records: {
+        ...ctx.repo.records,
+        query: async (path: string, options?: any) => {
+          if (options?.from === ownerDid) {
+            if (path === 'repo') {
+              return { records: [repoRecord] };
+            }
+            if (path === 'repo/moderationEvent') {
+              return { records: remoteRecordsForPath(path) };
+            }
+            if (path === `repo/${role}` && options?.filter?.tags?.did === ctx.did) {
+              return { records: [fakeJsonRecord(`remote-${role}-role`, repoRecord.contextId, { did: ctx.did }, { did: ctx.did })] };
+            }
+            if (path.startsWith('repo/')) {
+              return { records: [] };
+            }
+          }
+          return (ctx.repo.records.query as any)(path, options);
+        },
+      },
+    },
+    issues: {
+      ...ctx.issues,
+      records: {
+        ...ctx.issues.records,
+        create: async (path: string, options?: any) => {
+          capturedCreates.push({ path, options });
+          return (ctx.issues.records.create as any)(path, options);
+        },
+        query: async (path: string, options?: any) => remoteQuery('issues', path, options),
+      },
+    },
+    patches: {
+      ...ctx.patches,
+      records: {
+        ...ctx.patches.records,
+        create: async (path: string, options?: any) => {
+          capturedCreates.push({ path, options });
+          return (ctx.patches.records.create as any)(path, options);
+        },
+        query: async (path: string, options?: any) => remoteQuery('patches', path, options),
+      },
+    },
+  } as unknown as AgentContext;
+}
+
+function recordProtocolPath(record: any): string | undefined {
+  return record.protocolPath ?? record.toJSON?.().protocolPath;
+}
+
+function moderationRecord(
+  id: string,
+  contextId: string,
+  tags: Record<string, string>,
+  dateCreated: string,
+): any {
+  return {
+    ...fakeJsonRecord(
+      id,
+      contextId,
+      { actorDid: 'did:jwk:moderator', createdAt: dateCreated, ...tags },
+      { actorDid: 'did:jwk:moderator', ...tags },
+    ),
+    dateCreated,
+    protocolPath: 'repo/moderationEvent',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
@@ -101,17 +318,14 @@ describe('gitd CLI commands', () => {
     await agent.initialize({ password: 'test-password' });
     await agent.start({ password: 'test-password' });
 
-    // Create an identity (Enbox.connect normally does this).
+    // Create an identity for the directly constructed Enbox instance.
     const identities = await agent.identity.list();
     let identity = identities[0];
     if (!identity) {
-      identity = await agent.identity.create({
-        didMethod : 'jwk',
-        metadata  : { name: 'CLI Test' },
-      });
+      identity = await createTestIdentity(agent, 'CLI Test');
     }
 
-    enbox = Enbox.connect({ agent, connectedDid: identity.did.uri });
+    enbox = new Enbox({ agent, connectedDid: identity.did.uri });
     did = identity.did.uri;
 
     const repo = enbox.using(ForgeRepoProtocol);
@@ -142,7 +356,7 @@ describe('gitd CLI commands', () => {
       did, repo, refs, issues, patches, ci, releases,
       registry, social, notifications, wiki, org, enbox,
     };
-  });
+  }, 30_000);
 
   afterAll(() => {
     delete process.env.GITD_REPO;
@@ -263,6 +477,7 @@ describe('gitd CLI commands', () => {
       expect(records.length).toBe(1);
       const tags = records[0].tags as Record<string, string>;
       expect(tags.visibility).toBe('public');
+      expect(records[0].published).toBe(true);
     });
 
     it('should create a private repo with --private flag', async () => {
@@ -278,6 +493,7 @@ describe('gitd CLI commands', () => {
       expect(records.length).toBe(1);
       const tags = records[0].tags as Record<string, string>;
       expect(tags.visibility).toBe('private');
+      expect(records[0].published).toBe(false);
     });
   });
 
@@ -549,6 +765,146 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('Added contributor'))).toBe(true);
     });
 
+    it('should add a contributor with the dedicated command', async () => {
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      const logs = await captureLog(() =>
+        repoCommand(ctx, ['add-contributor', 'did:jwk:contrib789', '--alias', 'Bob Two']),
+      );
+      expect(logs.some((l) => l.includes('Added contributor'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:contrib789'))).toBe(true);
+    });
+
+    it('should add a moderator with the dedicated command', async () => {
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      const logs = await captureLog(() =>
+        repoCommand(ctx, ['add-moderator', 'did:jwk:mod123', '--alias', 'Casey']),
+      );
+      expect(logs.some((l) => l.includes('Added moderator'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:mod123'))).toBe(true);
+    });
+
+    it('should add, list, and remove moderators with the mod command', async () => {
+      const { modCommand } = await import('../src/cli/commands/mod.js');
+      const addLogs = await captureLog(() =>
+        modCommand(ctx, ['add', 'did:jwk:mod456', '--alias', 'Dana']),
+      );
+      expect(addLogs.some((l) => l.includes('Added moderator'))).toBe(true);
+
+      const listLogs = await captureLog(() => modCommand(ctx, ['list']));
+      expect(listLogs.some((l) => l.includes('Moderators'))).toBe(true);
+      expect(listLogs.some((l) => l.includes('did:jwk:mod456 (Dana)'))).toBe(true);
+
+      const removeLogs = await captureLog(() =>
+        modCommand(ctx, ['remove', 'did:jwk:mod456']),
+      );
+      expect(removeLogs.some((l) => l.includes('Removed moderator'))).toBe(true);
+    });
+
+    it('should write moderation events for block, lock, and comment moderation', async () => {
+      const { modCommand } = await import('../src/cli/commands/mod.js');
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      await captureLog(() => repoCommand(ctx, ['add-contributor', 'did:jwk:block-me']));
+
+      const blockLogs = await captureLog(() =>
+        modCommand(ctx, ['block', 'did:jwk:block-me', '--reason', 'spam']),
+      );
+      expect(blockLogs.some((l) => l.includes('Blocked did:jwk:block-me'))).toBe(true);
+
+      const lockLogs = await captureLog(() =>
+        modCommand(ctx, ['lock', 'pr', 'abc1234', '--reason', 'heated']),
+      );
+      expect(lockLogs.some((l) => l.includes('Locked pr abc1234'))).toBe(true);
+
+      const hideLogs = await captureLog(() =>
+        modCommand(ctx, ['hide-comment', 'comment123', '--kind', 'pr', '--reason', 'off-topic']),
+      );
+      expect(hideLogs.some((l) => l.includes('Hid comment comment123'))).toBe(true);
+
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const { records: events } = await ctx.repo.records.query('repo/moderationEvent' as any, {
+        filter: { contextId: repos[0].contextId },
+      });
+      const eventData = await Promise.all(events.map(async (record: any) => ({
+        tags : record.tags as Record<string, string>,
+        data : await record.data.json(),
+      })));
+
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'block'
+        && entry.tags.targetDid === 'did:jwk:block-me'
+        && entry.data.reason === 'spam',
+      )).toBe(true);
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'lock'
+        && entry.tags.targetKind === 'pr'
+        && entry.tags.targetId === 'abc1234',
+      )).toBe(true);
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'hideComment'
+        && entry.tags.targetKind === 'prComment'
+        && entry.tags.targetId === 'comment123',
+      )).toBe(true);
+
+      const { records: remainingContributorRoles } = await ctx.repo.records.query('repo/contributor' as any, {
+        filter: { contextId: repos[0].contextId, tags: { did: 'did:jwk:block-me' } },
+      });
+      expect(remainingContributorRoles).toHaveLength(0);
+    });
+
+    it('should write report and interaction-limit moderation events', async () => {
+      const { modCommand } = await import('../src/cli/commands/mod.js');
+      const reportLogs = await captureLog(() =>
+        modCommand(ctx, ['report', 'record123', '--kind', 'issue-comment', '--reason', 'abuse']),
+      );
+      expect(reportLogs.some((l) => l.includes('Reported record123'))).toBe(true);
+
+      const resolveLogs = await captureLog(() =>
+        modCommand(ctx, ['resolve-report', 'report123', '--reason', 'handled']),
+      );
+      expect(resolveLogs.some((l) => l.includes('Resolved report report123'))).toBe(true);
+
+      const limitLogs = await captureLog(() =>
+        modCommand(ctx, ['interaction-limit', 'contributors', '--duration', '24h']),
+      );
+      expect(limitLogs.some((l) => l.includes('Set interaction limit: contributors'))).toBe(true);
+
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const { records: events } = await ctx.repo.records.query('repo/moderationEvent' as any, {
+        filter: { contextId: repos[0].contextId },
+      });
+      const eventData = await Promise.all(events.map(async (record: any) => ({
+        tags : record.tags as Record<string, string>,
+        data : await record.data.json(),
+      })));
+
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'report'
+        && entry.tags.targetKind === 'issueComment'
+        && entry.tags.reportStatus === 'open',
+      )).toBe(true);
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'resolveReport'
+        && entry.tags.reportStatus === 'resolved',
+      )).toBe(true);
+      expect(eventData.some((entry) =>
+        entry.tags.action === 'interactionLimit'
+        && entry.tags.interactionLimit === 'contributors'
+        && entry.data.duration === '24h',
+      )).toBe(true);
+    });
+
+    it('should add a viewer collaborator', async () => {
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      const logs = await captureLog(() =>
+        repoCommand(ctx, ['add-collaborator', 'did:jwk:viewer456', 'viewer', '--alias', 'Read Only']),
+      );
+      expect(logs.some((l) => l.includes('Added viewer'))).toBe(true);
+    });
+
     it('should list collaborators in repo info', async () => {
       const { repoCommand } = await import('../src/cli/commands/repo.js');
       const logs = await captureLog(() => repoCommand(ctx, ['info']));
@@ -556,6 +912,24 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('did:jwk:collab123'))).toBe(true);
       expect(logs.some((l) => l.includes('contributors:'))).toBe(true);
       expect(logs.some((l) => l.includes('did:jwk:contrib456'))).toBe(true);
+      expect(logs.some((l) => l.includes('moderators:'))).toBe(true);
+      expect(logs.some((l) => l.includes('did:jwk:mod123'))).toBe(true);
+    });
+
+    it('should remove a moderator with the dedicated command', async () => {
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      const logs = await captureLog(() =>
+        repoCommand(ctx, ['remove-moderator', 'did:jwk:mod123']),
+      );
+      expect(logs.some((l) => l.includes('Removed moderator'))).toBe(true);
+    });
+
+    it('should remove a contributor with the dedicated command', async () => {
+      const { repoCommand } = await import('../src/cli/commands/repo.js');
+      const logs = await captureLog(() =>
+        repoCommand(ctx, ['remove-contributor', 'did:jwk:contrib789']),
+      );
+      expect(logs.some((l) => l.includes('Removed contributor'))).toBe(true);
     });
 
     it('should remove a collaborator by DID', async () => {
@@ -667,11 +1041,277 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('No issues found'))).toBe(true);
     });
 
+    it('should create, list, and comment on canonical issues for a remote owner', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const remoteOwnerDid = 'did:jwk:remote-cli-issue-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const sent: SentRecord[] = [];
+      const captured: CapturedCreate[] = [];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'contributor', sent, captured);
+
+      const createLogs = await captureLog(() =>
+        issueCommand(remoteCtx, ['create', 'Remote canonical issue', '--body', 'Written to owner DWN', '--owner', remoteOwnerDid]),
+      );
+      expect(createLogs.some((l) => l.includes('Created issue'))).toBe(true);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].targetDid).toBe(remoteOwnerDid);
+      expect(captured[0]).toMatchObject({
+        path    : 'repo/issue',
+        options : {
+          parentContextId : repos[0].contextId,
+          protocolRole    : 'repo:repo/contributor',
+          store           : false,
+        },
+      });
+
+      const issueId = shortId(sent[0].record.id);
+      const listLogs = await captureLog(() =>
+        issueCommand(remoteCtx, ['list', '--owner', remoteOwnerDid]),
+      );
+      expect(listLogs.some((l) => l.includes('Remote canonical issue'))).toBe(true);
+
+      const commentLogs = await captureLog(() =>
+        issueCommand(remoteCtx, ['comment', issueId, 'Remote owner comment', '--owner', remoteOwnerDid]),
+      );
+      expect(commentLogs.some((l) => l.includes(`Added comment to issue ${issueId}`))).toBe(true);
+      expect(sent).toHaveLength(2);
+      expect(recordProtocolPath(sent[1].record)).toBe('repo/issue/comment');
+      expect(captured.some((entry) =>
+        entry.path === 'repo/issue/comment'
+        && entry.options.protocolRole === 'repo:repo/contributor'
+        && entry.options.store === false,
+      )).toBe(true);
+    });
+
+    it('should reject remote canonical issue writes when the actor is blocked', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const remoteOwnerDid = 'did:jwk:remote-blocked-issue-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const sent: SentRecord[] = [{
+        targetDid : remoteOwnerDid,
+        record    : {
+          ...fakeJsonRecord(
+            'remote-block-event',
+            repos[0].contextId,
+            {
+              action     : 'block',
+              actorDid   : remoteOwnerDid,
+              targetDid  : ctx.did,
+              targetKind : 'repo',
+              reason     : 'spam',
+              createdAt  : '2026-06-23T00:00:00.000Z',
+            },
+            { action: 'block', actorDid: remoteOwnerDid, targetDid: ctx.did, targetKind: 'repo' },
+          ),
+          protocolPath: 'repo/moderationEvent',
+        },
+      }];
+      const captured: CapturedCreate[] = [];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'contributor', sent, captured);
+
+      const { errors, exitCode } = await captureError(() =>
+        issueCommand(remoteCtx, ['create', 'Blocked issue', '--owner', remoteOwnerDid]),
+      );
+      expect(exitCode).toBe(1);
+      expect(errors[0]).toContain('blocked');
+      expect(captured).toHaveLength(0);
+    });
+
+    it('should enforce issue locks and hide moderated comments', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const remoteOwnerDid = 'did:jwk:remote-moderated-issue-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const issue = {
+        ...fakeJsonRecord(
+          'remote-moderated-issue-record',
+          repos[0].contextId,
+          { title: 'Moderated issue', body: '' },
+          { status: 'open' },
+        ),
+        protocolPath: 'repo/issue',
+      };
+      const issueId = shortId(issue.id);
+      const comment = {
+        ...fakeJsonRecord(
+          'remote-moderated-issue-comment',
+          issue.contextId,
+          { body: 'Visible before moderation' },
+          {},
+        ),
+        protocolPath: 'repo/issue/comment',
+      };
+      const lockEvent = moderationRecord('remote-issue-lock', repos[0].contextId, {
+        action     : 'lock',
+        targetKind : 'issue',
+        targetId   : issueId,
+      }, '2026-06-23T00:00:00.000Z');
+      const hideEvent = moderationRecord('remote-issue-hide', repos[0].contextId, {
+        action     : 'hideComment',
+        targetKind : 'issueComment',
+        targetId   : shortId(comment.id),
+      }, '2026-06-23T00:01:00.000Z');
+      const sent: SentRecord[] = [
+        { record: issue, targetDid: remoteOwnerDid },
+        { record: comment, targetDid: remoteOwnerDid },
+        { record: lockEvent, targetDid: remoteOwnerDid },
+        { record: hideEvent, targetDid: remoteOwnerDid },
+      ];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'contributor', sent);
+
+      const locked = await captureError(() =>
+        issueCommand(remoteCtx, ['comment', issueId, 'Rejected while locked', '--owner', remoteOwnerDid]),
+      );
+      expect(locked.exitCode).toBe(1);
+      expect(locked.errors[0]).toContain('locked');
+
+      const showLogs = await captureLog(() => issueCommand(remoteCtx, ['show', issueId, '--owner', remoteOwnerDid]));
+      expect(showLogs.some((line) => line.includes('Visible before moderation'))).toBe(false);
+
+      sent.push({
+        targetDid : remoteOwnerDid,
+        record    : moderationRecord('remote-issue-unlock', repos[0].contextId, {
+          action     : 'unlock',
+          targetKind : 'issue',
+          targetId   : issueId,
+        }, '2026-06-23T00:02:00.000Z'),
+      });
+      const unlockedLogs = await captureLog(() =>
+        issueCommand(remoteCtx, ['comment', issueId, 'Accepted after unlock', '--owner', remoteOwnerDid]),
+      );
+      expect(unlockedLogs.some((line) => line.includes(`Added comment to issue ${issueId}`))).toBe(true);
+    });
+
     it('should fail show for non-existent issue', async () => {
       const { issueCommand } = await import('../src/cli/commands/issue.js');
       const { errors, exitCode } = await captureError(() => issueCommand(ctx, ['show', 'fffffff']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
+    });
+
+    it('should accept an external issue submission into the repo', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const externalDid = 'did:jwk:external-cli-issue';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const repo = repos[0];
+      const externalIssue = fakeJsonRecord(
+        'external-cli-issue-record',
+        'external-cli-issue-context',
+        { title: 'External CLI bug', body: 'Reported from a submitter DWN.' },
+        {
+          status       : 'open',
+          repoDid      : ctx.did,
+          repoRecordId : repo.id,
+          repoName     : 'my-test-repo',
+        },
+      );
+      const externalComment = fakeJsonRecord(
+        'external-cli-issue-comment-record',
+        externalIssue.contextId,
+        { body: 'I can reproduce this on the latest release.' },
+        {},
+      );
+      const externalStatusChange = fakeJsonRecord(
+        'external-cli-issue-status-record',
+        externalIssue.contextId,
+        { reason: 'Reporter closed as fixed upstream.' },
+        { from: 'open', to: 'closed' },
+      );
+
+      const acceptCtx = withExternalIssueRecords(
+        ctx,
+        externalDid,
+        [externalIssue],
+        [externalComment],
+        [externalStatusChange],
+      );
+      const logs = await captureLog(() => issueCommand(acceptCtx, ['accept', externalDid, externalIssue.id]));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Accepted external issue');
+      expect(allOutput).toContain('External CLI bug');
+      expect(allOutput).toContain(externalDid);
+      expect(allOutput).toContain('Copied: 1 comment, 1 status change');
+
+      const { records: issues } = await ctx.issues.records.query('repo/issue', {
+        filter: { contextId: repo.contextId },
+      });
+      const accepted = issues.find(
+        (record) => (record.tags as Record<string, string> | undefined)?.submissionRecordId === externalIssue.id,
+      );
+      expect(accepted).toBeDefined();
+      const acceptedData = await accepted!.data.json();
+      const acceptedTags = accepted!.tags as Record<string, string> | undefined;
+      expect(acceptedData.title).toBe('External CLI bug');
+      expect(acceptedTags?.submitterDid).toBe(externalDid);
+      expect(acceptedTags?.submissionRecordId).toBe(externalIssue.id);
+      expect(acceptedTags?.repoDid).toBeUndefined();
+
+      const { records: comments } = await ctx.issues.records.query('repo/issue/comment' as any, {
+        filter: { contextId: accepted!.contextId },
+      });
+      expect(comments).toHaveLength(1);
+      expect((await comments[0].data.json()).body).toBe('I can reproduce this on the latest release.');
+
+      const { records: statusChanges } = await ctx.issues.records.query('repo/issue/statusChange' as any, {
+        filter: { contextId: accepted!.contextId },
+      });
+      expect(statusChanges).toHaveLength(1);
+      expect((await statusChanges[0].data.json()).reason).toBe('Reporter closed as fixed upstream.');
+    });
+
+    it('should ignore an external issue submission with an owner-side decision', async () => {
+      const { issueCommand } = await import('../src/cli/commands/issue.js');
+      const externalDid = 'did:jwk:external-cli-issue-ignore';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const repo = repos[0];
+      const externalIssue = fakeJsonRecord(
+        'external-cli-issue-ignore-record',
+        'external-cli-issue-ignore-context',
+        { title: 'External noisy bug', body: 'Not actionable.' },
+        {
+          status       : 'open',
+          repoDid      : ctx.did,
+          repoRecordId : repo.id,
+          repoName     : 'my-test-repo',
+        },
+      );
+
+      const ignoreCtx = withExternalIssueRecords(ctx, externalDid, [externalIssue]);
+      const logs = await captureLog(() => issueCommand(
+        ignoreCtx,
+        ['ignore', externalDid, externalIssue.id, '--reason', 'not reproducible'],
+      ));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Ignored external issue');
+      expect(allOutput).toContain(externalDid);
+
+      const { records: decisions } = await ctx.repo.records.query('repo/submissionDecision' as any, {
+        filter: {
+          contextId : repo.contextId,
+          tags      : {
+            kind               : 'issue',
+            decision           : 'ignored',
+            submitterDid       : externalDid,
+            submissionRecordId : externalIssue.id,
+          },
+        },
+      });
+      expect(decisions).toHaveLength(1);
+      const decisionData = await decisions[0].data.json();
+      expect(decisionData.reason).toBe('not reproducible');
+      expect(decisionData.decidedBy).toBe(ctx.did);
+
+      const secondLogs = await captureLog(() => issueCommand(ignoreCtx, ['ignore', externalDid, externalIssue.id]));
+      expect(secondLogs.join('\n')).toContain('already ignored');
     });
   });
 
@@ -866,11 +1506,309 @@ describe('gitd CLI commands', () => {
       expect(logs.some((l) => l.includes('Merge test PR'))).toBe(true);
     });
 
+    it('should create, list, and comment on canonical PRs for a remote owner', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const remoteOwnerDid = 'did:jwk:remote-cli-pr-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const sent: SentRecord[] = [];
+      const captured: CapturedCreate[] = [];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'contributor', sent, captured);
+
+      const createLogs = await captureLog(() =>
+        prCommand(remoteCtx, [
+          'create',
+          'Remote canonical PR',
+          '--body',
+          'Written to owner DWN',
+          '--base',
+          'main',
+          '--head',
+          'users/bob/topic',
+          '--no-bundle',
+          '--owner',
+          remoteOwnerDid,
+        ]),
+      );
+      expect(createLogs.some((l) => l.includes('Created PR'))).toBe(true);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].targetDid).toBe(remoteOwnerDid);
+      expect(captured[0]).toMatchObject({
+        path    : 'repo/patch',
+        options : {
+          parentContextId : repos[0].contextId,
+          protocolRole    : 'repo:repo/contributor',
+          store           : false,
+        },
+      });
+
+      const prId = shortId(sent[0].record.id);
+      const listLogs = await captureLog(() =>
+        prCommand(remoteCtx, ['list', '--owner', remoteOwnerDid]),
+      );
+      expect(listLogs.some((l) => l.includes('Remote canonical PR'))).toBe(true);
+
+      const commentLogs = await captureLog(() =>
+        prCommand(remoteCtx, ['comment', prId, 'Remote owner review note', '--owner', remoteOwnerDid]),
+      );
+      expect(commentLogs.some((l) => l.includes(`Added comment to PR ${prId}`))).toBe(true);
+      expect(sent).toHaveLength(2);
+      expect(recordProtocolPath(sent[1].record)).toBe('repo/patch/review');
+      expect(captured.some((entry) =>
+        entry.path === 'repo/patch/review'
+        && entry.options.protocolRole === 'repo:repo/contributor'
+        && entry.options.store === false,
+      )).toBe(true);
+    });
+
+    it('should enforce PR locks and hide moderated PR comments', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const remoteOwnerDid = 'did:jwk:remote-moderated-pr-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const patch = {
+        ...fakeJsonRecord(
+          'remote-moderated-pr-record',
+          repos[0].contextId,
+          { title: 'Moderated PR', body: '' },
+          { status: 'open', baseBranch: 'main', headBranch: 'moderated-pr' },
+        ),
+        protocolPath: 'repo/patch',
+      };
+      const prId = shortId(patch.id);
+      const review = {
+        ...fakeJsonRecord(
+          'remote-moderated-pr-review',
+          patch.contextId,
+          { body: 'Visible PR comment before moderation' },
+          { verdict: 'comment' },
+        ),
+        protocolPath: 'repo/patch/review',
+      };
+      const lockEvent = moderationRecord('remote-pr-lock', repos[0].contextId, {
+        action     : 'lock',
+        targetKind : 'pr',
+        targetId   : prId,
+      }, '2026-06-23T00:00:00.000Z');
+      const hideEvent = moderationRecord('remote-pr-hide', repos[0].contextId, {
+        action     : 'hideComment',
+        targetKind : 'prComment',
+        targetId   : shortId(review.id),
+      }, '2026-06-23T00:01:00.000Z');
+      const sent: SentRecord[] = [
+        { record: patch, targetDid: remoteOwnerDid },
+        { record: review, targetDid: remoteOwnerDid },
+        { record: lockEvent, targetDid: remoteOwnerDid },
+        { record: hideEvent, targetDid: remoteOwnerDid },
+      ];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'contributor', sent);
+
+      const locked = await captureError(() =>
+        prCommand(remoteCtx, ['comment', prId, 'Rejected while locked', '--owner', remoteOwnerDid]),
+      );
+      expect(locked.exitCode).toBe(1);
+      expect(locked.errors[0]).toContain('locked');
+
+      const showLogs = await captureLog(() => prCommand(remoteCtx, ['show', prId, '--owner', remoteOwnerDid]));
+      expect(showLogs.some((line) => line.includes('Visible PR comment before moderation'))).toBe(false);
+
+      sent.push({
+        targetDid : remoteOwnerDid,
+        record    : moderationRecord('remote-pr-unlock', repos[0].contextId, {
+          action     : 'unlock',
+          targetKind : 'pr',
+          targetId   : prId,
+        }, '2026-06-23T00:02:00.000Z'),
+      });
+      const unlockedLogs = await captureLog(() =>
+        prCommand(remoteCtx, ['comment', prId, 'Accepted after PR unlock', '--owner', remoteOwnerDid]),
+      );
+      expect(unlockedLogs.some((line) => line.includes(`Added comment to PR ${prId}`))).toBe(true);
+    });
+
     it('should fail show for non-existent PR', async () => {
       const { prCommand } = await import('../src/cli/commands/pr.js');
       const { errors, exitCode } = await captureError(() => prCommand(ctx, ['show', 'fffffff']));
       expect(exitCode).toBe(1);
       expect(errors[0]).toContain('not found');
+    });
+
+    it('should accept an external PR submission with revision bundle into the repo', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const externalDid = 'did:jwk:external-cli-pr';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const repo = repos[0];
+      const externalPatch = fakeJsonRecord(
+        'external-cli-patch-record',
+        'external-cli-patch-context',
+        { title: 'External CLI patch', body: 'Patch submitted from another DWN.' },
+        {
+          status       : 'open',
+          baseBranch   : 'main',
+          headBranch   : 'external/fix',
+          sourceDid    : externalDid,
+          repoDid      : ctx.did,
+          repoRecordId : repo.id,
+          repoName     : 'my-test-repo',
+        },
+      );
+      const externalRevision = fakeJsonRecord(
+        'external-cli-revision-record',
+        'external-cli-revision-context',
+        {
+          description : 'v1: 1 commit',
+          diffStat    : { additions: 1, deletions: 0, filesChanged: 1 },
+        },
+        {
+          headCommit  : 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          baseCommit  : 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          commitCount : 1,
+        },
+      );
+      const externalBundle = fakeBlobRecord(
+        'external-cli-bundle-record',
+        'external-cli-bundle-context',
+        new Uint8Array([1, 2, 3, 4]),
+        {
+          headCommit : 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          baseCommit : 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          refCount   : 1,
+          size       : 4,
+        },
+      );
+      const externalReview = fakeJsonRecord(
+        'external-cli-review-record',
+        externalPatch.contextId,
+        { body: 'This is ready to land.' },
+        { verdict: 'approve', revisionRecordId: externalRevision.id },
+      );
+      const externalReviewComment = fakeJsonRecord(
+        'external-cli-review-comment-record',
+        externalReview.contextId,
+        { body: 'This line is the important fix.', diffHunk: '@@ -1 +1 @@' },
+        { path: 'src/widget.ts', line: 12, side: 'right' },
+      );
+      const externalStatusChange = fakeJsonRecord(
+        'external-cli-patch-status-record',
+        externalPatch.contextId,
+        { reason: 'Submitter marked ready for review.' },
+        { from: 'draft', to: 'open' },
+      );
+
+      const acceptCtx = withExternalPatchRecords(
+        ctx,
+        externalDid,
+        [externalPatch],
+        [externalRevision],
+        [externalBundle],
+        [externalReview],
+        [externalReviewComment],
+        [externalStatusChange],
+      );
+      const logs = await captureLog(() => prCommand(acceptCtx, ['accept', externalDid, externalPatch.id]));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Accepted external PR');
+      expect(allOutput).toContain('External CLI patch');
+      expect(allOutput).toContain('Copied: 1 revision, 1 bundle');
+      expect(allOutput).toContain('1 review, 1 review comment, 1 status change');
+
+      const { records: patches } = await ctx.patches.records.query('repo/patch', {
+        filter: { contextId: repo.contextId },
+      });
+      const accepted = patches.find(
+        (record) => (record.tags as Record<string, string> | undefined)?.submissionRecordId === externalPatch.id,
+      );
+      expect(accepted).toBeDefined();
+      const acceptedData = await accepted!.data.json();
+      const acceptedTags = accepted!.tags as Record<string, string> | undefined;
+      expect(acceptedData.title).toBe('External CLI patch');
+      expect(acceptedTags?.submitterDid).toBe(externalDid);
+      expect(acceptedTags?.sourceDid).toBe(externalDid);
+      expect(acceptedTags?.headBranch).toBe('external/fix');
+      expect(acceptedTags?.repoDid).toBeUndefined();
+
+      const { records: revisions } = await ctx.patches.records.query('repo/patch/revision' as any, {
+        filter: { contextId: accepted!.contextId },
+      });
+      expect(revisions).toHaveLength(1);
+      const { records: bundles } = await ctx.patches.records.query('repo/patch/revision/revisionBundle' as any, {
+        filter: { contextId: revisions[0].contextId },
+      });
+      expect(bundles).toHaveLength(1);
+
+      const { records: reviews } = await ctx.patches.records.query('repo/patch/review' as any, {
+        filter: { contextId: accepted!.contextId },
+      });
+      expect(reviews).toHaveLength(1);
+      expect((await reviews[0].data.json()).body).toBe('This is ready to land.');
+      expect((reviews[0].tags as Record<string, string> | undefined)?.revisionRecordId).toBe(revisions[0].id);
+
+      const { records: reviewComments } = await ctx.patches.records.query('repo/patch/review/reviewComment' as any, {
+        filter: { contextId: reviews[0].contextId },
+      });
+      expect(reviewComments).toHaveLength(1);
+      expect((await reviewComments[0].data.json()).body).toBe('This line is the important fix.');
+
+      const { records: statusChanges } = await ctx.patches.records.query('repo/patch/statusChange' as any, {
+        filter: { contextId: accepted!.contextId },
+      });
+      expect(statusChanges).toHaveLength(1);
+      expect((await statusChanges[0].data.json()).reason).toBe('Submitter marked ready for review.');
+    });
+
+    it('should ignore an external PR submission with an owner-side decision', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const externalDid = 'did:jwk:external-cli-pr-ignore';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const repo = repos[0];
+      const externalPatch = fakeJsonRecord(
+        'external-cli-patch-ignore-record',
+        'external-cli-patch-ignore-context',
+        { title: 'External noisy patch', body: 'Not the direction for this repo.' },
+        {
+          status       : 'open',
+          baseBranch   : 'main',
+          headBranch   : 'external/noisy',
+          sourceDid    : externalDid,
+          repoDid      : ctx.did,
+          repoRecordId : repo.id,
+          repoName     : 'my-test-repo',
+        },
+      );
+
+      const ignoreCtx = withExternalPatchRecords(ctx, externalDid, [externalPatch], [], []);
+      const logs = await captureLog(() => prCommand(
+        ignoreCtx,
+        ['ignore', externalDid, externalPatch.id, '--reason', 'out of scope'],
+      ));
+      const allOutput = logs.join('\n');
+      expect(allOutput).toContain('Ignored external PR');
+      expect(allOutput).toContain(externalDid);
+
+      const { records: decisions } = await ctx.repo.records.query('repo/submissionDecision' as any, {
+        filter: {
+          contextId : repo.contextId,
+          tags      : {
+            kind               : 'patch',
+            decision           : 'ignored',
+            submitterDid       : externalDid,
+            submissionRecordId : externalPatch.id,
+          },
+        },
+      });
+      expect(decisions).toHaveLength(1);
+      const decisionData = await decisions[0].data.json();
+      expect(decisionData.reason).toBe('out of scope');
+      expect(decisionData.decidedBy).toBe(ctx.did);
+
+      const secondLogs = await captureLog(() => prCommand(ignoreCtx, ['ignore', externalDid, externalPatch.id]));
+      expect(secondLogs.join('\n')).toContain('already ignored');
     });
 
     it('should create PR with revision and bundle from git context', async () => {
@@ -1263,6 +2201,29 @@ describe('gitd CLI commands', () => {
   // =========================================================================
 
   describe('clone', () => {
+    it('should infer default clone directory from repo name', async () => {
+      const { inferCloneDirectory } = await import('../src/cli/commands/clone.js');
+      expect(inferCloneDirectory('my-repo', [])).toBe('my-repo');
+    });
+
+    it('should infer explicit clone directory after options', async () => {
+      const { inferCloneDirectory } = await import('../src/cli/commands/clone.js');
+      expect(inferCloneDirectory('my-repo', ['--depth', '1', '--branch', 'main', 'worktree'])).toBe('worktree');
+    });
+
+    it('should not treat clone option values as destination directories', async () => {
+      const { inferCloneDirectory } = await import('../src/cli/commands/clone.js');
+      expect(inferCloneDirectory('my-repo', ['--depth', '1'])).toBe('my-repo');
+      expect(inferCloneDirectory('my-repo', ['--reference', '../cache'])).toBe('my-repo');
+    });
+
+    it('should accept the legacy separator before git clone args', async () => {
+      const { gitCloneArgs, inferCloneDirectory } = await import('../src/cli/commands/clone.js');
+      const args = gitCloneArgs(['--', '--depth', '1', 'worktree']);
+      expect(args).toEqual(['--depth', '1', 'worktree']);
+      expect(inferCloneDirectory('my-repo', args)).toBe('worktree');
+    });
+
     it('should fail without arguments', async () => {
       const { cloneCommand } = await import('../src/cli/commands/clone.js');
       const { errors, exitCode } = await captureError(() => cloneCommand([]));

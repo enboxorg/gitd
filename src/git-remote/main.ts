@@ -20,17 +20,59 @@
  * @module
  */
 
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 
 import { parseDidUrl } from './parse-url.js';
 import { resolveGitEndpoint } from './resolve.js';
+import { decodePushToken, parseAuthPassword } from '../git-server/auth.js';
 
 /** Resolve the absolute path to the credential helper binary (sibling file). */
 function resolveCredentialHelper(): string {
   const thisFile = fileURLToPath(import.meta.url);
-  return resolve(thisFile, '..', 'credential-main.js');
+  const dir = dirname(thisFile);
+  const jsPath = resolve(dir, 'credential-main.js');
+  if (existsSync(jsPath)) {
+    return jsPath;
+  }
+  return resolve(dir, 'credential-main.ts');
+}
+
+async function localEndpointAuthHeader(
+  endpointUrl: string,
+  owner: string,
+  repo: string | undefined,
+): Promise<string | undefined> {
+  if (!repo) { return undefined; }
+
+  try {
+    const url = new URL(endpointUrl);
+    const response = await fetch(`${url.origin}/auth/token`, {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ owner, repo }),
+      signal  : AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) { return undefined; }
+
+    const creds = await response.json() as { username?: string; password?: string };
+    if (!creds.username || !creds.password) { return undefined; }
+
+    if (process.env.GITD_DEBUG === '1') {
+      try {
+        const payload = decodePushToken(parseAuthPassword(creds.password).token);
+        console.error(`[git-remote-did] local auth token did=${payload.did} owner=${payload.owner} repo=${payload.repo}`);
+      } catch {
+        console.error('[git-remote-did] local auth token could not be decoded');
+      }
+    }
+
+    return `Authorization: Basic ${Buffer.from(`${creds.username}:${creds.password}`).toString('base64')}`;
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -79,11 +121,19 @@ async function main(): Promise<void> {
   // Use git's `!<command>` syntax to invoke it via bun, which avoids
   // needing the file to be +x or on PATH.
   const credHelper = resolveCredentialHelper();
-  const child = spawn('git', [
+  const gitArgs = [
     '-c', `credential.helper=!bun '${credHelper}'`,
     '-c', 'credential.useHttpPath=true',
-    helper, remoteName, endpoint.url,
-  ], {
+  ];
+  const authHeader = endpoint.source === 'LocalDaemon' || endpoint.source === 'LocalDwnHelper'
+    ? await localEndpointAuthHeader(endpoint.url, parsed.did, parsed.repo)
+    : undefined;
+  if (authHeader) {
+    gitArgs.push('-c', `http.extraHeader=${authHeader}`);
+  }
+  gitArgs.push(helper, remoteName, endpoint.url);
+
+  const child = spawn('git', gitArgs, {
     stdio: 'inherit',
   });
 

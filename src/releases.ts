@@ -19,6 +19,15 @@ import { defineProtocol } from '@enbox/api';
 export type ReleaseData = {
   name : string;
   body? : string;
+  discussionCategoryName? : string;
+  publishedAt? : string;
+  makeLatest? : 'true' | 'false' | 'legacy';
+  reactions? : Record<string, {
+    id : number;
+    userDid : string;
+    content : '+1' | 'laugh' | 'heart' | 'hooray' | 'rocket' | 'eyes';
+    createdAt : string;
+  }>;
 };
 
 /** Data shape for a release asset metadata. */
@@ -50,14 +59,14 @@ export type ForgeReleasesSchemaMap = {
 // ---------------------------------------------------------------------------
 
 export const ForgeReleasesDefinition = {
-  protocol  : 'https://enbox.org/protocols/forge/releases',
+  protocol  : 'https://enbox.id/protocols/forge/releases',
   published : true,
   uses      : {
-    repo: 'https://enbox.org/protocols/forge/repo',
+    repo: 'https://enbox.id/protocols/forge/repo',
   },
   types: {
     release: {
-      schema      : 'https://enbox.org/schemas/forge/release',
+      schema      : 'https://enbox.id/schemas/forge/release',
       dataFormats : ['application/json'],
     },
     asset: {

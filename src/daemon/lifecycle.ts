@@ -16,8 +16,8 @@ import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { enboxHome } from '../profiles/config.js';
 import { getVersion } from '../version.js';
+import { enboxHome, profilesDir } from '../profiles/config.js';
 import { readLockfile, removeLockfile } from './lockfile.js';
 
 import type { DaemonLock } from './lockfile.js';
@@ -43,7 +43,11 @@ const HEALTH_PROBE_TIMEOUT_MS = 2_000;
 // ---------------------------------------------------------------------------
 
 /** Path to the daemon log file. */
-export function daemonLogPath(): string {
+export function daemonLogPath(profileName?: string): string {
+  const profile = profileName || process.env.GITD_PROFILE || process.env.ENBOX_PROFILE;
+  if (profile) {
+    return join(profilesDir(), profile, 'gitd', 'daemon.log');
+  }
   return join(enboxHome(), 'gitd', 'daemon.log');
 }
 
@@ -83,6 +87,11 @@ export type EnsureDaemonResult = {
   spawned: boolean;
 };
 
+export type DaemonLifecycleOptions = {
+  /** Named profile whose helper should be discovered or spawned. */
+  profileName?: string;
+};
+
 /**
  * Ensure a local gitd daemon is running and healthy.
  *
@@ -97,8 +106,11 @@ export type EnsureDaemonResult = {
  * @returns The port of the running daemon.
  * @throws If the daemon cannot be started within the timeout.
  */
-export async function ensureDaemon(password?: string): Promise<EnsureDaemonResult> {
-  const lock = readLockfile();
+export async function ensureDaemon(
+  password?: string,
+  options: DaemonLifecycleOptions = {},
+): Promise<EnsureDaemonResult> {
+  const lock = readLockfile(options.profileName);
 
   if (lock) {
     // Check for version mismatch (user upgraded gitd).
@@ -107,7 +119,7 @@ export async function ensureDaemon(password?: string): Promise<EnsureDaemonResul
       console.error(
         `[daemon] Version mismatch: running ${lock.version}, current ${currentVersion}. Restarting...`,
       );
-      stopDaemonByLock(lock);
+      stopDaemonByLock(lock, options.profileName);
     } else {
       // Version matches (or unknown) — check health.
       const healthy = await probeDaemonHealth(lock.port);
@@ -116,12 +128,12 @@ export async function ensureDaemon(password?: string): Promise<EnsureDaemonResul
       }
       // PID is alive (readLockfile validated it) but not responding — stale.
       console.error('[daemon] Daemon is not responding. Restarting...');
-      stopDaemonByLock(lock);
+      stopDaemonByLock(lock, options.profileName);
     }
   }
 
   // Spawn a new daemon in the background.
-  return spawnDaemon(password);
+  return spawnDaemon(password, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +148,11 @@ export async function ensureDaemon(password?: string): Promise<EnsureDaemonResul
  * Polls the health endpoint with exponential backoff until the daemon
  * is ready or the timeout is exceeded.
  */
-async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
-  const logPath = daemonLogPath();
+async function spawnDaemon(
+  password?: string,
+  options: DaemonLifecycleOptions = {},
+): Promise<EnsureDaemonResult> {
+  const logPath = daemonLogPath(options.profileName);
   mkdirSync(dirname(logPath), { recursive: true });
 
   // Open a raw file descriptor for the log file.  Bun's `spawn()` does not
@@ -159,6 +174,9 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
   // injected by the caller (e.g. main.ts sets it after prompting).
   if (!env.GITD_PASSWORD && password) {
     env.GITD_PASSWORD = password;
+  }
+  if (options.profileName) {
+    env.GITD_PROFILE = options.profileName;
   }
 
   const child = spawn(gitdBin.command, [...gitdBin.prefix, 'serve'], {
@@ -186,7 +204,7 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
 
   // Poll the health endpoint until the daemon is ready, but fail fast
   // if the spawn itself errored (e.g. binary not found).
-  const port = await Promise.race([waitForDaemon(), spawnError]);
+  const port = await Promise.race([waitForDaemon(options), spawnError]);
   return { port, spawned: true };
 }
 
@@ -196,7 +214,7 @@ async function spawnDaemon(password?: string): Promise<EnsureDaemonResult> {
  * @returns The port the daemon is listening on.
  * @throws If the daemon does not become healthy within the timeout.
  */
-async function waitForDaemon(): Promise<number> {
+async function waitForDaemon(options: DaemonLifecycleOptions = {}): Promise<number> {
   const deadline = Date.now() + SPAWN_TIMEOUT_MS;
   let delay = INITIAL_BACKOFF_MS;
 
@@ -204,7 +222,7 @@ async function waitForDaemon(): Promise<number> {
     await sleep(delay);
     delay = Math.min(delay * 2, MAX_BACKOFF_MS);
 
-    const lock = readLockfile();
+    const lock = readLockfile(options.profileName);
     if (!lock) { continue; }
 
     const healthy = await probeDaemonHealth(lock.port);
@@ -213,7 +231,7 @@ async function waitForDaemon(): Promise<number> {
 
   throw new Error(
     'Timed out waiting for the gitd daemon to start. '
-    + `Check the log at ${daemonLogPath()} for details, or run \`gitd serve\` manually to debug.`,
+    + `Check the log at ${daemonLogPath(options.profileName)} for details, or run \`gitd serve\` manually to debug.`,
   );
 }
 
@@ -224,13 +242,13 @@ async function waitForDaemon(): Promise<number> {
 /**
  * Stop a running daemon by PID from the lockfile.
  */
-function stopDaemonByLock(lock: DaemonLock): void {
+function stopDaemonByLock(lock: DaemonLock, profileName?: string): void {
   try {
     process.kill(lock.pid, 'SIGTERM');
   } catch {
     // Process already dead — fine.
   }
-  removeLockfile();
+  removeLockfile(profileName);
 }
 
 /**
@@ -238,10 +256,10 @@ function stopDaemonByLock(lock: DaemonLock): void {
  *
  * @returns `true` if a daemon was stopped, `false` if none was running.
  */
-export function stopDaemon(): boolean {
-  const lock = readLockfile();
+export function stopDaemon(options: DaemonLifecycleOptions = {}): boolean {
+  const lock = readLockfile(options.profileName);
   if (!lock) { return false; }
-  stopDaemonByLock(lock);
+  stopDaemonByLock(lock, options.profileName);
   return true;
 }
 
@@ -262,8 +280,8 @@ export type DaemonStatus = {
 /**
  * Get the status of the running daemon.
  */
-export function daemonStatus(): DaemonStatus {
-  const lock = readLockfile();
+export function daemonStatus(options: DaemonLifecycleOptions = {}): DaemonStatus {
+  const lock = readLockfile(options.profileName);
   if (!lock) {
     return { running: false };
   }

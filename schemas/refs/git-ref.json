@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://enbox.org/schemas/forge/git-ref",
+  "$id": "https://enbox.id/schemas/forge/git-ref",
   "title": "GitRefData",
   "description": "A git ref pointer (branch or tag) mirrored as a DWN record for subscription-based notifications.",
   "type": "object",

@@ -33,7 +33,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRepoProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRepoDefinition.protocol).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeRepoDefinition.protocol).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should be a published protocol', () => {
@@ -47,16 +47,22 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.types.readme).toBeDefined();
       expect(ForgeRepoDefinition.types.license).toBeDefined();
       expect(ForgeRepoDefinition.types.maintainer).toBeDefined();
+      expect(ForgeRepoDefinition.types.moderator).toBeDefined();
       expect(ForgeRepoDefinition.types.triager).toBeDefined();
       expect(ForgeRepoDefinition.types.contributor).toBeDefined();
+      expect(ForgeRepoDefinition.types.viewer).toBeDefined();
       expect(ForgeRepoDefinition.types.topic).toBeDefined();
+      expect(ForgeRepoDefinition.types.submissionDecision).toBeDefined();
+      expect(ForgeRepoDefinition.types.moderationEvent).toBeDefined();
       expect(ForgeRepoDefinition.types.webhook).toBeDefined();
     });
 
-    it('should mark maintainer, triager, and contributor as roles', () => {
+    it('should mark maintainer, moderator, triager, contributor, and viewer as roles', () => {
       expect(ForgeRepoDefinition.structure.repo.maintainer.$role).toBe(true);
+      expect(ForgeRepoDefinition.structure.repo.moderator.$role).toBe(true);
       expect(ForgeRepoDefinition.structure.repo.triager.$role).toBe(true);
       expect(ForgeRepoDefinition.structure.repo.contributor.$role).toBe(true);
+      expect(ForgeRepoDefinition.structure.repo.viewer.$role).toBe(true);
     });
 
     it('should NOT have $recordLimit on repo (multi-repo)', () => {
@@ -72,6 +78,9 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.structure.repo.$tags?.$requiredTags).toContain('name');
       expect(ForgeRepoDefinition.structure.repo.$tags?.$requiredTags).toContain('visibility');
       expect(ForgeRepoDefinition.structure.repo.$tags?.$allowUndefinedTags).toBe(false);
+      expect(ForgeRepoDefinition.structure.repo.$tags?.forkedFromDid).toEqual({ type: 'string' });
+      expect(ForgeRepoDefinition.structure.repo.$tags?.forkedFromRepoName).toEqual({ type: 'string' });
+      expect(ForgeRepoDefinition.structure.repo.$tags?.forkedFromRecordId).toEqual({ type: 'string' });
     });
 
     it('should restrict visibility tag to public and private', () => {
@@ -81,8 +90,10 @@ describe('@enbox/gitd', () => {
 
     it('should require did tag on role records', () => {
       expect(ForgeRepoDefinition.structure.repo.maintainer.$tags?.$requiredTags).toContain('did');
+      expect(ForgeRepoDefinition.structure.repo.moderator.$tags?.$requiredTags).toContain('did');
       expect(ForgeRepoDefinition.structure.repo.triager.$tags?.$requiredTags).toContain('did');
       expect(ForgeRepoDefinition.structure.repo.contributor.$tags?.$requiredTags).toContain('did');
+      expect(ForgeRepoDefinition.structure.repo.viewer.$tags?.$requiredTags).toContain('did');
     });
 
     it('should require encryption on webhook type', () => {
@@ -103,6 +114,7 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.structure.repo.topic).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.webhook).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.bundle).toBeDefined();
+      expect(ForgeRepoDefinition.structure.repo.moderationEvent).toBeDefined();
     });
 
     it('should enable $squash on bundle records', () => {
@@ -131,6 +143,37 @@ describe('@enbox/gitd', () => {
       expect(maintainerAction!.can).toContain('squash');
     });
 
+    it('should support maintainer decisions for external submissions', () => {
+      const decision = ForgeRepoDefinition.structure.repo.submissionDecision;
+      expect(decision.$immutable).toBe(true);
+      expect(decision.$tags.$requiredTags).toEqual(['kind', 'decision', 'submitterDid', 'submissionRecordId']);
+      expect(decision.$tags.kind.enum).toEqual(['issue', 'patch']);
+      expect(decision.$tags.decision.enum).toEqual(['ignored']);
+
+      const anyoneAction = decision.$actions.find((a) => 'who' in a && a.who === 'anyone');
+      const maintainerAction = decision.$actions.find((a) => 'role' in a && a.role === 'repo/maintainer');
+      expect(anyoneAction?.can).toContain('read');
+      expect(maintainerAction?.can).toContain('create');
+    });
+
+    it('should support immutable repo moderation events', () => {
+      const eventNode = ForgeRepoDefinition.structure.repo.moderationEvent;
+      expect(eventNode.$immutable).toBe(true);
+      expect(eventNode.$tags.$requiredTags).toEqual(['action', 'actorDid']);
+      expect(eventNode.$tags.action.enum).toContain('block');
+      expect(eventNode.$tags.action.enum).toContain('hideComment');
+      expect(eventNode.$tags.targetDid.type).toBe('string');
+      expect(eventNode.$tags.targetKind.enum).toContain('prComment');
+      expect(eventNode.$tags.reportStatus.enum).toEqual(['open', 'resolved', 'dismissed']);
+
+      const anyoneAction = eventNode.$actions.find((a) => 'who' in a && a.who === 'anyone');
+      const maintainerAction = eventNode.$actions.find((a) => 'role' in a && a.role === 'repo/maintainer');
+      const moderatorAction = eventNode.$actions.find((a) => 'role' in a && a.role === 'repo/moderator');
+      expect(anyoneAction?.can).toContain('read');
+      expect(maintainerAction?.can).toContain('create');
+      expect(moderatorAction?.can).toContain('create');
+    });
+
     it('should wrap definition via defineProtocol()', () => {
       expect(ForgeRepoProtocol.definition).toBe(ForgeRepoDefinition);
     });
@@ -142,7 +185,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRefsProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRefsDefinition.protocol).toBe('https://enbox.org/protocols/forge/refs');
+      expect(ForgeRefsDefinition.protocol).toBe('https://enbox.id/protocols/forge/refs');
     });
 
     it('should be a published protocol', () => {
@@ -151,13 +194,18 @@ describe('@enbox/gitd', () => {
 
     it('should compose with Forge Repo via uses', () => {
       expect(ForgeRefsDefinition.uses).toBeDefined();
-      expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeRefsDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
-    it('should define the ref type', () => {
+    it('should define the ref and branch state types', () => {
       expect(ForgeRefsDefinition.types.ref).toBeDefined();
-      expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.org/schemas/forge/git-ref');
+      expect(ForgeRefsDefinition.types.ref.schema).toBe('https://enbox.id/schemas/forge/git-ref');
       expect(ForgeRefsDefinition.types.ref.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.branch.schema).toBe('https://enbox.id/schemas/forge/branch');
+      expect(ForgeRefsDefinition.types.branch.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.state.schema).toBe('https://enbox.id/schemas/forge/branch-state');
+      expect(ForgeRefsDefinition.types.state.dataFormats).toContain('application/json');
+      expect(ForgeRefsDefinition.types.bundle.dataFormats).toContain('application/x-git-bundle');
     });
 
     it('should use $ref to compose with repo protocol', () => {
@@ -165,9 +213,12 @@ describe('@enbox/gitd', () => {
       expect(repoNode.$ref).toBe('repo:repo');
     });
 
-    it('should nest ref under repo via $ref', () => {
+    it('should nest ref and branch state under repo via $ref', () => {
       const repoNode = ForgeRefsDefinition.structure.repo as any;
       expect(repoNode.ref).toBeDefined();
+      expect(repoNode.branch).toBeDefined();
+      expect(repoNode.branch.state).toBeDefined();
+      expect(repoNode.branch.bundle).toBeDefined();
     });
 
     it('should allow anyone to read refs', () => {
@@ -208,6 +259,49 @@ describe('@enbox/gitd', () => {
       expect(refNode.$tags.target.type).toBe('string');
     });
 
+    it('should require branch ownership tags', () => {
+      const branchNode = (ForgeRefsDefinition.structure.repo as any).branch;
+      expect(branchNode.$tags.$requiredTags).toContain('refName');
+      expect(branchNode.$tags.$requiredTags).toContain('ownerDid');
+      expect(branchNode.$tags.$requiredTags).toContain('kind');
+      expect(branchNode.$tags.kind.enum).toEqual(['contributor', 'protected', 'shared']);
+      expect(branchNode.$tags.$allowUndefinedTags).toBe(false);
+    });
+
+    it('should allow contributors to create branches and maintainers to delete them', () => {
+      const branchNode = (ForgeRefsDefinition.structure.repo as any).branch;
+      const contributorAction = branchNode.$actions.find((a: any) => a.role === 'repo:repo/contributor');
+      const maintainerAction = branchNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(contributorAction.can).toContain('create');
+      expect(contributorAction.can).toContain('read');
+      expect(maintainerAction.can).toContain('delete');
+    });
+
+    it('should squash branch state through branch authors or maintainers', () => {
+      const stateNode = (ForgeRefsDefinition.structure.repo as any).branch.state;
+      const authorAction = stateNode.$actions.find((a: any) => a.who === 'author' && a.of === 'repo/branch');
+      const maintainerAction = stateNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(stateNode.$squash).toBe(true);
+      expect(authorAction.can).toContain('create');
+      expect(authorAction.can).toContain('squash');
+      expect(maintainerAction.can).toContain('create');
+      expect(maintainerAction.can).toContain('squash');
+      expect(stateNode.$tags.kind.enum).toEqual(['refUpdate', 'checkpoint']);
+      expect(stateNode.$tags.acceptedStateRecordId.type).toBe('string');
+    });
+
+    it('should squash branch bundles through branch authors or maintainers', () => {
+      const bundleNode = (ForgeRefsDefinition.structure.repo as any).branch.bundle;
+      const authorAction = bundleNode.$actions.find((a: any) => a.who === 'author' && a.of === 'repo/branch');
+      const maintainerAction = bundleNode.$actions.find((a: any) => a.role === 'repo:repo/maintainer');
+      expect(bundleNode.$squash).toBe(true);
+      expect(authorAction.can).toContain('create');
+      expect(authorAction.can).toContain('squash');
+      expect(maintainerAction.can).toContain('create');
+      expect(maintainerAction.can).toContain('squash');
+      expect(bundleNode.$tags.$requiredTags).toContain('tipCommit');
+    });
+
     it('should wrap definition via defineProtocol()', () => {
       expect(ForgeRefsProtocol.definition).toBe(ForgeRefsDefinition);
     });
@@ -219,7 +313,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeIssuesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeIssuesDefinition.protocol).toBe('https://enbox.org/protocols/forge/issues');
+      expect(ForgeIssuesDefinition.protocol).toBe('https://enbox.id/protocols/forge/issues');
     });
 
     it('should be a published protocol', () => {
@@ -228,7 +322,7 @@ describe('@enbox/gitd', () => {
 
     it('should compose with Forge Repo via uses', () => {
       expect(ForgeIssuesDefinition.uses).toBeDefined();
-      expect(ForgeIssuesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeIssuesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define all expected types', () => {
@@ -255,14 +349,39 @@ describe('@enbox/gitd', () => {
       expect(status.enum).toEqual(['open', 'closed']);
     });
 
-    it('should nest comment, label, statusChange, and assignment under issue', () => {
+    it('should define GitHub-compatible issue lock tags', () => {
+      const tags = ForgeIssuesDefinition.structure.repo.issue.$tags;
+      const locked = tags?.locked as { enum: string[] };
+      const lockReason = tags?.lockReason as { enum: string[] };
+      expect(locked.enum).toEqual(['true', 'false']);
+      expect(lockReason.enum).toEqual(['off-topic', 'too heated', 'resolved', 'spam']);
+    });
+
+    it('should allow target repo tags for external issue submissions', () => {
+      const tags = ForgeIssuesDefinition.structure.repo.issue.$tags!;
+      expect(tags.repoDid).toEqual({ type: 'string' });
+      expect(tags.repoRecordId).toEqual({ type: 'string' });
+      expect(tags.repoName).toEqual({ type: 'string' });
+      expect(tags.$requiredTags).not.toContain('repoDid');
+    });
+
+    it('should allow provenance tags for accepted external issues', () => {
+      const tags = ForgeIssuesDefinition.structure.repo.issue.$tags!;
+      expect(tags.submitterDid).toEqual({ type: 'string' });
+      expect(tags.submissionRecordId).toEqual({ type: 'string' });
+      expect(tags.submissionContextId).toEqual({ type: 'string' });
+      expect(tags.$requiredTags).not.toContain('submissionRecordId');
+    });
+
+    it('should nest reaction, comment, label, statusChange, and assignment under issue', () => {
+      expect(ForgeIssuesDefinition.structure.repo.issue.reaction).toBeDefined();
       expect(ForgeIssuesDefinition.structure.repo.issue.comment).toBeDefined();
       expect(ForgeIssuesDefinition.structure.repo.issue.label).toBeDefined();
       expect(ForgeIssuesDefinition.structure.repo.issue.statusChange).toBeDefined();
       expect(ForgeIssuesDefinition.structure.repo.issue.assignment).toBeDefined();
     });
 
-    it('should nest reaction under comment (3-level nesting)', () => {
+    it('should also nest reaction under comment (3-level nesting)', () => {
       expect(ForgeIssuesDefinition.structure.repo.issue.comment.reaction).toBeDefined();
     });
 
@@ -275,8 +394,20 @@ describe('@enbox/gitd', () => {
       const actions = ForgeIssuesDefinition.structure.repo.issue.$actions!;
       const contributorAction = actions.find((a) => a.role === 'repo:repo/contributor');
       const maintainerAction = actions.find((a) => a.role === 'repo:repo/maintainer');
+      const moderatorAction = actions.find((a) => a.role === 'repo:repo/moderator');
       expect(contributorAction).toBeDefined();
       expect(maintainerAction).toBeDefined();
+      expect(moderatorAction).toBeDefined();
+      expect(moderatorAction!.can).toContain('create');
+      expect(moderatorAction!.can).toContain('co-update');
+    });
+
+    it('should keep direct issue writes role-gated', () => {
+      const actions = ForgeIssuesDefinition.structure.repo.issue.$actions!;
+      const anyoneAction = actions.find((a) => a.who === 'anyone');
+      expect(anyoneAction).toBeDefined();
+      expect(anyoneAction!.can).toContain('read');
+      expect(anyoneAction!.can).not.toContain('create');
     });
 
     it('should allow issue author to update their own issue', () => {
@@ -297,7 +428,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgePatchesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgePatchesDefinition.protocol).toBe('https://enbox.org/protocols/forge/patches');
+      expect(ForgePatchesDefinition.protocol).toBe('https://enbox.id/protocols/forge/patches');
     });
 
     it('should be a published protocol', () => {
@@ -305,7 +436,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgePatchesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgePatchesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define all expected types', () => {
@@ -331,6 +462,22 @@ describe('@enbox/gitd', () => {
     it('should restrict patch status to draft, open, closed, merged', () => {
       const status = ForgePatchesDefinition.structure.repo.patch.$tags?.status as { enum: string[] };
       expect(status.enum).toEqual(['draft', 'open', 'closed', 'merged']);
+    });
+
+    it('should allow target repo tags for external patch submissions', () => {
+      const tags = ForgePatchesDefinition.structure.repo.patch.$tags!;
+      expect(tags.repoDid).toEqual({ type: 'string' });
+      expect(tags.repoRecordId).toEqual({ type: 'string' });
+      expect(tags.repoName).toEqual({ type: 'string' });
+      expect(tags.$requiredTags).not.toContain('repoDid');
+    });
+
+    it('should allow provenance tags for accepted external patches', () => {
+      const tags = ForgePatchesDefinition.structure.repo.patch.$tags!;
+      expect(tags.submitterDid).toEqual({ type: 'string' });
+      expect(tags.submissionRecordId).toEqual({ type: 'string' });
+      expect(tags.submissionContextId).toEqual({ type: 'string' });
+      expect(tags.$requiredTags).not.toContain('submissionRecordId');
     });
 
     it('should nest revision, review, statusChange, and mergeResult under patch', () => {
@@ -403,12 +550,15 @@ describe('@enbox/gitd', () => {
       expect(strategy.enum).toEqual(['merge', 'squash', 'rebase']);
     });
 
-    it('should allow anyone to create and read patches (open submissions)', () => {
+    it('should keep direct patch writes role-gated', () => {
       const actions = ForgePatchesDefinition.structure.repo.patch.$actions!;
       const anyoneAction = actions.find((a) => a.who === 'anyone');
+      const contributorAction = actions.find((a) => a.role === 'repo:repo/contributor');
       expect(anyoneAction).toBeDefined();
-      expect(anyoneAction!.can).toContain('create');
       expect(anyoneAction!.can).toContain('read');
+      expect(anyoneAction!.can).not.toContain('create');
+      expect(contributorAction).toBeDefined();
+      expect(contributorAction!.can).toContain('create');
     });
 
     it('should allow anyone to read revisions, reviews, statusChanges, and mergeResults', () => {
@@ -431,12 +581,26 @@ describe('@enbox/gitd', () => {
       expect(mergeActions.find((a) => a.who === 'anyone')!.can).toContain('read');
     });
 
-    it('should allow anyone to create reviews and review comments', () => {
+    it('should keep direct review writes role-gated', () => {
       const reviewActions = ForgePatchesDefinition.structure.repo.patch.review.$actions!;
-      expect(reviewActions.find((a) => a.who === 'anyone')!.can).toContain('create');
+      expect(reviewActions.find((a) => a.who === 'anyone')!.can).not.toContain('create');
+      expect(reviewActions.find((a) => a.role === 'repo:repo/contributor')!.can).toContain('create');
+      expect(reviewActions.find((a) => a.role === 'repo:repo/moderator')!.can).toContain('create');
 
       const commentActions = ForgePatchesDefinition.structure.repo.patch.review.reviewComment.$actions!;
-      expect(commentActions.find((a) => a.who === 'anyone')!.can).toContain('create');
+      expect(commentActions.find((a) => a.who === 'anyone')!.can).not.toContain('create');
+      expect(commentActions.find((a) => a.role === 'repo:repo/contributor')!.can).toContain('create');
+      expect(commentActions.find((a) => a.role === 'repo:repo/moderator')!.can).toContain('create');
+    });
+
+    it('should allow review comment authors and maintainers to update and delete review comments', () => {
+      const commentActions = ForgePatchesDefinition.structure.repo.patch.review.reviewComment.$actions!;
+      const authorAction = commentActions.find((a) => a.who === 'author' && a.of === 'repo/patch/review/reviewComment');
+      const maintainerAction = commentActions.find((a) => a.role === 'repo:repo/maintainer');
+      expect(authorAction?.can).toContain('update');
+      expect(authorAction?.can).toContain('delete');
+      expect(maintainerAction?.can).toContain('update');
+      expect(maintainerAction?.can).toContain('delete');
     });
 
     it('should allow patch author to create revisions and status changes', () => {
@@ -462,7 +626,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeCiProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeCiDefinition.protocol).toBe('https://enbox.org/protocols/forge/ci');
+      expect(ForgeCiDefinition.protocol).toBe('https://enbox.id/protocols/forge/ci');
     });
 
     it('should be a published protocol', () => {
@@ -470,7 +634,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeCiDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeCiDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define checkSuite, checkRun, and artifact types', () => {
@@ -510,10 +674,16 @@ describe('@enbox/gitd', () => {
     });
 
     it('should allow checkSuite author to create checkRuns and artifacts', () => {
+      const suiteActions = ForgeCiDefinition.structure.repo.checkSuite.$actions!;
+      const maintainerSuite = suiteActions.find((a) => a.role === 'repo:repo/maintainer');
+      expect(maintainerSuite).toBeDefined();
+      expect(maintainerSuite!.can).toContain('delete');
+
       const runActions = ForgeCiDefinition.structure.repo.checkSuite.checkRun.$actions!;
       const authorRun = runActions.find((a) => a.who === 'author' && a.of === 'repo/checkSuite');
       expect(authorRun).toBeDefined();
       expect(authorRun!.can).toContain('create');
+      expect(authorRun!.can).toContain('delete');
 
       const artifactActions = ForgeCiDefinition.structure.repo.checkSuite.checkRun.artifact.$actions!;
       const authorArtifact = artifactActions.find((a) => a.who === 'author' && a.of === 'repo/checkSuite');
@@ -532,7 +702,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeReleasesProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeReleasesDefinition.protocol).toBe('https://enbox.org/protocols/forge/releases');
+      expect(ForgeReleasesDefinition.protocol).toBe('https://enbox.id/protocols/forge/releases');
     });
 
     it('should be a published protocol', () => {
@@ -540,7 +710,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeReleasesDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeReleasesDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define release, asset, and signature types', () => {
@@ -605,7 +775,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeRegistryProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeRegistryDefinition.protocol).toBe('https://enbox.org/protocols/forge/registry');
+      expect(ForgeRegistryDefinition.protocol).toBe('https://enbox.id/protocols/forge/registry');
     });
 
     it('should be a published protocol', () => {
@@ -687,7 +857,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeSocialProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeSocialDefinition.protocol).toBe('https://enbox.org/protocols/forge/social');
+      expect(ForgeSocialDefinition.protocol).toBe('https://enbox.id/protocols/forge/social');
     });
 
     it('should be a published protocol', () => {
@@ -698,15 +868,21 @@ describe('@enbox/gitd', () => {
       expect(ForgeSocialDefinition.uses).toBeUndefined();
     });
 
-    it('should define star, follow, and activity types', () => {
+    it('should define star, follow, gist, gistComment, gistStar, and activity types', () => {
       expect(ForgeSocialDefinition.types.star).toBeDefined();
       expect(ForgeSocialDefinition.types.follow).toBeDefined();
+      expect(ForgeSocialDefinition.types.gist).toBeDefined();
+      expect(ForgeSocialDefinition.types.gistComment).toBeDefined();
+      expect(ForgeSocialDefinition.types.gistStar).toBeDefined();
       expect(ForgeSocialDefinition.types.activity).toBeDefined();
     });
 
     it('should have all types at the top level (flat structure)', () => {
       expect(ForgeSocialDefinition.structure.star).toBeDefined();
       expect(ForgeSocialDefinition.structure.follow).toBeDefined();
+      expect(ForgeSocialDefinition.structure.gist).toBeDefined();
+      expect(ForgeSocialDefinition.structure.gistComment).toBeDefined();
+      expect(ForgeSocialDefinition.structure.gistStar).toBeDefined();
       expect(ForgeSocialDefinition.structure.activity).toBeDefined();
     });
 
@@ -719,6 +895,26 @@ describe('@enbox/gitd', () => {
     it('should require targetDid tag on follow', () => {
       const tags = ForgeSocialDefinition.structure.follow.$tags;
       expect(tags?.$requiredTags).toContain('targetDid');
+    });
+
+    it('should require visibility tag on gist', () => {
+      const tags = ForgeSocialDefinition.structure.gist.$tags;
+      expect(tags?.$requiredTags).toContain('visibility');
+      const visibility = tags?.visibility as { enum: string[] };
+      expect(visibility.enum).toEqual(['public', 'secret']);
+      expect(tags?.forkOfOwnerDid).toEqual({ type: 'string' });
+      expect(tags?.forkOfGistId).toEqual({ type: 'string' });
+    });
+
+    it('should require gistId tag on gist comments', () => {
+      const tags = ForgeSocialDefinition.structure.gistComment.$tags;
+      expect(tags?.$requiredTags).toContain('gistId');
+    });
+
+    it('should require ownerDid and gistId tags on gist stars', () => {
+      const tags = ForgeSocialDefinition.structure.gistStar.$tags;
+      expect(tags?.$requiredTags).toContain('ownerDid');
+      expect(tags?.$requiredTags).toContain('gistId');
     });
 
     it('should restrict activity type to expected events', () => {
@@ -734,12 +930,21 @@ describe('@enbox/gitd', () => {
       expect(ForgeSocialDefinition.structure.activity.$tags?.$allowUndefinedTags).toBe(true);
     });
 
-    it('should allow anyone to read star, follow, and activity', () => {
+    it('should allow anyone to read star, follow, gist, gistComment, gistStar, and activity', () => {
       const starActions = ForgeSocialDefinition.structure.star.$actions!;
       expect(starActions.find((a) => a.who === 'anyone')!.can).toContain('read');
 
       const followActions = ForgeSocialDefinition.structure.follow.$actions!;
       expect(followActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const gistActions = ForgeSocialDefinition.structure.gist.$actions!;
+      expect(gistActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const gistCommentActions = ForgeSocialDefinition.structure.gistComment.$actions!;
+      expect(gistCommentActions.find((a) => a.who === 'anyone')!.can).toContain('read');
+
+      const gistStarActions = ForgeSocialDefinition.structure.gistStar.$actions!;
+      expect(gistStarActions.find((a) => a.who === 'anyone')!.can).toContain('read');
 
       const activityActions = ForgeSocialDefinition.structure.activity.$actions!;
       expect(activityActions.find((a) => a.who === 'anyone')!.can).toContain('read');
@@ -756,7 +961,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeNotificationsProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeNotificationsDefinition.protocol).toBe('https://enbox.org/protocols/forge/notifications');
+      expect(ForgeNotificationsDefinition.protocol).toBe('https://enbox.id/protocols/forge/notifications');
     });
 
     it('should be a private (not published) protocol', () => {
@@ -807,7 +1012,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeWikiProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeWikiDefinition.protocol).toBe('https://enbox.org/protocols/forge/wiki');
+      expect(ForgeWikiDefinition.protocol).toBe('https://enbox.id/protocols/forge/wiki');
     });
 
     it('should be a published protocol', () => {
@@ -815,7 +1020,7 @@ describe('@enbox/gitd', () => {
     });
 
     it('should compose with Forge Repo via uses', () => {
-      expect(ForgeWikiDefinition.uses!.repo).toBe('https://enbox.org/protocols/forge/repo');
+      expect(ForgeWikiDefinition.uses!.repo).toBe('https://enbox.id/protocols/forge/repo');
     });
 
     it('should define page and pageHistory types', () => {
@@ -872,7 +1077,7 @@ describe('@enbox/gitd', () => {
 
   describe('ForgeOrgProtocol', () => {
     it('should have the correct protocol URI', () => {
-      expect(ForgeOrgDefinition.protocol).toBe('https://enbox.org/protocols/forge/org');
+      expect(ForgeOrgDefinition.protocol).toBe('https://enbox.id/protocols/forge/org');
     });
 
     it('should be a published protocol', () => {
@@ -883,12 +1088,17 @@ describe('@enbox/gitd', () => {
       expect(ForgeOrgDefinition.uses).toBeUndefined();
     });
 
-    it('should define org, owner, member, team, and teamMember types', () => {
+    it('should define org, owner, member, team, teamMember, and webhook types', () => {
       expect(ForgeOrgDefinition.types.org).toBeDefined();
       expect(ForgeOrgDefinition.types.owner).toBeDefined();
       expect(ForgeOrgDefinition.types.member).toBeDefined();
       expect(ForgeOrgDefinition.types.team).toBeDefined();
       expect(ForgeOrgDefinition.types.teamMember).toBeDefined();
+      expect(ForgeOrgDefinition.types.webhook).toBeDefined();
+    });
+
+    it('should require encryption on organization webhook type', () => {
+      expect(ForgeOrgDefinition.types.webhook.encryptionRequired).toBe(true);
     });
 
     it('should enforce $recordLimit on org singleton', () => {
@@ -907,10 +1117,11 @@ describe('@enbox/gitd', () => {
       expect(ForgeOrgDefinition.structure.org.team.teamMember.$tags?.$requiredTags).toContain('did');
     });
 
-    it('should nest owner, member, and team under org', () => {
+    it('should nest owner, member, team, and webhook under org', () => {
       expect(ForgeOrgDefinition.structure.org.owner).toBeDefined();
       expect(ForgeOrgDefinition.structure.org.member).toBeDefined();
       expect(ForgeOrgDefinition.structure.org.team).toBeDefined();
+      expect(ForgeOrgDefinition.structure.org.webhook).toBeDefined();
     });
 
     it('should nest teamMember under team (3-level nesting)', () => {
@@ -970,22 +1181,22 @@ describe('@enbox/gitd', () => {
       const uniqueUris = new Set(uris);
       expect(uniqueUris.size).toBe(11);
       for (const uri of uris) {
-        expect(uri).toMatch(/^https:\/\/enbox\.org\/protocols\/forge\//);
+        expect(uri).toMatch(/^https:\/\/enbox\.id\/protocols\/forge\//);
       }
     });
 
-    it('should use https://enbox.org/schemas/forge/ for all schema URIs', () => {
+    it('should use https://enbox.id/schemas/forge/ for all schema URIs', () => {
       for (const def of allDefinitions) {
         for (const [, typeConfig] of Object.entries(def.types)) {
           if ('schema' in typeConfig && typeConfig.schema !== undefined) {
-            expect(typeConfig.schema).toMatch(/^https:\/\/enbox\.org\/schemas\/forge\//);
+            expect(typeConfig.schema).toMatch(/^https:\/\/enbox\.id\/schemas\/forge\//);
           }
         }
       }
     });
 
     it('should only reference repo protocol in uses declarations', () => {
-      const repoUri = 'https://enbox.org/protocols/forge/repo';
+      const repoUri = 'https://enbox.id/protocols/forge/repo';
       for (const def of allDefinitions) {
         if (def.uses !== undefined) {
           for (const [, uri] of Object.entries(def.uses)) {
@@ -998,7 +1209,7 @@ describe('@enbox/gitd', () => {
     it('should have notifications as the only private protocol', () => {
       const privateProtocols = allDefinitions.filter((d) => d.published === false);
       expect(privateProtocols).toHaveLength(1);
-      expect(privateProtocols[0].protocol).toBe('https://enbox.org/protocols/forge/notifications');
+      expect(privateProtocols[0].protocol).toBe('https://enbox.id/protocols/forge/notifications');
     });
 
     it('should have all Protocol wrappers referencing their definitions', () => {

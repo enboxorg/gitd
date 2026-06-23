@@ -8,6 +8,7 @@
  * @module
  */
 
+import type { DidDocument } from '@enbox/dids';
 import type { SignatureVerifier } from './auth.js';
 
 import { Ed25519 } from '@enbox/crypto';
@@ -47,9 +48,32 @@ function getResolver(): UniversalResolver {
 /** DID resolution timeout in milliseconds. */
 const DID_RESOLUTION_TIMEOUT_MS = 30_000;
 
-export function createDidSignatureVerifier(): SignatureVerifier {
+/** Options for creating a DID signature verifier. */
+export type DidSignatureVerifierOptions = {
+  /**
+   * DID documents the caller already trusts, keyed or listed by document ID.
+   * These are checked before resolver lookup and are useful for freshly
+   * created local DIDs whose DHT publication may not be visible yet.
+   */
+  didDocuments?: DidDocument[] | Map<string, DidDocument> | Record<string, DidDocument>;
+};
+
+export function createDidSignatureVerifier(options: DidSignatureVerifierOptions = {}): SignatureVerifier {
+  const localDocuments = normalizeDidDocuments(options.didDocuments);
+
   return async (did: string, payload: Uint8Array, signature: Uint8Array): Promise<boolean> => {
     try {
+      const localDocument = localDocuments.get(did);
+      if (localDocument) {
+        if (process.env.GITD_DEBUG === '1') {
+          console.error(`[auth] verifying ${did} with local DID document`);
+        }
+        return verifyWithDocument(localDocument, payload, signature);
+      }
+
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[auth] resolving ${did} for signature verification`);
+      }
       const { didDocument, didResolutionMetadata } = await Promise.race([
         getResolver().resolve(did),
         new Promise<never>((_, reject) =>
@@ -61,18 +85,11 @@ export function createDidSignatureVerifier(): SignatureVerifier {
         return false;
       }
 
-      // Find an Ed25519 public key from the authentication verification methods.
-      const publicKeyJwk = findEd25519AuthKey(didDocument);
-      if (!publicKeyJwk) {
-        return false;
+      return verifyWithDocument(didDocument, payload, signature);
+    } catch (err) {
+      if (process.env.GITD_DEBUG === '1') {
+        console.error(`[auth] signature verification error for ${did}: ${(err as Error).message}`);
       }
-
-      return await Ed25519.verify({
-        key       : publicKeyJwk,
-        data      : payload,
-        signature : signature,
-      });
-    } catch {
       return false;
     }
   };
@@ -113,4 +130,40 @@ function findEd25519AuthKey(didDocument: { verificationMethod?: any[]; authentic
   }
 
   return undefined;
+}
+
+async function verifyWithDocument(
+  didDocument: DidDocument,
+  payload: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean> {
+  const publicKeyJwk = findEd25519AuthKey(didDocument);
+  if (!publicKeyJwk) {
+    return false;
+  }
+
+  return Ed25519.verify({
+    key       : publicKeyJwk,
+    data      : payload,
+    signature : signature,
+  });
+}
+
+function normalizeDidDocuments(
+  didDocuments: DidSignatureVerifierOptions['didDocuments'],
+): Map<string, DidDocument> {
+  const result = new Map<string, DidDocument>();
+  if (!didDocuments) { return result; }
+
+  if (didDocuments instanceof Map) {
+    return new Map(didDocuments);
+  }
+
+  const docs = Array.isArray(didDocuments) ? didDocuments : Object.values(didDocuments);
+  for (const doc of docs) {
+    if (doc?.id) {
+      result.set(doc.id, doc);
+    }
+  }
+  return result;
 }
