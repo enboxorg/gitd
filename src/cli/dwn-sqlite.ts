@@ -14,14 +14,16 @@
  */
 
 import type { Dialect } from '@enbox/dwn-sql-store';
+import type { DwnMigrationFactory } from '@enbox/dwn-sql-store';
 
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 import { AgentDwnApi } from '@enbox/agent';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 
 import {
+  allDwnMigrations,
   createBunSqliteDatabase,
   DataStoreSql,
   MessageStoreSql,
@@ -67,7 +69,7 @@ export async function createSqliteDwnApi(
 
   // Run schema migrations before opening any stores.
   const migrationDb = new Kysely<Record<string, unknown>>({ dialect });
-  await runDwnStoreMigrations(migrationDb, dialect);
+  await runGitdDwnStoreMigrations(migrationDb, dialect);
 
   const wakePublisher = new EventEmitterWakePublisher();
   const messageStore = new MessageStoreSql(dialect, wakePublisher);
@@ -93,3 +95,30 @@ export async function createSqliteDwnApi(
 
   return new AgentDwnApi({ dwn } as any);
 }
+
+export async function runGitdDwnStoreMigrations(
+  db: Kysely<Record<string, unknown>>,
+  dialect: Dialect,
+): Promise<string[]> {
+  return runDwnStoreMigrations(db, dialect, gitdDwnMigrations);
+}
+
+const migration003AddSquashColumnIfMissing: DwnMigrationFactory = (): ReturnType<DwnMigrationFactory> => ({
+  async up(db: Kysely<any>): Promise<void> {
+    const columns = await sql<{ name: string }>`
+      SELECT name FROM pragma_table_info('messageStoreMessages') WHERE name = 'squash'
+    `.execute(db);
+    if (columns.rows.length > 0) { return; }
+
+    await db.schema
+      .alterTable('messageStoreMessages')
+      .addColumn('squash', 'boolean')
+      .execute();
+  },
+});
+
+const gitdDwnMigrations = allDwnMigrations.map(([name, factory]) =>
+  name === '003-add-squash-column'
+    ? [name, migration003AddSquashColumnIfMissing] as const
+    : [name, factory] as const,
+);
