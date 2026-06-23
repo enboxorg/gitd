@@ -3,18 +3,10 @@
 set -euo pipefail
 
 APP='gitd'
-REPO='enboxorg/gitd'
+PACKAGE='@enbox/gitd'
 INSTALL_DIR="${HOME}/.${APP}/bin"
 REQUESTED_VERSION="${VERSION:-}"
 NO_MODIFY_PATH=false
-TMP_DIR=''
-
-cleanup() {
-  if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
-    rm -rf "$TMP_DIR"
-  fi
-}
-trap cleanup EXIT INT TERM
 
 usage() {
   cat <<'EOF'
@@ -24,12 +16,12 @@ Usage: install.sh [options]
 
 Options:
   -h, --help              Show this help message
-  -v, --version <version> Install a specific version (example: 0.0.1)
+  -v, --version <version> Install a specific version (example: 0.9.6)
       --no-modify-path    Do not modify shell profile files
 
 Examples:
   curl -fsSL https://gitd.sh/install | bash
-  curl -fsSL https://gitd.sh/install | bash -s -- --version 0.0.1
+  curl -fsSL https://gitd.sh/install | bash -s -- --version 0.9.6
 EOF
 }
 
@@ -56,90 +48,65 @@ http_get() {
   fail 'curl or wget is required'
 }
 
-download_file() {
-  local url="$1"
-  local out="$2"
-
-  if has_command curl; then
-    curl -fsSL "$url" -o "$out"
-    return
-  fi
-
-  if has_command wget; then
-    wget -q "$url" -O "$out"
-    return
-  fi
-
-  fail 'curl or wget is required'
-}
-
 detect_os() {
   case "$(uname -s)" in
     Linux) printf 'linux' ;;
     Darwin) printf 'darwin' ;;
-    CYGWIN*|MINGW*|MSYS*) printf 'windows' ;;
     *) fail 'unsupported operating system' ;;
   esac
 }
 
-detect_arch() {
-  case "$(uname -m)" in
-    x86_64|amd64) printf 'x64' ;;
-    aarch64|arm64) printf 'arm64' ;;
-    *) fail 'unsupported CPU architecture' ;;
-  esac
-}
-
-detect_libc() {
-  if [ "$(detect_os)" != 'linux' ]; then
-    return
-  fi
-
-  if has_command ldd; then
-    case "$(ldd --version 2>&1)" in
-      *musl*) printf '-musl' ; return ;;
-    esac
-  fi
-
-  if [ -f /etc/alpine-release ]; then
-    printf '-musl'
-    return
-  fi
-}
-
-latest_tag() {
-  http_get "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
-}
-
-resolve_tag() {
+resolve_package_version() {
   if [ -z "$REQUESTED_VERSION" ]; then
-    latest_tag
+    printf 'latest'
     return
   fi
 
   case "$REQUESTED_VERSION" in
-    v*) printf '%s' "$REQUESTED_VERSION" ;;
-    *) printf 'v%s' "$REQUESTED_VERSION" ;;
+    v*) printf '%s' "${REQUESTED_VERSION#v}" ;;
+    *) printf '%s' "$REQUESTED_VERSION" ;;
   esac
 }
 
-extract_archive() {
-  local archive="$1"
-  local out_dir="$2"
-  local os="$3"
-
-  if [ "$os" = 'windows' ]; then
-    if ! has_command unzip; then
-      fail 'unzip is required for Windows artifacts'
-    fi
-    unzip -q "$archive" -d "$out_dir"
+ensure_bun() {
+  if has_command bun; then
     return
   fi
 
-  if ! has_command tar; then
-    fail 'tar is required'
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  printf '==> Bun is required; installing Bun to %s\n' "$BUN_INSTALL"
+  http_get 'https://bun.sh/install' | bash
+
+  export PATH="${BUN_INSTALL}/bin:$PATH"
+  if ! has_command bun; then
+    fail "Bun installed, but ${BUN_INSTALL}/bin/bun is not available"
   fi
-  tar -xzf "$archive" -C "$out_dir"
+}
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+write_wrapper() {
+  local name="$1"
+  local source="$2"
+  local bun_path="$3"
+  local out="${INSTALL_DIR}/${name}"
+
+  if [ ! -e "$source" ]; then
+    fail "bun did not install ${name}"
+  fi
+
+  local quoted_bun
+  quoted_bun="$(shell_quote "$bun_path")"
+  local quoted_source
+  quoted_source="$(shell_quote "$source")"
+
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'exec %s %s "$@"\n' "$quoted_bun" "$quoted_source"
+  } > "$out"
+  chmod +x "$out"
 }
 
 add_to_path() {
@@ -208,53 +175,34 @@ main() {
     esac
   done
 
-  local os
-  os="$(detect_os)"
-  local arch
-  arch="$(detect_arch)"
-  local libc
-  libc="$(detect_libc)"
-  local tag
-  tag="$(resolve_tag)"
-  [ -n "$tag" ] || fail 'unable to determine release tag'
+  detect_os >/dev/null
+  ensure_bun
 
-  local archive=''
-  if [ "$os" = 'windows' ]; then
-    archive="gitd-${os}-${arch}.zip"
-  else
-    archive="gitd-${os}-${arch}${libc}.tar.gz"
-  fi
+  local package_version
+  package_version="$(resolve_package_version)"
+  [ -n "$package_version" ] || fail 'unable to determine package version'
 
-  local url
-  url="https://github.com/${REPO}/releases/download/${tag}/${archive}"
-
-  TMP_DIR="$(mktemp -d)"
-
-  printf '==> Installing gitd %s\n' "$tag"
-  download_file "$url" "${TMP_DIR}/${archive}"
-  extract_archive "${TMP_DIR}/${archive}" "$TMP_DIR" "$os"
+  local package_spec="${PACKAGE}@${package_version}"
+  printf '==> Installing %s\n' "$package_spec"
+  bun add -g "$package_spec"
 
   mkdir -p "$INSTALL_DIR"
 
-  local suffix=''
-  if [ "$os" = 'windows' ]; then
-    suffix='.exe'
-  fi
+  local bun_path
+  bun_path="$(command -v bun)"
+  local bun_global_bin
+  bun_global_bin="$(bun pm bin -g)"
 
-  cp "${TMP_DIR}/gitd${suffix}" "${INSTALL_DIR}/gitd${suffix}"
-  cp "${TMP_DIR}/git-remote-did${suffix}" "${INSTALL_DIR}/git-remote-did${suffix}"
-  cp "${TMP_DIR}/git-remote-did-credential${suffix}" "${INSTALL_DIR}/git-remote-did-credential${suffix}"
-
-  chmod +x "${INSTALL_DIR}/gitd${suffix}"
-  chmod +x "${INSTALL_DIR}/git-remote-did${suffix}"
-  chmod +x "${INSTALL_DIR}/git-remote-did-credential${suffix}"
+  write_wrapper 'gitd' "${bun_global_bin}/gitd" "$bun_path"
+  write_wrapper 'git-remote-did' "${bun_global_bin}/git-remote-did" "$bun_path"
+  write_wrapper 'git-remote-did-credential' "${bun_global_bin}/git-remote-did-credential" "$bun_path"
 
   if [ "$NO_MODIFY_PATH" = false ] && [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
     add_to_path
   fi
 
   printf '==> Installed to %s\n' "$INSTALL_DIR"
-  "${INSTALL_DIR}/gitd${suffix}" --version || true
+  "${INSTALL_DIR}/gitd" --version
   printf 'Run: gitd setup\n'
 }
 

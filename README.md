@@ -31,13 +31,16 @@ gitd pr merge a1b2c3d
 curl -fsSL https://gitd.sh/install | bash
 ```
 
-Or via bun / npm:
+The installer installs the published `@enbox/gitd` package with Bun, and
+bootstraps Bun first if it is not already available.
+
+Or install directly with Bun:
 
 ```bash
 bun add -g @enbox/gitd
 ```
 
-This installs three binaries:
+This installs three commands:
 
 | Binary | Purpose |
 |---|---|
