@@ -153,6 +153,8 @@ export async function restoreFromBundles(
       });
     }
 
+    await setBareHeadToPreferredBranch(repoPath);
+
     // 5. Get the tip commit.
     const tipCommit = await getTipCommit(repoPath);
 
@@ -229,6 +231,19 @@ async function restoreBranchBundles(options: BranchBundleRestoreOptions): Promis
 async function refAlreadyAt(repoPath: string, refName: string, target: string): Promise<boolean> {
   const current = await spawnCollectOptional('git', ['rev-parse', '--verify', refName], repoPath);
   return current === target;
+}
+
+async function setBareHeadToPreferredBranch(repoPath: string): Promise<void> {
+  const refs = await spawnCollectOptional('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], repoPath);
+  if (!refs) { return; }
+
+  const branches = refs.split('\n').map((branch) => branch.trim()).filter(Boolean);
+  const branch = branches.find((candidate) => candidate === 'main')
+    ?? branches.find((candidate) => candidate === 'master')
+    ?? branches[0];
+  if (!branch) { return; }
+
+  await spawnChecked('git', ['symbolic-ref', 'HEAD', `refs/heads/${branch}`], repoPath);
 }
 
 /** Generate a unique temp file path for a bundle. */

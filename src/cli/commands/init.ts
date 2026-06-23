@@ -61,7 +61,7 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
 
   // Initialize the bare git repository on disk (server-side storage).
   const backend = new GitBackend({ basePath: reposPath });
-  const gitPath = await backend.initRepo(ctx.did, name);
+  const gitPath = await backend.initRepo(ctx.did, name, branch);
 
   // Resolve DWN endpoints: explicit flag > env > DID document > empty.
   const dwnEndpoints = dwnEndpointFlag

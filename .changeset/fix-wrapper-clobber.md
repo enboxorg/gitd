@@ -12,3 +12,6 @@ from the active gitd profile, so `git push` can use the daemon started by
 SQLite bootstrap also tolerates a pre-existing `squash` column when the
 upstream migration marker is missing, repairing fresh profiles that were
 interrupted during setup or created with a mismatched store migration state.
+Bare repos now set `HEAD` to the configured default branch, and restored DWN
+bundle caches repair dangling `HEAD` refs so clones check out files without
+requiring `--branch main`.

@@ -200,10 +200,8 @@ describe('restoreFromBundles', () => {
       repoContextId : repoContextId,
     });
 
-    // Clone from the restored bare repo to verify content.
-    // Explicit --branch is needed because restored bare repos may have
-    // HEAD pointing to a non-existent default branch (master vs main).
-    await exec(`git clone --branch main "${restoredRepoPath}" "${clonePath}"`);
+    // Clone from the restored bare repo to verify content and default HEAD.
+    await exec(`git clone "${restoredRepoPath}" "${clonePath}"`);
     const { stdout } = await exec('cat file.txt', { cwd: clonePath });
     expect(stdout.trim()).toBe('line 1\nline 2');
 

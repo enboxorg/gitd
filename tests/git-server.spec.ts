@@ -5,7 +5,7 @@
  * handler (info/refs, upload-pack, receive-pack) against real git repos on
  * the filesystem.
  */
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
@@ -54,6 +54,16 @@ describe('GitBackend', () => {
     const path = await backend.initRepo(TEST_DID, TEST_REPO);
     expect(path).toContain(`${TEST_REPO}.git`);
     expect(backend.exists(TEST_DID, TEST_REPO)).toBe(true);
+  });
+
+  it('should point new bare repository HEAD at main by default', async () => {
+    const path = await backend.initRepo(TEST_DID, 'head-main-repo');
+    expect(readFileSync(`${path}/HEAD`, 'utf-8').trim()).toBe('ref: refs/heads/main');
+  });
+
+  it('should point new bare repository HEAD at the requested default branch', async () => {
+    const path = await backend.initRepo(TEST_DID, 'head-trunk-repo', 'trunk');
+    expect(readFileSync(`${path}/HEAD`, 'utf-8').trim()).toBe('ref: refs/heads/trunk');
   });
 
   it('should compute the same path for the same DID and repo', () => {
