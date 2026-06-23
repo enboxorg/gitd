@@ -105,13 +105,13 @@ describe('createDwnPushAuthorizer branch policy', () => {
 
   it('rejects blocked contributors even when their role record remains', async () => {
     const authorize = createDwnPushAuthorizer({
-      repo     : mockRepo({
-        contributors: [CONTRIBUTOR_DID],
-        moderationEvents: [
+      repo: mockRepo({
+        contributors     : [CONTRIBUTOR_DID],
+        moderationEvents : [
           moderationEvent('block', CONTRIBUTOR_DID, '2026-06-23T00:00:00.000Z'),
         ],
       }),
-      ownerDid : OWNER_DID,
+      ownerDid: OWNER_DID,
     });
 
     await expect(authorize(CONTRIBUTOR_DID, OWNER_DID, REPO_NAME, [
@@ -121,14 +121,14 @@ describe('createDwnPushAuthorizer branch policy', () => {
 
   it('allows a contributor again after a later unblock event', async () => {
     const authorize = createDwnPushAuthorizer({
-      repo     : mockRepo({
-        contributors: [CONTRIBUTOR_DID],
-        moderationEvents: [
+      repo: mockRepo({
+        contributors     : [CONTRIBUTOR_DID],
+        moderationEvents : [
           moderationEvent('block', CONTRIBUTOR_DID, '2026-06-23T00:00:00.000Z'),
           moderationEvent('unblock', CONTRIBUTOR_DID, '2026-06-23T00:01:00.000Z'),
         ],
       }),
-      ownerDid : OWNER_DID,
+      ownerDid: OWNER_DID,
     });
 
     await expect(authorize(CONTRIBUTOR_DID, OWNER_DID, REPO_NAME, [
@@ -160,17 +160,17 @@ function pkt(payload: string): string {
   return (payload.length + 4).toString(16).padStart(4, '0') + payload;
 }
 
-function update(refName: string) {
+function update(refName: string): { oldTarget: string; newTarget: string; refName: string } {
   return { oldTarget: OLD, newTarget: NEW, refName };
 }
 
-function moderationEvent(action: 'block' | 'unblock', targetDid: string, createdAt: string) {
+function moderationEvent(action: 'block' | 'unblock', targetDid: string, createdAt: string): Record<string, unknown> {
   return {
-    id: `${action}-${targetDid}-${createdAt}`,
-    dateCreated: createdAt,
-    tags: { action, targetDid },
-    data: {
-      json: async () => ({ action, targetDid, createdAt }),
+    id          : `${action}-${targetDid}-${createdAt}`,
+    dateCreated : createdAt,
+    tags        : { action, targetDid },
+    data        : {
+      json: async (): Promise<{ action: 'block' | 'unblock'; targetDid: string; createdAt: string }> => ({ action, targetDid, createdAt }),
     },
   };
 }
@@ -180,7 +180,7 @@ function mockRepo(options: {
   contributors?: string[];
   moderationEvents?: any[];
   queries?: Array<{ path: string; from?: string }>;
-} = {}) {
+} = {}): Record<string, unknown> {
   return {
     records: {
       query: async (path: string, query: any = {}) => {

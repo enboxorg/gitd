@@ -174,10 +174,10 @@ function createMockRefsHandle(): { handle: any; recordsFor: (path: string, paren
 
   const handle = {
     records: {
-      query: async (path: string, options?: any) => ({
+      query: async (path: string, options?: any): Promise<{ records: MockRecord[] }> => ({
         records: recordsFor(path, options?.filter?.contextId),
       }),
-      create: async (path: string, options: any) => {
+      create: async (path: string, options: any): Promise<{ status: { code: number }; record: MockRecord }> => {
         const parentContextId = options.parentContextId;
         if (options.squash) {
           for (const record of [...recordsFor(path, parentContextId)]) {

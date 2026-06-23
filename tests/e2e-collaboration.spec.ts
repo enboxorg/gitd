@@ -24,10 +24,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
 import { exec as execCb } from 'node:child_process';
-import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 import { cachePortableDid } from './helpers/identity.js';
 import { createTestIdentity } from './helpers/identity.js';
@@ -38,27 +38,27 @@ import { DidDht, DidJwk } from '@enbox/dids';
 
 import type { AgentContext } from '../src/cli/agent.js';
 import type { GitServer } from '../src/git-server/server.js';
+import type { PushRefUpdate } from '../src/git-server/push-updates.js';
 
-import { writeLockfile } from '../src/daemon/lockfile.js';
+import { branchOwnerHash } from '../src/branch-state.js';
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { createDidSignatureVerifier } from '../src/git-server/verify.js';
 import { createDwnPushAuthorizer } from '../src/git-server/push-authorizer.js';
 import { createGitServer } from '../src/git-server/server.js';
 import { createRefSyncer } from '../src/git-server/ref-sync.js';
-import { branchOwnerHash } from '../src/branch-state.js';
-import { issueCommand } from '../src/cli/commands/issue.js';
-import { modCommand } from '../src/cli/commands/mod.js';
-import { prCommand } from '../src/cli/commands/pr.js';
-import { restoreFromBundles } from '../src/git-server/bundle-restore.js';
-import { syncRemoteBranchPush } from '../src/git-server/remote-branch-sync.js';
 import { ForgeIssuesProtocol } from '../src/issues.js';
 import { ForgePatchesProtocol } from '../src/patches.js';
 import { ForgeRefsProtocol } from '../src/refs.js';
 import { ForgeRepoProtocol } from '../src/repo.js';
 import { generatePushCredentials } from '../src/git-remote/credential-helper.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
-import type { PushRefUpdate } from '../src/git-server/push-updates.js';
+import { issueCommand } from '../src/cli/commands/issue.js';
+import { modCommand } from '../src/cli/commands/mod.js';
+import { prCommand } from '../src/cli/commands/pr.js';
+import { restoreFromBundles } from '../src/git-server/bundle-restore.js';
 import { shortId } from '../src/github-shim/helpers.js';
+import { syncRemoteBranchPush } from '../src/git-server/remote-branch-sync.js';
+import { writeLockfile } from '../src/daemon/lockfile.js';
 import {
   decodePushToken,
   DID_AUTH_USERNAME,
@@ -467,7 +467,7 @@ describe('E2E: repo collaboration (maintainer + contributor + moderator)', () =>
       ...localProtocol,
       records: {
         ...localProtocol.records,
-        query: async (path: string, options?: any) => {
+        query: async (path: string, options?: any): Promise<any> => {
           if (options?.from === aliceDid) {
             const { from: _from, ...rest } = options;
             return aliceProtocol.records.query(path, rest);
@@ -1130,12 +1130,12 @@ describe('E2E: repo collaboration (maintainer + contributor + moderator)', () =>
     };
 
     bobHelperServer = await createGitServer({
-      basePath : BOB_HELPER_REPOS_PATH,
-      port     : 0,
+      basePath       : BOB_HELPER_REPOS_PATH,
+      port           : 0,
       authenticatePush,
-      onPushComplete: async (did, _repo, repoPath, pushContext) => {
+      onPushComplete : async (did, _repo, repoPath, pushContext) => {
         await syncRemoteBranchPush({
-          refs          : bobRefs,
+          refs           : bobRefs,
           repoContextId,
           targetDid      : did,
           actorDid       : bobDid,
@@ -1539,4 +1539,4 @@ describe('E2E: repo collaboration (maintainer + contributor + moderator)', () =>
 	    }
 	  }, 30_000);
 
-	});
+});

@@ -160,9 +160,9 @@ async function queryRepoRecordsByNameViaEndpoints(
   for (const endpoint of endpoints) {
     let errorMessage: string | undefined;
     const reply = await client.sendDwnRequest({
-      dwnUrl    : endpoint,
+      dwnUrl  : endpoint,
       targetDid,
-      message   : query.message,
+      message : query.message,
     }).catch((err) => {
       errorMessage = (err as Error).message;
       return undefined;

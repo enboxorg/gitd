@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'bun:test';
 
+import type { BranchData } from '../src/refs.js';
+import type { BranchStateRecord } from '../src/branch-state.js';
+
 import {
   branchDataForRef,
   branchOwnerHash,
@@ -11,8 +14,6 @@ import {
   reduceBranchState,
   validateBranchRecord,
 } from '../src/branch-state.js';
-import type { BranchData } from '../src/refs.js';
-import type { BranchStateRecord } from '../src/branch-state.js';
 
 describe('branch state helpers', () => {
   const aliceDid = 'did:dht:alice';
@@ -171,11 +172,11 @@ function update(
   return {
     recordId,
     data: {
-      kind: 'refUpdate',
+      kind     : 'refUpdate',
       refName,
       oldTarget,
       newTarget,
-      actorDid: 'did:dht:alice',
+      actorDid : 'did:dht:alice',
       createdAt,
     },
   };
@@ -185,11 +186,11 @@ function checkpoint(recordId: string, refName: string, target: string | null, cr
   return {
     recordId,
     data: {
-      kind: 'checkpoint',
+      kind       : 'checkpoint',
       refName,
       target,
-      actorDid: 'did:dht:alice',
-      acceptedAt: createdAt,
+      actorDid   : 'did:dht:alice',
+      acceptedAt : createdAt,
       createdAt,
     },
   };

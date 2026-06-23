@@ -19,18 +19,19 @@
  * @module
  */
 
-import type { ForgeRepoProtocol } from '../repo.js';
-import type { ForgeRepoSchemaMap } from '../repo.js';
 import type { ForgeRefsProtocol } from '../refs.js';
 import type { ForgeRefsSchemaMap } from '../refs.js';
-import type { GitRef, OnPushComplete } from './ref-sync.js';
+import type { ForgeRepoProtocol } from '../repo.js';
+import type { ForgeRepoSchemaMap } from '../repo.js';
 import type { TypedEnbox } from '@enbox/api';
+import type { GitRef, OnPushComplete } from './ref-sync.js';
 
 import { DateSort } from '@enbox/dwn-sdk-js';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { readFile, stat, unlink } from 'node:fs/promises';
+
 import { branchDataForRef } from '../branch-state.js';
 import { readGitRefs } from './ref-sync.js';
 
@@ -269,8 +270,8 @@ async function ensureBranchRecord(
       ownerDid : data.ownerDid,
       kind     : data.kind,
     },
-    parentContextId: repoContextId,
-    published      : publish,
+    parentContextId : repoContextId,
+    published       : publish,
   });
   branchRecords.set(refName, record);
   return record;
@@ -402,10 +403,10 @@ export async function createBranchBundle(repoPath: string, refName: string): Pro
   const fileInfo = await stat(bundlePath);
 
   return {
-    path: bundlePath,
+    path : bundlePath,
     refName,
     tipCommit,
-    size: fileInfo.size,
+    size : fileInfo.size,
   };
 }
 

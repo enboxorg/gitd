@@ -2,6 +2,7 @@ import type { AgentContext } from './agent.js';
 
 import { HttpDwnRpcClient } from '@enbox/dwn-clients';
 import { DataStream, type MessageSigner } from '@enbox/dwn-sdk-js';
+
 import { getDwnEndpoints } from '../git-server/did-service.js';
 
 /** Send a locally composed `store:false` record to another DID. */
@@ -163,7 +164,7 @@ export async function messageSignerForContext(ctx: AgentContext): Promise<Messag
   return {
     keyId     : signer.keyId,
     algorithm : signer.algorithm,
-    sign: (content: Uint8Array) => signer.sign({ data: content }),
+    sign      : (content: Uint8Array) => signer.sign({ data: content }),
   };
 }
 

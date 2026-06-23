@@ -12,9 +12,9 @@ if (!profileName || !password) {
 try {
   const result = await connectAgent({
     password,
-    dataPath      : profileDataPath(profileName),
-    sync          : 'off',
-    registration  : false,
+    dataPath     : profileDataPath(profileName),
+    sync         : 'off',
+    registration : false,
   });
 
   upsertProfile(profileName, {

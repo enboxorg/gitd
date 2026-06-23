@@ -12,10 +12,10 @@
 import type { AgentContext } from '../agent.js';
 import type { ModerationEventData } from '../../repo.js';
 
-import { getRepoContextForDid, getRepoContextId } from '../repo-context.js';
 import { repoCommand } from './repo.js';
-import { flagValue, resolveRepoName, resolveRepoOwner } from '../flags.js';
 import { sendRecordToTarget } from '../record-send.js';
+import { flagValue, resolveRepoName, resolveRepoOwner } from '../flags.js';
+import { getRepoContextForDid, getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -81,8 +81,8 @@ async function moderationTargetDid(
   const reason = flagValue(args, '--reason') ?? flagValue(args, '-m');
   await createModerationEvent(ctx, args, {
     action,
-    targetDid : did,
-    targetKind: 'repo',
+    targetDid  : did,
+    targetKind : 'repo',
     reason,
   });
 
@@ -198,10 +198,10 @@ async function moderationInteractionLimit(ctx: AgentContext, args: string[]): Pr
   }
 
   await createModerationEvent(ctx, args, {
-    action: 'interactionLimit',
-    targetKind: 'repo',
-    interactionLimit: limit,
-    duration: flagValue(args, '--duration'),
+    action           : 'interactionLimit',
+    targetKind       : 'repo',
+    interactionLimit : limit,
+    duration         : flagValue(args, '--duration'),
   });
   console.log(`Set interaction limit: ${limit}.`);
 }
@@ -227,7 +227,7 @@ async function createModerationEvent(
   const { status, record } = await ctx.repo.records.create('repo/moderationEvent' as any, {
     data,
     tags,
-    parentContextId : repo.contextId,
+    parentContextId: repo.contextId,
     ...(remote ? { protocolRole, store: false } : {}),
   } as any);
 
@@ -246,8 +246,8 @@ async function createModerationEvent(
 
 function moderationTags(data: ModerationEventData): Record<string, string> {
   const tags: Record<string, string> = {
-    action: data.action,
-    actorDid: data.actorDid,
+    action   : data.action,
+    actorDid : data.actorDid,
   };
   if (data.targetDid) { tags.targetDid = data.targetDid; }
   if (data.targetKind) { tags.targetKind = data.targetKind; }

@@ -827,8 +827,8 @@ describe('gitd CLI commands', () => {
         filter: { contextId: repos[0].contextId },
       });
       const eventData = await Promise.all(events.map(async (record: any) => ({
-        tags: record.tags as Record<string, string>,
-        data: await record.data.json(),
+        tags : record.tags as Record<string, string>,
+        data : await record.data.json(),
       })));
 
       expect(eventData.some((entry) =>
@@ -877,8 +877,8 @@ describe('gitd CLI commands', () => {
         filter: { contextId: repos[0].contextId },
       });
       const eventData = await Promise.all(events.map(async (record: any) => ({
-        tags: record.tags as Record<string, string>,
-        data: await record.data.json(),
+        tags : record.tags as Record<string, string>,
+        data : await record.data.json(),
       })));
 
       expect(eventData.some((entry) =>

@@ -1,6 +1,6 @@
 import type { AgentContext } from './agent.js';
-import type { RepoContext } from './repo-context.js';
 import type { ModerationEventData } from '../repo.js';
+import type { RepoContext } from './repo-context.js';
 
 import { shortId } from '../github-shim/helpers.js';
 
@@ -89,8 +89,8 @@ async function listModerationEvents(
   for (const record of records) {
     entries.push({
       record,
-      data: {},
-      tags: (record.tags ?? {}) as Record<string, string>,
+      data : {},
+      tags : (record.tags ?? {}) as Record<string, string>,
     });
   }
   return entries;

@@ -79,7 +79,6 @@ jobs:
         run: bun test .spec.ts --coverage --coverage-reporter=lcov --coverage-dir=coverage
 
       - name: Upload coverage to Coveralls
-        if: always()
         uses: coverallsapp/github-action@v2
         with:
           file: coverage/lcov.info

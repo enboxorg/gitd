@@ -261,11 +261,11 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
     identitySyncProtocols,
     registration : registrationEnabled
       ? {
-        onSuccess              : () => { /* silent */ },
-        onFailure              : (err) => { console.error(`[dwn-registration] ${(err as Error).message}`); },
+        onSuccess              : (): void => { /* silent */ },
+        onFailure              : (err): void => { console.error(`[dwn-registration] ${(err as Error).message}`); },
         onProviderAuthRequired : handleProviderAuth,
         registrationTokens     : loadRegistrationTokens(dataPath),
-        onRegistrationTokens   : (tokens) => { saveRegistrationTokens(dataPath, tokens); },
+        onRegistrationTokens   : (tokens): void => { saveRegistrationTokens(dataPath, tokens); },
       }
       : undefined,
   });

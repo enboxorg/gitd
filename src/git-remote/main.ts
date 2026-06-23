@@ -20,10 +20,10 @@
  * @module
  */
 
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 
 import { parseDidUrl } from './parse-url.js';
 import { resolveGitEndpoint } from './resolve.js';

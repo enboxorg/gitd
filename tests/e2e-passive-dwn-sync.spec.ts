@@ -11,9 +11,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { HttpDwnRpcClient } from '@enbox/dwn-clients';
 import { RecordsQuery } from '@enbox/dwn-sdk-js';
 
-import { ForgeRepoDefinition } from '../src/repo.js';
-import { ForgeRefsDefinition } from '../src/refs.js';
 import { branchOwnerHash } from '../src/branch-state.js';
+import { ForgeRepoDefinition } from '../src/repo.js';
 import { startPassiveDwnServer } from './helpers/passive-dwn-server.js';
 
 const BASE = resolve('__TESTDATA__/passive-dwn-sync-e2e');
@@ -168,9 +167,9 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
           `did::${alice.did}/passive-demo`,
           bobClone,
         ], {
-          cwd      : resolve('.'),
-          timeoutMs: 60_000,
-          env      : {
+          cwd       : resolve('.'),
+          timeoutMs : 60_000,
+          env       : {
             ...testEnv('bob', passiveDwn.url),
             PATH: `${binDir}:${process.env.PATH ?? ''}`,
           },
@@ -181,7 +180,13 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
         };
         return result.status === 0;
       }, async () => {
-        return `Bob could not clone Alice repo through passive DWN\nstdout:\n${clone.stdout}\nstderr:\n${clone.stderr}\nhelper stdout:\n${bobServe.stdout()}\nhelper stderr:\n${bobServe.stderr()}`;
+        return [
+          'Bob could not clone Alice repo through passive DWN',
+          `stdout:\n${clone.stdout}`,
+          `stderr:\n${clone.stderr}`,
+          `helper stdout:\n${bobServe.stdout()}`,
+          `helper stderr:\n${bobServe.stderr()}`,
+        ].join('\n');
       }, 60_000);
 
       expect(clone.stderr).toContain('(via LocalDwnHelper)');
@@ -202,16 +207,22 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
         'origin',
         `HEAD:${contributorRef}`,
       ], {
-        cwd      : bobClone,
-        timeoutMs: 120_000,
-        env      : {
+        cwd       : bobClone,
+        timeoutMs : 120_000,
+        env       : {
           ...testEnv('bob', passiveDwn.url),
-          PATH: `${binDir}:${process.env.PATH ?? ''}`,
-          GIT_TERMINAL_PROMPT: '0',
+          PATH                : `${binDir}:${process.env.PATH ?? ''}`,
+          GIT_TERMINAL_PROMPT : '0',
         },
       });
       if (pushResult.status !== 0) {
-        throw new Error(`Bob contributor push failed with status ${pushResult.status}\nstdout:\n${pushResult.stdout}\nstderr:\n${pushResult.stderr}\nhelper stdout:\n${bobServe.stdout()}\nhelper stderr:\n${bobServe.stderr()}`);
+        throw new Error([
+          `Bob contributor push failed with status ${pushResult.status}`,
+          `stdout:\n${pushResult.stdout}`,
+          `stderr:\n${pushResult.stderr}`,
+          `helper stdout:\n${bobServe.stdout()}`,
+          `helper stderr:\n${bobServe.stderr()}`,
+        ].join('\n'));
       }
       expect(pushResult.stderr).toContain('(via LocalDwnHelper)');
       await waitFor(async () => {
@@ -219,7 +230,11 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
           && bobServe.stderr().includes('[dwn-apply] remote branch writeback')
           && bobServe.stderr().includes(': Applied');
       }, async () => {
-        return `Bob contributor branch writeback did not apply to Alice passive DWN\nhelper stdout:\n${bobServe.stdout()}\nhelper stderr:\n${bobServe.stderr()}`;
+        return [
+          'Bob contributor branch writeback did not apply to Alice passive DWN',
+          `helper stdout:\n${bobServe.stdout()}`,
+          `helper stderr:\n${bobServe.stderr()}`,
+        ].join('\n');
       }, 60_000);
 
       const issue = await runAsync('bun', [
@@ -326,7 +341,13 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
         };
         return result.status === 0;
       }, async () => {
-        return `Alice could not checkout Bob PR after sync from passive DWN\nstdout:\n${checkout.stdout}\nstderr:\n${checkout.stderr}\nhelper stdout:\n${aliceMergeServe.stdout()}\nhelper stderr:\n${aliceMergeServe.stderr()}`;
+        return [
+          'Alice could not checkout Bob PR after sync from passive DWN',
+          `stdout:\n${checkout.stdout}`,
+          `stderr:\n${checkout.stderr}`,
+          `helper stdout:\n${aliceMergeServe.stdout()}`,
+          `helper stderr:\n${aliceMergeServe.stderr()}`,
+        ].join('\n');
       }, 90_000);
 
       const merge = await runAsync('bun', [
@@ -384,9 +405,9 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
           `did::${alice.did}/passive-demo`,
           finalClone,
         ], {
-          cwd      : resolve('.'),
-          timeoutMs: 60_000,
-          env      : {
+          cwd       : resolve('.'),
+          timeoutMs : 60_000,
+          env       : {
             ...testEnv('bob', passiveDwn.url),
             PATH: `${binDir}:${process.env.PATH ?? ''}`,
           },
@@ -397,7 +418,13 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
         };
         return result.status === 0;
       }, async () => {
-        return `Bob could not clone Alice merged repo through passive DWN\nstdout:\n${finalResult.stdout}\nstderr:\n${finalResult.stderr}\nhelper stdout:\n${bobFinalServe.stdout()}\nhelper stderr:\n${bobFinalServe.stderr()}`;
+        return [
+          'Bob could not clone Alice merged repo through passive DWN',
+          `stdout:\n${finalResult.stdout}`,
+          `stderr:\n${finalResult.stderr}`,
+          `helper stdout:\n${bobFinalServe.stdout()}`,
+          `helper stderr:\n${bobFinalServe.stderr()}`,
+        ].join('\n');
       }, 90_000);
 
       expect(finalResult.stderr).toContain('(via LocalDwnHelper)');
@@ -480,8 +507,8 @@ async function startServe(
 
   return {
     proc,
-    stdout: () => stdout,
-    stderr: () => stderr,
+    stdout : () => stdout,
+    stderr : () => stderr,
   };
 }
 
@@ -506,7 +533,11 @@ async function authenticatedRemoteUrl(
     throw new Error('auth token response was missing username or password');
   }
 
-  return `http://${encodeURIComponent(creds.username)}:${encodeURIComponent(creds.password)}@127.0.0.1:${port}/${encodeURIComponent(ownerDid)}/${repoName}`;
+  const username = encodeURIComponent(creds.username);
+  const password = encodeURIComponent(creds.password);
+  const owner = encodeURIComponent(ownerDid);
+
+  return `http://${username}:${password}@127.0.0.1:${port}/${owner}/${repoName}`;
 }
 
 function createAndPushMain(workdir: string, remoteUrl: string): void {
@@ -640,9 +671,9 @@ async function runAsyncRaw(
   options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
   const child = spawn(command, args, {
-    cwd      : options.cwd ?? resolve('.'),
-    env      : options.env ?? process.env,
-    stdio    : ['ignore', 'pipe', 'pipe'],
+    cwd   : options.cwd ?? resolve('.'),
+    env   : options.env ?? process.env,
+    stdio : ['ignore', 'pipe', 'pipe'],
   });
 
   let stdout = '';
@@ -686,13 +717,13 @@ function testEnv(profile: string, dwnEndpoint: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     ENBOX_HOME,
-    GITD_PROFILE          : profile,
-    GITD_PASSWORD         : PASSWORD,
-    GITD_DWN_ENDPOINT     : dwnEndpoint,
-    GITD_DWN_REGISTRATION : 'off',
-    GITD_DID_REPUBLISH    : 'off',
-    GITD_DEBUG            : '1',
-    GITD_DID_RESOLUTION_TIMEOUT_MS: '1000',
+    GITD_PROFILE                   : profile,
+    GITD_PASSWORD                  : PASSWORD,
+    GITD_DWN_ENDPOINT              : dwnEndpoint,
+    GITD_DWN_REGISTRATION          : 'off',
+    GITD_DID_REPUBLISH             : 'off',
+    GITD_DEBUG                     : '1',
+    GITD_DID_RESOLUTION_TIMEOUT_MS : '1000',
   };
 }
 

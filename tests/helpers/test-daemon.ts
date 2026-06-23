@@ -21,6 +21,8 @@ import { createTestIdentity } from './identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
+import type { PushRefUpdate } from '../../src/git-server/push-updates.js';
+
 import { createDidSignatureVerifier } from '../../src/git-server/verify.js';
 import { createDwnPushAuthorizer } from '../../src/git-server/push-authorizer.js';
 import { createGitServer } from '../../src/git-server/server.js';
@@ -35,7 +37,6 @@ import {
   formatAuthPassword,
   parseAuthPassword,
 } from '../../src/git-server/auth.js';
-import type { PushRefUpdate } from '../../src/git-server/push-updates.js';
 
 // ---------------------------------------------------------------------------
 // Config from environment

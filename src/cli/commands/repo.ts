@@ -19,10 +19,10 @@
 import type { AgentContext } from '../agent.js';
 import type { RepoContext } from '../repo-context.js';
 
-import { getRepoContext, getRepoContextId } from '../repo-context.js';
-import { flagValue, resolveRepoName } from '../flags.js';
 import { getDwnEndpoints } from '../../git-server/did-service.js';
 import { applyMessageToDwnEndpoint, applyRecordToDwnEndpoint } from '../record-send.js';
+import { flagValue, resolveRepoName } from '../flags.js';
+import { getRepoContext, getRepoContextId } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Valid roles

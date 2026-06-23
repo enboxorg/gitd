@@ -16,8 +16,8 @@ import { DateSort } from '@enbox/dwn-sdk-js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
-import { ForgeRepoProtocol } from '../src/repo.js';
 import { ForgeRefsProtocol } from '../src/refs.js';
+import { ForgeRepoProtocol } from '../src/repo.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
 import { createBundleSyncer, createFullBundle, createIncrementalBundle } from '../src/git-server/bundle-sync.js';
 

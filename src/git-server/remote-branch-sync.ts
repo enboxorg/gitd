@@ -10,17 +10,16 @@
  * @module
  */
 
+import type { ForgeRefsProtocol } from '../refs.js';
+import type { PushRefUpdate } from './push-updates.js';
 import type { TypedEnbox } from '@enbox/api';
+import type { BranchStateData, ForgeRefsSchemaMap } from '../refs.js';
 
 import { randomUUID } from 'node:crypto';
 import { readFile, unlink } from 'node:fs/promises';
 
-import type { ForgeRefsProtocol } from '../refs.js';
-import type { BranchStateData, ForgeRefsSchemaMap } from '../refs.js';
-import type { PushRefUpdate } from './push-updates.js';
-
-import { branchDataForRef, isContributorBranchRef } from '../branch-state.js';
 import { createBranchBundle } from './bundle-sync.js';
+import { branchDataForRef, isContributorBranchRef } from '../branch-state.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,19 +233,19 @@ async function writeRemoteBranchRefUpdate(options: {
   const { refs, branchRecord, targetDid, actorDid, update, bundleRecordId, sendRecord } = options;
   const now = new Date().toISOString();
   const data: BranchStateData = {
-    kind       : 'refUpdate',
-    refName    : update.refName,
-    oldTarget  : update.oldTarget,
-    newTarget  : update.newTarget,
+    kind      : 'refUpdate',
+    refName   : update.refName,
+    oldTarget : update.oldTarget,
+    newTarget : update.newTarget,
     actorDid,
-    createdAt  : now,
-    nonce      : randomUUID(),
+    createdAt : now,
+    nonce     : randomUUID(),
     ...(bundleRecordId ? { bundleRecordId } : {}),
   };
 
   const tags: Record<string, string> = {
-    kind     : 'refUpdate',
-    refName  : update.refName,
+    kind    : 'refUpdate',
+    refName : update.refName,
     actorDid,
   };
   if (update.oldTarget) { tags.oldTarget = update.oldTarget; }
@@ -281,17 +280,17 @@ async function writeRemoteBranchCheckpoint(options: {
   const { refs, branchRecord, targetDid, actorDid, update, acceptedStateRecordId, sendRecord } = options;
   const now = new Date().toISOString();
   const data: BranchStateData = {
-    kind                  : 'checkpoint',
-    refName               : update.refName,
-    target                : update.newTarget,
+    kind       : 'checkpoint',
+    refName    : update.refName,
+    target     : update.newTarget,
     actorDid,
     acceptedStateRecordId,
-    acceptedAt            : now,
-    createdAt             : now,
+    acceptedAt : now,
+    createdAt  : now,
   };
   const tags: Record<string, string> = {
-    kind: 'checkpoint',
-    refName: update.refName,
+    kind    : 'checkpoint',
+    refName : update.refName,
     actorDid,
     acceptedStateRecordId,
   };

@@ -25,8 +25,8 @@ import type { CliRpcRequest, CliRpcResponse } from '../cli/local-rpc.js';
 
 import { createServer } from 'node:http';
 
-import { createGitHttpHandler } from './http-handler.js';
 import { CLI_RPC_PATH } from '../cli/local-rpc.js';
+import { createGitHttpHandler } from './http-handler.js';
 import { GitBackend } from './git-backend.js';
 
 // ---------------------------------------------------------------------------

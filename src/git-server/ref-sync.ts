@@ -17,14 +17,14 @@
  * @module
  */
 
-import type { TypedEnbox } from '@enbox/api';
+import type { ForgeRefsProtocol } from '../refs.js';
 import type { PushRefUpdate } from './push-updates.js';
+import type { TypedEnbox } from '@enbox/api';
+import type { BranchStateData, ForgeRefsSchemaMap } from '../refs.js';
 
 import { spawn } from 'node:child_process';
 
 import { branchDataForRef, reduceBranchState } from '../branch-state.js';
-import type { ForgeRefsProtocol } from '../refs.js';
-import type { BranchStateData, ForgeRefsSchemaMap } from '../refs.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -193,8 +193,8 @@ async function ensureBranchRecord(
       ownerDid : data.ownerDid,
       kind     : data.kind,
     },
-    parentContextId: repoContextId,
-    published      : publish,
+    parentContextId : repoContextId,
+    published       : publish,
   });
 
   branchRecords.set(refName, record);

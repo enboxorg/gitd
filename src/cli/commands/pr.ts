@@ -35,12 +35,9 @@ import {
   RecordsWrite,
 } from '@enbox/dwn-sdk-js';
 
+import { ForgePatchesDefinition } from '../../patches.js';
 import { recordIgnoredSubmission } from '../submission-decisions.js';
 import { shortId } from '../../github-shim/helpers.js';
-import { flagValue, hasFlag, resolveRepoName, resolveRepoOwner } from '../flags.js';
-import { fromOpt, getRepoContext, getRepoContextForDid, getRepoContextId, resolveRepoProtocolRole } from '../repo-context.js';
-import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
-import { ForgePatchesDefinition } from '../../patches.js';
 import {
   bodyInit,
   configuredDwnEndpoints,
@@ -49,6 +46,9 @@ import {
   processMessageOnTargetEndpoints,
   sendRecordToTarget,
 } from '../record-send.js';
+import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
+import { flagValue, hasFlag, resolveRepoName, resolveRepoOwner } from '../flags.js';
+import { fromOpt, getRepoContext, getRepoContextForDid, resolveRepoProtocolRole } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -1331,9 +1331,9 @@ function endpointBackedRecord(ctx: AgentContext, target: PatchTarget, entry: any
     tags                       : descriptor.tags ?? {},
     rawMessage                 : entry,
     dataSize                   : descriptor.dataSize ?? 0,
-    data: {
-      json: async () => JSON.parse(new TextDecoder().decode(await endpointRecordBytes(ctx, target, entry))),
-      blob: async () => new Blob(
+    data                       : {
+      json : async () => JSON.parse(new TextDecoder().decode(await endpointRecordBytes(ctx, target, entry))),
+      blob : async () => new Blob(
         [await endpointRecordBytes(ctx, target, entry)],
         { type: descriptor.dataFormat ?? 'application/octet-stream' },
       ),

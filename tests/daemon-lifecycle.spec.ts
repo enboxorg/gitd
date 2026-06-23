@@ -3,14 +3,15 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
-import { createGitServer } from '../src/git-server/server.js';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
-import { getVersion } from '../src/version.js';
-import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
-import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
+
+import { createGitServer } from '../src/git-server/server.js';
+import { getVersion } from '../src/version.js';
 import { profilesDir } from '../src/profiles/config.js';
+import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
+import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
 // Lockfile version field

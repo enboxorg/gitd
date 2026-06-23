@@ -21,28 +21,26 @@
  * @module
  */
 
+import type { AgentContext } from '../agent.js';
 import type { DidDocument } from '@enbox/dids';
 import type { EnboxPlatformAgent } from '@enbox/agent';
-import type { CliRpcRequest, CliRpcResponse } from '../local-rpc.js';
 import type { PushRefUpdate } from '../../git-server/push-updates.js';
-
-import type { AgentContext } from '../agent.js';
+import type { CliRpcRequest, CliRpcResponse } from '../local-rpc.js';
 
 import { rmSync } from 'node:fs';
 
 import { createBundleSyncer } from '../../git-server/bundle-sync.js';
-import { dispatchAgentCommand } from '../dispatch.js';
-import { applyMessageToDwnEndpoint, applyRecordToDwnEndpoint } from '../record-send.js';
 import { createDidSignatureVerifier } from '../../git-server/verify.js';
 import { createDwnPushAuthorizer } from '../../git-server/push-authorizer.js';
 import { createGitServer } from '../../git-server/server.js';
 import { createRefSyncer } from '../../git-server/ref-sync.js';
-import { fromOpt, getRepoContext, getRepoContextForDid } from '../repo-context.js';
+import { dispatchAgentCommand } from '../dispatch.js';
 import { getVersion } from '../../version.js';
+import { isContributorBranchRef } from '../../branch-state.js';
 import { restoreFromBundles } from '../../git-server/bundle-restore.js';
 import { syncRemoteBranchPush } from '../../git-server/remote-branch-sync.js';
 import { withRepoLock } from '../../git-server/repo-mutex.js';
-import { isContributorBranchRef } from '../../branch-state.js';
+import { applyMessageToDwnEndpoint, applyRecordToDwnEndpoint } from '../record-send.js';
 import {
   createPushAuthenticator,
   createPushTokenPayload,
@@ -51,6 +49,7 @@ import {
   formatAuthPassword,
 } from '../../git-server/auth.js';
 import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
+import { fromOpt, getRepoContext, getRepoContextForDid } from '../repo-context.js';
 import {
   getDwnEndpoints,
   registerGitService,
@@ -273,21 +272,21 @@ async function executeCliRpc(ctx: AgentContext, request: CliRpcRequest): Promise
       process.chdir(request.cwd);
     }
 
-    (process.stdout.write as any) = (chunk: unknown, ..._args: unknown[]) => {
+    (process.stdout.write as any) = (chunk: unknown, ..._args: unknown[]): boolean => {
       writeStdout(chunk);
       return true;
     };
-    (process.stderr.write as any) = (chunk: unknown, ..._args: unknown[]) => {
+    (process.stderr.write as any) = (chunk: unknown, ..._args: unknown[]): boolean => {
       writeStderr(chunk);
       return true;
     };
-    console.log = (...values: unknown[]) => {
+    console.log = (...values: unknown[]): void => {
       stdout += `${values.map(formatConsoleValue).join(' ')}\n`;
     };
-    console.error = (...values: unknown[]) => {
+    console.error = (...values: unknown[]): void => {
       stderr += `${values.map(formatConsoleValue).join(' ')}\n`;
     };
-    console.warn = (...values: unknown[]) => {
+    console.warn = (...values: unknown[]): void => {
       stderr += `${values.map(formatConsoleValue).join(' ')}\n`;
     };
     (process as any).exit = (code?: number): never => {
@@ -405,9 +404,9 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     let remoteAuthorizer = remoteAuthorizers.get(ownerDid);
     if (!remoteAuthorizer) {
       remoteAuthorizer = createDwnPushAuthorizer({
-        repo     : ctx.repo,
+        repo : ctx.repo,
         ownerDid,
-        from     : fromOpt(ctx, ownerDid),
+        from : fromOpt(ctx, ownerDid),
       });
       remoteAuthorizers.set(ownerDid, remoteAuthorizer);
     }
@@ -471,11 +470,11 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
           await syncRemoteBranchPush({
             refs          : ctx.refs,
             repoContextId : repoCtx.contextId,
-            targetDid      : _did,
-            actorDid       : ctx.did,
+            targetDid     : _did,
+            actorDid      : ctx.did,
             repoPath,
-            updates        : pushContext?.updates ?? [],
-            sendRecord     : createEndpointRecordSender(ctx, `remote branch writeback for ${_did}/${repoName}`),
+            updates       : pushContext?.updates ?? [],
+            sendRecord    : createEndpointRecordSender(ctx, `remote branch writeback for ${_did}/${repoName}`),
           });
           debugLog(`[push-sync] remote branch writeback complete ${_did}/${repoName}`);
         } catch (err) {
@@ -629,13 +628,13 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
     port,
     pathPrefix,
     authenticatePush,
-    authenticateReceivePackDiscovery: false,
+    authenticateReceivePackDiscovery : false,
     onPushComplete,
     onRepoNotFound,
     onRepoAccess,
     onRequest,
     generateToken,
-    handleCliCommand: createCliRpcHandler(ctx),
+    handleCliCommand                 : createCliRpcHandler(ctx),
   });
 
   // Register the git endpoint in the DID document (if public URL is provided).

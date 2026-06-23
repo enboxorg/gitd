@@ -16,8 +16,8 @@
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
-import { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from '../../daemon/lifecycle.js';
 import { flagValue } from '../flags.js';
+import { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from '../../daemon/lifecycle.js';
 
 // ---------------------------------------------------------------------------
 // Command

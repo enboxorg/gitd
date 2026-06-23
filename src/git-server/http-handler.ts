@@ -375,10 +375,10 @@ async function handleInfoRefs(
   return new Response(body, {
     status  : 200,
     headers : {
-      'Content-Type'  : `application/x-${service}-advertisement`,
-      'Cache-Control' : 'no-cache',
-      'Content-Length': String(body.byteLength),
-      Connection      : 'close',
+      'Content-Type'   : `application/x-${service}-advertisement`,
+      'Cache-Control'  : 'no-cache',
+      'Content-Length' : String(body.byteLength),
+      Connection       : 'close',
     },
   });
 }
@@ -450,8 +450,8 @@ function spawnAndCollect(
 ): Promise<Uint8Array | null> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', [service, '--stateless-rpc', '--advertise-refs', repoPath], {
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      env   : process.env,
+      stdio : ['pipe', 'pipe', 'pipe'],
     });
     child.stdin?.end();
 

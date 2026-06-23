@@ -10,7 +10,11 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
+import type { AgentContext } from '../src/cli/agent.js';
 import type { ChildProcess } from 'node:child_process';
+import type { GitServer } from '../src/git-server/server.js';
+import type { PushRefUpdate } from '../src/git-server/push-updates.js';
+import type { RepoContext } from '../src/cli/repo-context.js';
 
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -22,11 +26,6 @@ import { createTestIdentity } from './helpers/identity.js';
 import { DidJwk } from '@enbox/dids';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
-
-import type { AgentContext } from '../src/cli/agent.js';
-import type { GitServer } from '../src/git-server/server.js';
-import type { RepoContext } from '../src/cli/repo-context.js';
-import type { PushRefUpdate } from '../src/git-server/push-updates.js';
 
 import { createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { createDidSignatureVerifier } from '../src/git-server/verify.js';

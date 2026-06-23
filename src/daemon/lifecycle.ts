@@ -16,8 +16,8 @@ import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { enboxHome, profilesDir } from '../profiles/config.js';
 import { getVersion } from '../version.js';
+import { enboxHome, profilesDir } from '../profiles/config.js';
 import { readLockfile, removeLockfile } from './lockfile.js';
 
 import type { DaemonLock } from './lockfile.js';

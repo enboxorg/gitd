@@ -538,7 +538,7 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
             { id: '#dwn', type: 'DecentralizedWebNode', serviceEndpoint: 'https://dwn.example.com' },
           ],
         },
-        didDocumentMetadata  : {},
+        didDocumentMetadata   : {},
         didResolutionMetadata : {},
       } as any),
     });
@@ -561,7 +561,7 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
             { id: '#git', type: 'GitTransport', serviceEndpoint: 'https://git.example.com/repos' },
           ],
         },
-        didDocumentMetadata  : {},
+        didDocumentMetadata   : {},
         didResolutionMetadata : {},
       } as any),
     });

@@ -76,8 +76,8 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
       defaultBranch : branch,
       dwnEndpoints,
     },
-    published: visibility === 'public',
-    tags: {
+    published : visibility === 'public',
+    tags      : {
       name,
       visibility,
     },

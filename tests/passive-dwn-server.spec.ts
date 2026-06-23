@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 
-import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { rmSync } from 'node:fs';
 
 import { HttpDwnRpcClient } from '@enbox/dwn-clients';
 import {
@@ -29,7 +29,7 @@ describe('passive DWN RPC server helper', () => {
   it('serves standard DWN processMessage, streamed reads, and replicated apply over HTTP', async () => {
     const owner = await TestDataGenerator.generatePersona();
     const server = await startPassiveDwnServer({
-      dataPath      : BASE,
+      dataPath     : BASE,
       didDocuments : [didDocumentForPersona(owner)],
     });
     try {
@@ -142,7 +142,7 @@ describe('passive DWN RPC server helper', () => {
   });
 });
 
-function didDocumentForPersona(persona: Awaited<ReturnType<typeof TestDataGenerator.generatePersona>>) {
+function didDocumentForPersona(persona: Awaited<ReturnType<typeof TestDataGenerator.generatePersona>>): Record<string, unknown> {
   return {
     didDocument: {
       id                 : persona.did,
@@ -152,8 +152,8 @@ function didDocumentForPersona(persona: Awaited<ReturnType<typeof TestDataGenera
         controller   : persona.did,
         publicKeyJwk : persona.keyPair.publicJwk,
       }],
-      authentication : [persona.keyId],
-      assertionMethod: [persona.keyId],
+      authentication  : [persona.keyId],
+      assertionMethod : [persona.keyId],
     },
   };
 }

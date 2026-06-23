@@ -15,10 +15,10 @@ import { createTestIdentity } from './helpers/identity.js';
 import { Enbox } from '@enbox/api';
 import { EnboxUserAgent } from '@enbox/agent';
 
-import { branchDataForRef, branchOwnerHash } from '../src/branch-state.js';
-import { createBranchBundle, createBundleSyncer } from '../src/git-server/bundle-sync.js';
 import { GitBackend } from '../src/git-server/git-backend.js';
 import { restoreFromBundles } from '../src/git-server/bundle-restore.js';
+import { branchDataForRef, branchOwnerHash } from '../src/branch-state.js';
+import { createBranchBundle, createBundleSyncer } from '../src/git-server/bundle-sync.js';
 
 import { ForgeRefsProtocol } from '../src/refs.js';
 import { ForgeRepoProtocol } from '../src/repo.js';

@@ -15,10 +15,10 @@
  * @module
  */
 
-import type { ForgeRepoProtocol } from '../repo.js';
-import type { ForgeRepoSchemaMap } from '../repo.js';
 import type { ForgeRefsProtocol } from '../refs.js';
 import type { ForgeRefsSchemaMap } from '../refs.js';
+import type { ForgeRepoProtocol } from '../repo.js';
+import type { ForgeRepoSchemaMap } from '../repo.js';
 import type { TypedEnbox } from '@enbox/api';
 
 import { DateSort } from '@enbox/dwn-sdk-js';

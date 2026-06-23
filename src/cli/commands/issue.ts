@@ -21,11 +21,11 @@ import { RecordsWrite } from '@enbox/dwn-sdk-js';
 
 import { ForgeIssuesDefinition } from '../../issues.js';
 import { recordIgnoredSubmission } from '../submission-decisions.js';
+import { bodyInit, configuredDwnEndpoints, jsonBody, messageSignerForContext, processMessageOnTargetEndpoints, sendRecordToTarget } from '../record-send.js';
+import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
 import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, resolveRepoName, resolveRepoOwner } from '../flags.js';
-import { fromOpt, getRepoContext, getRepoContextForDid, getRepoContextId, resolveRepoProtocolRole } from '../repo-context.js';
-import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
-import { bodyInit, configuredDwnEndpoints, jsonBody, messageSignerForContext, processMessageOnTargetEndpoints, sendRecordToTarget } from '../record-send.js';
+import { fromOpt, getRepoContext, getRepoContextForDid, resolveRepoProtocolRole } from '../repo-context.js';
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch

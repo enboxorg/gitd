@@ -1,14 +1,22 @@
-import type { DidDocument, DidResolutionOptions, DidResolutionResult, DidResolver } from '@enbox/dids';
-import type { JsonRpcId } from '@enbox/dwn-clients';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Dialect } from '@enbox/dwn-sql-store';
+import type { JsonRpcId } from '@enbox/dwn-clients';
+import type { DidDocument, DidResolutionOptions, DidResolutionResult, DidResolver } from '@enbox/dids';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
-import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 
 import { Kysely } from 'kysely';
+import {
+  createBunSqliteDatabase,
+  DataStoreSql,
+  MessageStoreSql,
+  ResumableTaskStoreSql,
+  runDwnStoreMigrations,
+  SqliteDialect,
+} from '@enbox/dwn-sql-store';
 import {
   DataStream,
   DurableEventLog,
@@ -23,14 +31,6 @@ import {
   DidWeb,
   UniversalResolver,
 } from '@enbox/dids';
-import {
-  createBunSqliteDatabase,
-  DataStoreSql,
-  MessageStoreSql,
-  ResumableTaskStoreSql,
-  runDwnStoreMigrations,
-  SqliteDialect,
-} from '@enbox/dwn-sql-store';
 
 export type SeedDidDocument = {
   didDocument: DidDocument;
@@ -73,10 +73,10 @@ export async function startPassiveDwnServer(options: {
   const port = typeof address === 'object' && address ? address.port : 0;
 
   return {
-    url  : `http://127.0.0.1:${port}`,
+    url            : `http://127.0.0.1:${port}`,
     port,
-    addDidDocument: (entry) => { didResolver.add(entry); },
-    stop : async () => {
+    addDidDocument : (entry): void => { didResolver.add(entry); },
+    stop           : async (): Promise<void> => {
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
       await dwn.close();
     },
@@ -110,7 +110,7 @@ async function createPassiveDwn(
 class SeededDidResolver implements DidResolver {
   private readonly documents = new Map<string, SeedDidDocument>();
   private readonly fallback = new UniversalResolver({
-    didResolvers : [DidDht, DidJwk, DidKey, DidWeb],
+    didResolvers: [DidDht, DidJwk, DidKey, DidWeb],
   });
 
   constructor(didDocuments: Iterable<SeedDidDocument>) {
