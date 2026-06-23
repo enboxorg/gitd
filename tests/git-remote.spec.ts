@@ -343,12 +343,12 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
     expect(result.did).toBe(gitTransportDid);
     expect(result.source).toBe('GitTransport');
     // URL includes the DID in the path for server-side routing.
-    expect(result.url).toBe(`${gitEndpointUrl}/${gitTransportDid}`);
+    expect(result.url).toBe(`${gitEndpointUrl}/${encodeURIComponent(gitTransportDid)}`);
   });
 
   it('should append repo name after DID in GitTransport endpoint', async () => {
     const result = await resolveGitEndpoint(gitTransportDid, 'my-repo');
-    expect(result.url).toBe(`${gitEndpointUrl}/${gitTransportDid}/my-repo`);
+    expect(result.url).toBe(`${gitEndpointUrl}/${encodeURIComponent(gitTransportDid)}/my-repo`);
     expect(result.source).toBe('GitTransport');
   });
 
@@ -367,13 +367,13 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
   it('should use GitTransport when both GitTransport and DWN services exist', async () => {
     const result = await resolveGitEndpoint(bothServicesDid);
     expect(result.source).toBe('GitTransport');
-    expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}`);
+    expect(result.url).toBe(`${gitPriorityUrl}/${encodeURIComponent(bothServicesDid)}`);
   });
 
   it('should use GitTransport with repo appended when both services exist', async () => {
     const result = await resolveGitEndpoint(bothServicesDid, 'test-repo');
     expect(result.source).toBe('GitTransport');
-    expect(result.url).toBe(`${gitPriorityUrl}/${bothServicesDid}/test-repo`);
+    expect(result.url).toBe(`${gitPriorityUrl}/${encodeURIComponent(bothServicesDid)}/test-repo`);
   });
 });
 
