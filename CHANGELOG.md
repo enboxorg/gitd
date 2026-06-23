@@ -1,5 +1,16 @@
 # @enbox/gitd
 
+## 0.9.6
+
+### Patch Changes
+
+- [#180](https://github.com/enboxorg/gitd/pull/180) [`f9d3ae4`](https://github.com/enboxorg/gitd/commit/f9d3ae4202c739e914d9a9057440aece81dd2d1d) Thanks [@LiranCohen](https://github.com/LiranCohen)! - fix: skip local daemon when cloning repos owned by a different DID
+
+  The local daemon resolver now checks `ownerDid` in the lockfile and
+  only routes to `localhost` when the requested DID matches the daemon
+  owner. Previously, cloning any DID would hit the local daemon — which
+  does not have the remote user's repos — and fail with 404.
+
 ## 0.9.5
 
 ### Patch Changes
