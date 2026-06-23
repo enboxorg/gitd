@@ -1,14 +1,14 @@
 /**
  * `gitd setup` — configure git to use DID-based remotes and push auth.
  *
- * Creates symlinks for `git-remote-did` and `git-remote-did-credential` in
+ * Creates wrapper commands for `git-remote-did` and `git-remote-did-credential` in
  * a directory on the user's PATH, and configures the global git credential
  * helper so that `git push` to DID remotes uses DID-signed tokens.
  *
  * Usage:
  *   gitd setup [--bin-dir <path>]     Install and configure
  *   gitd setup --check                Validate without modifying anything
- *   gitd setup --uninstall            Remove configuration and symlinks
+ *   gitd setup --uninstall            Remove configuration and wrapper commands
  *
  * The default bin directory is `~/.gitd/bin`.
  *
@@ -17,7 +17,17 @@
 
 import { execSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { existsSync, mkdirSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { flagValue, hasFlag } from '../flags.js';
@@ -73,6 +83,53 @@ function resolveSourceBinaries(): Record<string, string> {
   };
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function bunExecutable(): string {
+  return process.execPath || 'bun';
+}
+
+function wrapperText(target: string): string {
+  return `#!/usr/bin/env bash\nexec ${shellQuote(bunExecutable())} ${shellQuote(target)} "$@"\n`;
+}
+
+function lstatExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isExecutable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isExpectedWrapper(path: string, target: string): boolean {
+  try {
+    return readFileSync(path, 'utf-8') === wrapperText(target);
+  } catch {
+    return false;
+  }
+}
+
+function writeWrapper(path: string, target: string): void {
+  if (existsSync(path) || lstatExists(path)) {
+    unlinkSync(path);
+  }
+
+  writeFileSync(path, wrapperText(target), { encoding: 'utf-8', mode: 0o755 });
+  chmodSync(path, 0o755);
+}
+
 /** Check if a directory is on the system PATH. */
 function isOnPath(dir: string): boolean {
   const pathDirs = (process.env.PATH ?? '').split(':');
@@ -91,27 +148,23 @@ function checkSetup(binDir: string): void {
   console.log('Checking gitd setup...');
   console.log('');
 
-  // Check binaries.
+  // Check wrappers.
   for (const name of BINARIES) {
-    const linkPath = join(binDir, name);
+    const wrapperPath = join(binDir, name);
     const target = sourceMap[name];
 
-    if (!existsSync(linkPath)) {
-      console.log(`  [MISSING]  ${name} not found at ${linkPath}`);
+    if (!existsSync(wrapperPath) && !lstatExists(wrapperPath)) {
+      console.log(`  [MISSING]  ${name} not found at ${wrapperPath}`);
+      ok = false;
+    } else if (!isExpectedWrapper(wrapperPath, target)) {
+      console.log(`  [MISMATCH] ${name} wrapper at ${wrapperPath}`);
+      console.log(`             Expected target: ${target}`);
+      ok = false;
+    } else if (!isExecutable(wrapperPath)) {
+      console.log(`  [NOT EXEC] ${name} at ${wrapperPath}`);
       ok = false;
     } else {
-      try {
-        const actual = readlinkSync(linkPath);
-        if (resolve(actual) !== resolve(target)) {
-          console.log(`  [MISMATCH] ${name} -> ${actual} (expected ${target})`);
-          ok = false;
-        } else {
-          console.log(`  [OK]       ${name} -> ${target}`);
-        }
-      } catch {
-        console.log(`  [EXISTS]   ${name} at ${linkPath} (not a symlink)`);
-        ok = false;
-      }
+      console.log(`  [OK]       ${name} -> ${target}`);
     }
   }
 
@@ -145,17 +198,17 @@ function checkSetup(binDir: string): void {
   }
 }
 
-/** `gitd setup --uninstall` — remove configuration and symlinks. */
+/** `gitd setup --uninstall` — remove configuration and wrapper commands. */
 function uninstallSetup(binDir: string): void {
   console.log('Removing gitd setup...');
   console.log('');
 
-  // Remove symlinks.
+  // Remove wrapper commands.
   for (const name of BINARIES) {
-    const linkPath = join(binDir, name);
-    if (existsSync(linkPath)) {
-      unlinkSync(linkPath);
-      console.log(`  Removed: ${linkPath}`);
+    const wrapperPath = join(binDir, name);
+    if (existsSync(wrapperPath) || lstatExists(wrapperPath)) {
+      unlinkSync(wrapperPath);
+      console.log(`  Removed: ${wrapperPath}`);
     }
   }
 
@@ -190,13 +243,13 @@ export async function setupCommand(args: string[]): Promise<void> {
 
   // --- Install mode ---
 
-  // 1. Create symlinks.
+  // 1. Create wrapper commands.
   mkdirSync(binDir, { recursive: true });
 
   const sourceMap = resolveSourceBinaries();
 
   for (const name of BINARIES) {
-    const linkPath = join(binDir, name);
+    const wrapperPath = join(binDir, name);
     const target = sourceMap[name];
 
     if (!existsSync(target)) {
@@ -205,12 +258,8 @@ export async function setupCommand(args: string[]): Promise<void> {
       continue;
     }
 
-    if (existsSync(linkPath)) {
-      unlinkSync(linkPath);
-    }
-
-    symlinkSync(target, linkPath);
-    console.log(`  Linked: ${name} -> ${target}`);
+    writeWrapper(wrapperPath, target);
+    console.log(`  Installed: ${name} -> ${target}`);
   }
 
   // 2. Configure credential helper.

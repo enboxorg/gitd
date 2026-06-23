@@ -102,6 +102,10 @@ write_wrapper() {
   local quoted_source
   quoted_source="$(shell_quote "$source")"
 
+  if [ -e "$out" ] || [ -L "$out" ]; then
+    rm -f "$out"
+  fi
+
   {
     printf '#!/usr/bin/env bash\n'
     printf 'exec %s %s "$@"\n' "$quoted_bun" "$quoted_source"
