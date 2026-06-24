@@ -39,6 +39,7 @@ import {
   upsertProfile,
   writeConfig,
 } from '../../profiles/config.js';
+import { forgetVaultSecret, rememberVaultSecret } from '../../auth/vault-password.js';
 
 const DEFAULT_IDENTITY_NAME = 'default';
 
@@ -290,6 +291,9 @@ async function authLogin(): Promise<void> {
       createdAt : new Date().toISOString(),
     });
 
+    // Persist the unlock secret so later commands restore without a prompt.
+    await rememberVaultSecret(profileName, { password: password as string, source: 'explicit' });
+
     spin.stop('Identity created!');
 
     p.log.success(`DID:      ${result.did}`);
@@ -484,6 +488,7 @@ async function authReset(args: string[]): Promise<void> {
 
   try {
     const result = resetIdentityLocally(name);
+    await forgetVaultSecret(name);
     p.log.success(`Identity "${result.name}" reset.`);
     if (result.backupPath) {
       p.log.info(`Backup: ${result.backupPath}`);
@@ -572,6 +577,7 @@ async function authLogout(args: string[]): Promise<void> {
     config.defaultProfile = remaining[0] ?? '';
   }
   writeConfig(config);
+  await forgetVaultSecret(name);
 
   p.log.success(`Identity "${name}" removed.`);
   p.log.info(`Data directory preserved at: ${profileDataPath(name)}`);

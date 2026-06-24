@@ -90,6 +90,7 @@ import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 
 import type { FirstIdentitySetup } from './identity-wizard.js';
+import type { ResolvedPassword } from '../auth/vault-password.js';
 
 import { authCommand } from './commands/auth.js';
 import { cloneCommand } from './commands/clone.js';
@@ -98,12 +99,12 @@ import { dispatchAgentCommand } from './dispatch.js';
 import { doctorCommand } from './commands/doctor.js';
 import { flagValue } from './flags.js';
 import { forwardCliCommandIfAvailable } from './local-rpc.js';
-import { readPublicReaderPasswordForActiveProfile } from '../profiles/public-reader.js';
 import { repairCommand } from './commands/repair.js';
 import { setupCommand } from './commands/setup.js';
 import { checkGit, requireGit, warnGit } from './preflight.js';
 import { createFirstIdentityFromSetup, maybePromptForFirstIdentitySetup } from './identity-wizard.js';
 import { ensureDaemon, findGitdBin, markDeferredDaemonStart } from '../daemon/lifecycle.js';
+import { forgetVaultSecret, rememberVaultSecret, resolveVaultPassword } from '../auth/vault-password.js';
 import { helperCommand, serveDaemonCommand } from './commands/serve-lifecycle.js';
 import { printImplicitRecoveryPhrase, recordConnectedProfile, resolveCommandProfile } from './profile-session.js';
 import { publicReaderWriteBlockMessage, shouldBlockPublicReaderCommand } from './public-reader-guard.js';
@@ -282,67 +283,18 @@ function printUsage(): void {
 // Password
 // ---------------------------------------------------------------------------
 
-async function getPassword(): Promise<string> {
-  // Prefer env var for non-interactive use / testing.
-  const env = process.env.GITD_PASSWORD;
-  if (env) { return env; }
-
-  const publicReaderPassword = readPublicReaderPasswordForActiveProfile();
-  if (publicReaderPassword) { return publicReaderPassword; }
-
-  // Interactive prompt — hide input when running in a TTY.
-  process.stdout.write('Identity password: ');
-
-  if (process.stdin.isTTY) {
-    // Raw mode: read character-by-character, echo nothing.
-    const password = await new Promise<string>((resolve) => {
-      let buf = '';
-      process.stdin.setRawMode(true);
-      process.stdin.setEncoding('utf8');
-      process.stdin.resume();
-
-      const onData = (ch: string): void => {
-        const code = ch.charCodeAt(0);
-
-        if (ch === '\r' || ch === '\n') {
-          // Enter — done.
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-          process.stdin.removeListener('data', onData);
-          process.stdout.write('\n');
-          resolve(buf);
-        } else if (code === 3) {
-          // Ctrl-C — abort.
-          process.stdin.setRawMode(false);
-          process.stdout.write('\n');
-          process.exit(130);
-        } else if (code === 127 || code === 8) {
-          // Backspace / Delete.
-          if (buf.length > 0) {
-            buf = buf.slice(0, -1);
-          }
-        } else if (code >= 32) {
-          // Printable character.
-          buf += ch;
-        }
-      };
-
-      process.stdin.on('data', onData);
-    });
-    return password;
-  }
-
-  // Non-TTY fallback (piped input).
-  const response = await new Promise<string>((resolve) => {
-    let buf = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.once('data', (chunk: string) => {
-      buf += chunk;
-      resolve(buf.trim());
-    });
-    process.stdin.resume();
-  });
-  return response;
+/**
+ * Resolve the vault password for a command and, on a verified unlock, cache a
+ * freshly entered secret so later commands don't re-prompt.
+ *
+ * Resolution and caching live in `../auth/vault-password.js`; this wrapper
+ * keeps the call sites terse while threading the active profile name through.
+ */
+async function resolveCommandPassword(
+  profileName: string | undefined,
+  explicit?: string,
+): Promise<ResolvedPassword> {
+  return resolveVaultPassword({ profileName, explicit });
 }
 
 async function maybeDelayHelperStart(args: string[]): Promise<void> {
@@ -489,7 +441,6 @@ async function main(): Promise<void> {
         if (setup) {
           await createFirstIdentityFromSetup(setup);
         }
-        const pw = setup?.password ?? await getPassword();
         let profileName: string | undefined;
         try {
           profileName = setup?.profileName ?? resolveCommandProfile(flagValue(rest, '--profile')).name;
@@ -497,12 +448,17 @@ async function main(): Promise<void> {
           console.error(`gitd: ${(err as Error).message}`);
           process.exit(1);
         }
+        const resolved = await resolveCommandPassword(profileName, setup?.password);
         try {
-          const result = await ensureDaemon(pw, { profileName });
+          const result = await ensureDaemon(resolved.password, { profileName });
+          await rememberVaultSecret(profileName, resolved);
           for (const line of serveLocalHelperAliasLines(result.spawned, result.port)) {
             console.log(line);
           }
         } catch (err) {
+          if (resolved.source === 'keychain' && profileName) {
+            await forgetVaultSecret(profileName);
+          }
           console.error(`Failed to start local helper: ${(err as Error).message}`);
           process.exit(1);
         }
@@ -559,14 +515,24 @@ async function main(): Promise<void> {
   }
 
   // Commands that require the Enbox agent.
-  const password = firstIdentitySetup?.password ?? await getPassword();
+  const resolved = await resolveCommandPassword(profileName, firstIdentitySetup?.password);
 
-  const ctx = await connectAgentWithRetry({
-    password,
-    dataPath       : commandProfile.dataPath,
-    sync           : sync as any,
-    recoveryPhrase : firstIdentitySetup?.recoveryPhrase,
-  });
+  let ctx: Awaited<ReturnType<typeof connectAgentWithRetry>>;
+  try {
+    ctx = await connectAgentWithRetry({
+      password       : resolved.password,
+      dataPath       : commandProfile.dataPath,
+      sync           : sync as any,
+      recoveryPhrase : firstIdentitySetup?.recoveryPhrase,
+    });
+  } catch (err) {
+    if (resolved.source === 'keychain' && profileName) {
+      await forgetVaultSecret(profileName);
+      console.error('gitd: the cached unlock secret was rejected and cleared. Re-run the command to re-enter it.');
+    }
+    throw err;
+  }
+  await rememberVaultSecret(profileName, resolved);
   const recordedProfile = recordConnectedProfile(profileName, ctx.did);
   ctx.profileName = profileName;
 
@@ -599,9 +565,9 @@ async function main(): Promise<void> {
   // `gitd init` without hiding first-run recovery phrase output in the helper.
   if (completed && !longRunning && shouldAutoStartHelperAfterCommand(command, rest)) {
     try {
-      await ensureDaemon(password, { profileName: profileName ?? undefined });
+      await ensureDaemon(resolved.password, { profileName: profileName ?? undefined });
     } catch (err) {
-      if (isTransientHelperLockError(err) && scheduleDeferredHelperStart(password, profileName ?? undefined)) {
+      if (isTransientHelperLockError(err) && scheduleDeferredHelperStart(resolved.password, profileName ?? undefined)) {
         process.exit(0);
       }
       // Non-fatal — warn but don't block the command.
