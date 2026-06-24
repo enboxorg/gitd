@@ -17,8 +17,9 @@
  *
  * The preferred path (daemon running) requires NO password — the daemon
  * already holds the agent lock and signs on our behalf.  The fallback path
- * (no daemon) still requires a vault password via `GITD_PASSWORD` or an
- * interactive `/dev/tty` prompt.
+ * (no daemon) signs directly, getting the vault password from the durable
+ * secret store (cached on first unlock), `GITD_PASSWORD`, or a `/dev/tty`
+ * prompt — so `git push`/`fetch` keep working even when no helper is running.
  *
  * Install in .gitconfig:
  *   [credential]
@@ -144,7 +145,7 @@ async function handleGet(request: { protocol?: string; host?: string; path?: str
   }
 
   // --- Fallback: direct agent connection (no daemon running) ---
-  const password = getVaultPassword();
+  const password = await getVaultPassword();
   if (!password) {
     console.error('git-remote-did-credential: no running daemon and no identity password available.');
     console.error('Hint: run `gitd helper start` in another terminal, or set GITD_PASSWORD and retry.');

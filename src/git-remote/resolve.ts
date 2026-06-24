@@ -221,7 +221,7 @@ async function resolveLocalDaemon(
   // a daemon without a password will always fail (vault can't unlock).
   const password = profileSelection.implicitPublicReader
     ? getOrCreatePublicReaderPassword().password
-    : getVaultPassword() ?? undefined;
+    : (await getVaultPassword()) ?? undefined;
   if (!password) {
     if (!hasRecentDeferredDaemonStart(profileName)) { return null; }
     return waitForReachableLocalDaemon(did, repo, mode, profileName);

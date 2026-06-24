@@ -17,7 +17,9 @@
 import { execSync } from 'node:child_process';
 import { closeSync, openSync, readSync, writeSync } from 'node:fs';
 
+import { getVaultSecret } from '../auth/secret-store.js';
 import { readPublicReaderPasswordForActiveProfile } from '../profiles/public-reader.js';
+import { resolveProfile } from '../profiles/config.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -29,17 +31,31 @@ import { readPublicReaderPasswordForActiveProfile } from '../profiles/public-rea
  * Resolution order:
  *   1. `GITD_PASSWORD` environment variable (non-interactive)
  *   2. Hidden public-read profile password
- *   3. Interactive prompt via `/dev/tty` (hidden input)
- *   4. `null` if no TTY is available
+ *   3. Durable secret store (OS keychain / encrypted file) for the profile
+ *   4. Interactive prompt via `/dev/tty` (hidden input)
+ *   5. `null` if no source is available and no TTY can be opened
  *
+ * Step 3 is what lets `git push`/`fetch` and the daemon auto-start succeed
+ * without a prompt when no helper is already running — the secret is cached
+ * on the first unlock (see `../auth/secret-store.js`).
+ *
+ * @param profileName - Profile to resolve the secret for. Defaults to the
+ *   active profile.
  * @returns The password string, or `null` if unavailable.
  */
-export function getVaultPassword(): string | null {
+export async function getVaultPassword(
+  profileName: string | undefined = resolveProfile() ?? undefined,
+): Promise<string | null> {
   const env = process.env.GITD_PASSWORD;
   if (env) { return env; }
 
-  const publicReaderPassword = readPublicReaderPasswordForActiveProfile();
+  const publicReaderPassword = readPublicReaderPasswordForActiveProfile(profileName);
   if (publicReaderPassword) { return publicReaderPassword; }
+
+  if (profileName) {
+    const cached = await getVaultSecret(profileName);
+    if (cached) { return cached; }
+  }
 
   return promptTtyPassword('Identity password: ');
 }
