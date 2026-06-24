@@ -12,6 +12,7 @@ import * as p from '@clack/prompts';
 
 import { connectAgent } from './agent.js';
 import { flagValue } from './flags.js';
+import { rememberVaultSecret } from '../auth/vault-password.js';
 import { listProfiles, profileDataPath } from '../profiles/config.js';
 import {
   normalizeIdentityNameInput,
@@ -193,6 +194,9 @@ export async function createFirstIdentityFromSetup(setup: FirstIdentitySetup): P
     recoveryPhrase : setup.recoveryPhrase,
     sync           : 'off',
   });
+
+  // Persist the unlock secret so later commands restore without a prompt.
+  await rememberVaultSecret(setup.profileName, { password: setup.password, source: 'explicit' });
 
   try {
     const recordedProfile = recordConnectedProfile(setup.profileName, ctx.did);
