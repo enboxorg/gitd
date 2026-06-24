@@ -17,7 +17,7 @@ import type { Dialect } from '@enbox/dwn-sql-store';
 import type { DwnMigrationFactory } from '@enbox/dwn-sql-store';
 
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 
 import { AgentDwnApi } from '@enbox/agent';
 import { Kysely, sql } from 'kysely';
@@ -63,7 +63,7 @@ export async function createSqliteDwnApi(
 ): Promise<AgentDwnApi> {
   mkdirSync(dataPath, { recursive: true });
 
-  const dbPath = join(dataPath, 'dwn.sqlite');
+  const dbPath = gitdDwnSqlitePath(dataPath);
   const sqliteDb = createBunSqliteDatabase(dbPath);
   const dialect: Dialect = new SqliteDialect({ database: async () => sqliteDb });
 
@@ -101,6 +101,39 @@ export async function runGitdDwnStoreMigrations(
   dialect: Dialect,
 ): Promise<string[]> {
   return runDwnStoreMigrations(db, dialect, gitdDwnMigrations);
+}
+
+export type DwnSqliteRepairResult = {
+  status : 'missing' | 'ok' | 'fixed';
+  dbPath : string;
+  appliedMigrations : string[];
+};
+
+export function gitdDwnSqlitePath(dataPath: string): string {
+  return join(dataPath, 'dwn.sqlite');
+}
+
+export async function repairGitdDwnSqliteStore(dataPath: string): Promise<DwnSqliteRepairResult> {
+  const dbPath = gitdDwnSqlitePath(dataPath);
+  if (!existsSync(dbPath)) {
+    return { status: 'missing', dbPath, appliedMigrations: [] };
+  }
+
+  const sqliteDb = createBunSqliteDatabase(dbPath);
+  const dialect: Dialect = new SqliteDialect({ database: async () => sqliteDb });
+  const db = new Kysely<Record<string, unknown>>({ dialect });
+
+  try {
+    const appliedMigrations = await runGitdDwnStoreMigrations(db, dialect);
+    return {
+      status: appliedMigrations.length > 0 ? 'fixed' : 'ok',
+      dbPath,
+      appliedMigrations,
+    };
+  } finally {
+    await db.destroy();
+    sqliteDb.close();
+  }
 }
 
 const migration003AddSquashColumnIfMissing: DwnMigrationFactory = (): ReturnType<DwnMigrationFactory> => ({

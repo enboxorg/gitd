@@ -2,7 +2,7 @@
  * `gitd pr` — create, list, show, checkout, comment on, and merge pull requests.
  *
  * Usage:
- *   gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>]
+ *   gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>] [--push|--no-push]
  *   gitd pr checkout <id> [--branch <name>] [--detach]
  *   gitd pr show <id>
  *   gitd pr comment <id> <body>
@@ -23,10 +23,11 @@ import type { RepoContext, RepoRoleName } from '../repo-context.js';
 
 import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 
+import * as p from '@clack/prompts';
 import { HttpDwnRpcClient } from '@enbox/dwn-clients';
 import {
   DataStream,
@@ -46,6 +47,7 @@ import {
   processMessageOnTargetEndpoints,
   sendRecordToTarget,
 } from '../record-send.js';
+import { contributorBranchPrefix, isContributorBranchRef } from '../../branch-state.js';
 import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '../moderation-state.js';
 import { flagValue, hasFlag, resolveRepoName, resolveRepoOwner } from '../flags.js';
 import { fromOpt, getRepoContext, getRepoContextForDid, resolveRepoProtocolRole } from '../repo-context.js';
@@ -84,12 +86,15 @@ export async function prCommand(ctx: AgentContext, args: string[]): Promise<void
 async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   const title = args[0];
   const body = flagValue(args, '--body') ?? flagValue(args, '-m') ?? '';
-  const base = flagValue(args, '--base') ?? 'main';
+  const explicitBase = flagValue(args, '--base');
   const head = flagValue(args, '--head');
   const noBundle = hasFlag(args, '--no-bundle');
+  const pushContributorBranch = hasFlag(args, '--push');
+  const noPushContributorBranch = hasFlag(args, '--no-push');
+  const pushRemote = flagValue(args, '--remote') ?? 'origin';
 
   if (!title) {
-    console.error('Usage: gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>] [--no-bundle]');
+    console.error('Usage: gitd pr create <title> [--body <text>] [--base <branch>] [--head <branch>] [--no-bundle] [--push|--no-push]');
     process.exit(1);
   }
 
@@ -100,10 +105,16 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
     await (ctx.patches as any).configure?.({ encryption: true });
   }
 
+  const base = inferPrBaseBranch({
+    explicitBase,
+    repoDefaultBranch: target.repo.defaultBranch,
+    git,
+  });
+
   // Detect git context for revision + bundle creation.
   const gitInfo = noBundle ? null : detectGitContext(base);
 
-  const headBranch = head ?? gitInfo?.headBranch;
+  const headBranch = inferPrHeadBranch(head, gitInfo, git);
 
   const tags: Record<string, string> = {
     status     : 'open',
@@ -137,6 +148,25 @@ async function prCreate(ctx: AgentContext, args: string[]): Promise<void> {
   // Create revision + bundle if we have git context.
   if (gitInfo) {
     await createRevisionAndBundle(ctx, record, gitInfo, target);
+  }
+
+  const publishPlan = target.remote
+    ? contributorBranchPublishPlan(ctx.did, headBranch, pushRemote)
+    : undefined;
+  if (publishPlan) {
+    console.log(`  Contributor branch: ${publishPlan.refName}`);
+    const shouldPush = await shouldPublishContributorBranch({
+      plan          : publishPlan,
+      pushRequested : pushContributorBranch,
+      noPush        : noPushContributorBranch,
+      stdinIsTTY    : process.stdin.isTTY,
+      stdoutIsTTY   : process.stdout.isTTY,
+    });
+    if (shouldPush) {
+      await publishContributorBranchToRemote(publishPlan);
+    } else {
+      console.log(`  Publish branch: ${publishPlan.commandText}`);
+    }
   }
 }
 
@@ -423,6 +453,7 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const protocolRole = await patchMaintainerRole(ctx, target);
   const baseBranch = tags?.baseBranch ?? 'main';
   const headBranch = tags?.headBranch ?? `pr/${idStr}`;
 
@@ -447,6 +478,20 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   // Count commits being merged (for display).
   const countStr = git(['rev-list', '--count', `${baseBranch}..${headBranch}`]);
   const commitCount = parseInt(countStr ?? '0', 10);
+
+  for (const line of formatPrMergeSummary({
+    id       : idStr,
+    title    : String(data.title ?? ''),
+    actorDid : ctx.did,
+    ownerDid : target.ownerDid,
+    repoName : target.repo.name,
+    baseBranch,
+    headBranch,
+    strategy,
+    commitCount,
+  })) {
+    console.log(line);
+  }
 
   // Perform the merge with the chosen strategy.
   if (strategy === 'squash') {
@@ -533,7 +578,6 @@ async function prMerge(ctx: AgentContext, args: string[]): Promise<void> {
   const mergeCommit = git(['rev-parse', 'HEAD']) ?? 'unknown';
 
   // Update the patch status to merged.
-  const protocolRole = await patchMaintainerRole(ctx, target, 'maintainer');
   if (isEndpointBackedRecord(patch)) {
     await updateEndpointBackedPatch(ctx, target, patch, data, { ...tags, status: 'merged' }, protocolRole);
   } else {
@@ -930,6 +974,8 @@ type GitContext = {
   diffStat : { additions: number; deletions: number; filesChanged: number };
 };
 
+type GitCommandRunner = (args: string[]) => string | null;
+
 /** Run a git command synchronously, returning trimmed stdout or `null` on failure. */
 function git(args: string[]): string | null {
   const result = spawnSync('git', args, {
@@ -939,6 +985,187 @@ function git(args: string[]): string | null {
   });
   if (result.status !== 0) { return null; }
   return result.stdout?.trim() ?? null;
+}
+
+export type PrBaseBranchInferenceOptions = {
+  explicitBase?: string;
+  repoDefaultBranch?: string;
+  git?: GitCommandRunner;
+};
+
+export function inferPrBaseBranch(options: PrBaseBranchInferenceOptions = {}): string {
+  const explicitBase = cleanBranchName(options.explicitBase);
+  if (explicitBase) { return explicitBase; }
+
+  const repoDefaultBranch = cleanBranchName(options.repoDefaultBranch);
+  if (repoDefaultBranch) { return repoDefaultBranch; }
+
+  const runGit = options.git ?? git;
+  const configured = cleanBranchName(runGit(['config', '--get', 'enbox.defaultBranch']));
+  if (configured) { return configured; }
+
+  const remoteHead = normalizeRemoteHeadBranch(runGit(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']));
+  if (remoteHead) { return remoteHead; }
+
+  const initDefault = cleanBranchName(runGit(['config', '--get', 'init.defaultBranch']));
+  if (initDefault && branchExists(runGit, initDefault)) { return initDefault; }
+
+  for (const branch of ['main', 'master', 'trunk', 'develop']) {
+    if (branchExists(runGit, branch)) { return branch; }
+  }
+
+  return 'main';
+}
+
+export function inferPrHeadBranch(
+  explicitHead?: string,
+  gitContext?: Pick<GitContext, 'headBranch'> | null,
+  runGit: GitCommandRunner = git,
+): string | undefined {
+  const explicit = cleanBranchName(explicitHead);
+  if (explicit) { return explicit; }
+
+  const fromContext = cleanBranchName(gitContext?.headBranch);
+  if (fromContext && fromContext !== 'HEAD') { return fromContext; }
+
+  const current = cleanBranchName(runGit(['rev-parse', '--abbrev-ref', 'HEAD']));
+  return current && current !== 'HEAD' ? current : undefined;
+}
+
+export type ContributorBranchPublishPlan = {
+  remote : string;
+  refName : string;
+  refspec : string;
+  commandText : string;
+};
+
+export type ContributorBranchPublishPromptOptions = {
+  plan?: ContributorBranchPublishPlan;
+  pushRequested?: boolean;
+  noPush?: boolean;
+  stdinIsTTY?: boolean;
+  stdoutIsTTY?: boolean;
+};
+
+export type ContributorBranchPublishConfirm = (plan: ContributorBranchPublishPlan) => Promise<boolean | 'cancel'>;
+
+export function contributorBranchRefForHead(
+  actorDid: string,
+  headBranch?: string,
+): string | undefined {
+  const branch = cleanBranchName(headBranch);
+  if (!branch || branch === 'HEAD') { return undefined; }
+
+  const refName = branch.startsWith('refs/heads/')
+    ? branch
+    : `refs/heads/${branch}`;
+  if (isContributorBranchRef(refName, actorDid)) { return refName; }
+
+  const suffix = branch.startsWith('refs/heads/')
+    ? branch.slice('refs/heads/'.length)
+    : branch;
+  if (!isSafeContributorBranchSuffix(suffix)) { return undefined; }
+
+  return `${contributorBranchPrefix(actorDid)}${suffix}`;
+}
+
+export function contributorBranchPublishPlan(
+  actorDid: string,
+  headBranch?: string,
+  remote = 'origin',
+): ContributorBranchPublishPlan | undefined {
+  const refName = contributorBranchRefForHead(actorDid, headBranch);
+  if (!refName) { return undefined; }
+
+  const refspec = `HEAD:${refName}`;
+  return {
+    remote,
+    refName,
+    refspec,
+    commandText: `git push ${shellQuote(remote)} ${shellQuote(refspec)}`,
+  };
+}
+
+export function shouldPromptContributorBranchPublish(options: ContributorBranchPublishPromptOptions): boolean {
+  return Boolean(
+    options.plan
+    && !options.pushRequested
+    && !options.noPush
+    && options.stdinIsTTY
+    && options.stdoutIsTTY,
+  );
+}
+
+export async function shouldPublishContributorBranch(
+  options: ContributorBranchPublishPromptOptions,
+  confirm: ContributorBranchPublishConfirm = confirmContributorBranchPublish,
+): Promise<boolean> {
+  if (!options.plan) { return false; }
+  if (options.pushRequested) { return true; }
+  if (!shouldPromptContributorBranchPublish(options)) { return false; }
+
+  const confirmed = await confirm(options.plan);
+  if (confirmed === 'cancel') {
+    p.cancel('Cancelled.');
+    process.exit(130);
+  }
+
+  return Boolean(confirmed);
+}
+
+async function confirmContributorBranchPublish(plan: ContributorBranchPublishPlan): Promise<boolean | 'cancel'> {
+  const confirmed = await p.confirm({
+    message: `Publish current branch to ${plan.refName}?`,
+  });
+  return p.isCancel(confirmed) ? 'cancel' : Boolean(confirmed);
+}
+
+async function publishContributorBranchToRemote(plan: ContributorBranchPublishPlan): Promise<void> {
+  console.log(`  Publishing branch: ${plan.commandText}`);
+  const status = await new Promise<number>((resolveExit, reject) => {
+    const child = spawn('git', ['push', plan.remote, plan.refspec], {
+      stdio: 'inherit',
+    });
+    child.once('error', reject);
+    child.once('exit', (code) => resolveExit(code ?? 128));
+  });
+
+  if (status !== 0) {
+    console.error(`Failed to publish contributor branch ${plan.refName}.`);
+    process.exit(status);
+  }
+}
+
+function cleanBranchName(value: string | undefined | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function isSafeContributorBranchSuffix(value: string): boolean {
+  return value.length > 0
+    && !value.startsWith('/')
+    && !value.endsWith('/')
+    && !value.includes('..')
+    && !/[\s\0~^:?*[\]\\]/.test(value)
+    && !value.split('/').some((part) => part === '' || part === '.' || part.endsWith('.lock'));
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) { return value; }
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function normalizeRemoteHeadBranch(value: string | undefined | null): string | undefined {
+  const branch = cleanBranchName(value);
+  if (!branch) { return undefined; }
+  return branch.startsWith('origin/')
+    ? branch.slice('origin/'.length)
+    : branch;
+}
+
+function branchExists(runGit: GitCommandRunner, branch: string): boolean {
+  return runGit(['rev-parse', '--verify', `refs/heads/${branch}`]) !== null
+    || runGit(['rev-parse', '--verify', `refs/remotes/origin/${branch}`]) !== null;
 }
 
 /**
@@ -1469,6 +1696,31 @@ type PatchTarget = {
   remote : boolean;
 };
 
+export type PrMergeSummary = {
+  id : string;
+  title : string;
+  actorDid : string;
+  ownerDid : string;
+  repoName : string;
+  baseBranch : string;
+  headBranch : string;
+  strategy : string;
+  commitCount : number;
+};
+
+export function formatPrMergeSummary(summary: PrMergeSummary): string[] {
+  const commitLabel = `${summary.commitCount} commit${summary.commitCount === 1 ? '' : 's'}`;
+  return [
+    `Merging PR ${summary.id}: ${summary.title}`,
+    `  Repo:     ${summary.ownerDid}/${summary.repoName}`,
+    `  Actor:    ${summary.actorDid}`,
+    `  Base:     ${summary.baseBranch}`,
+    `  Head:     ${summary.headBranch}`,
+    `  Strategy: ${summary.strategy}`,
+    `  Commits:  ${commitLabel}`,
+  ];
+}
+
 async function resolvePatchTarget(ctx: AgentContext, args: string[]): Promise<PatchTarget> {
   const ownerDid = resolveRepoOwner(args) ?? ctx.did;
   const repo = await getRepoContextForDid(ctx, ownerDid, resolveRepoName(args));
@@ -1498,9 +1750,13 @@ async function patchDiscussionRole(ctx: AgentContext, target: PatchTarget): Prom
 async function patchMaintainerRole(
   ctx: AgentContext,
   target: PatchTarget,
-  fallback?: RepoRoleName,
 ): Promise<string | undefined> {
-  return resolvePatchRole(ctx, target, ['maintainer'], fallback);
+  const protocolRole = await resolvePatchRole(ctx, target, ['maintainer']);
+  if (target.remote && !protocolRole) {
+    console.error(`You need maintainer access to write maintainer actions on ${target.ownerDid}/${target.repo.name}.`);
+    process.exit(1);
+  }
+  return protocolRole;
 }
 
 async function resolvePatchRole(

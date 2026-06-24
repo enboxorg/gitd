@@ -330,7 +330,7 @@ export async function createGitServer(options: GitServerOptions): Promise<GitSer
         reject(new Error(
           `Port ${port} is already in use.\n`
           + 'Hint: another gitd instance or service may be running on this port.\n'
-          + 'Run `gitd serve status` to check, `gitd serve stop` to stop it,\n'
+          + 'Run `gitd helper status` to check, `gitd helper stop` to stop it,\n'
           + 'or use `--port <number>` to pick a different port.',
         ));
       } else {

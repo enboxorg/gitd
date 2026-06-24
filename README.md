@@ -13,10 +13,12 @@ A decentralized git forge built on [DWN](https://github.com/enboxorg/enbox) prot
 # install
 curl -fsSL https://gitd.sh/install | bash
 
+# read a public repo, no identity setup needed
+gitd clone did:dht:abc123/my-project
+
 # create a repo, push code, open a PR — all addressed by DID
-gitd setup
+gitd auth login
 gitd init my-project
-git clone did::did:dht:abc123/my-project
 # ... make changes ...
 git push
 gitd pr create "Add feature"
@@ -31,8 +33,11 @@ gitd pr merge a1b2c3d
 curl -fsSL https://gitd.sh/install | bash
 ```
 
-The installer installs the published `@enbox/gitd` package with Bun, and
-bootstraps Bun first if it is not already available.
+The installer installs the published `@enbox/gitd` package with Bun, configures
+Git's DID remote helper, and bootstraps Bun first if it is not already
+available. After it finishes, `gitd clone did:dht:<owner>/<repo>` can read a
+public repo without identity setup. Run `gitd auth login` when you want to
+create repos, push, open PRs, or write issues.
 
 Or install directly with Bun:
 
@@ -51,10 +56,12 @@ This installs three commands:
 ## Quick Start
 
 ```bash
-gitd setup                      # configure git for DID remotes
+gitd clone did:dht:abc/my-repo  # read a public repo
+gitd auth login                 # create or unlock an identity for writes
 gitd init my-repo               # create repo record + bare git repo
-gitd serve                      # start git transport server
-git clone did::did:dht:abc/my-repo
+gitd helper status              # local helper should auto-start as needed
+gitd auth sessions              # inspect the active helper session
+gitd auth reset default         # archive a broken local identity profile
 ```
 
 ## CLI Reference
@@ -73,6 +80,7 @@ gitd issue close a1b2c3d
 
 ```bash
 gitd pr create "Add feature"
+gitd pr create "Add feature" --push   # also publish contributor branch
 gitd pr list
 gitd pr show a1b2c3d
 gitd pr checkout a1b2c3d
@@ -117,7 +125,35 @@ gitd whoami                     # show connected DID
 
 ## Git Transport
 
-`gitd serve` runs a smart HTTP git server with DID-based authentication.
+`gitd helper` manages the local Git/DWN helper that native Git uses for DID
+remotes. It normally starts automatically when `gitd init`, `gitd clone`,
+`git push`, or `git fetch` needs it.
+
+`gitd helper status` shows the active profile, DID, repo cache path, local
+capabilities, expiry policy, and repos this helper session has seen. `gitd auth
+sessions` shows the same helper as a local Enbox session; `gitd auth revoke
+helper` stops it.
+
+If a local identity profile is broken or you forgot its unlock password, use
+`gitd auth reset <identity>` to remove it from gitd config and move its local
+profile data into `~/.enbox/profile-backups`.
+
+Use `gitd clone did:dht:<owner>/<repo>` for the friendlier clone path. On a
+fresh machine, public clones use a hidden local public-read cache instead of
+asking you to create an identity. Native Git also works with
+`git clone did::did:dht:<owner>/<repo>` for public DWN-backed repos; `gitd
+clone` is still the best first clone path because it records repo context and
+can print clearer recovery hints.
+
+If you later want to write from a repo cloned through the public-read cache,
+run `gitd auth login` and then `gitd auth use <identity>` inside that repo.
+Read-only commands continue to work without the write identity.
+
+`gitd publish --public-url <url>` runs the public smart HTTP Git transport with
+DID-based authentication and registers a `GitTransport` endpoint.
+`gitd serve --public-url <url>` is the lower-level equivalent. Bare `gitd
+serve` remains a compatibility alias for starting the local helper, but normal
+local Git work should use `gitd helper` or rely on automatic startup.
 
 - Clone and push via native git protocol
 - Pushers prove DID ownership; server checks DWN role records
@@ -148,7 +184,8 @@ gitd web --port 3000
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for protocol and system design,
 [PLAN.md](./PLAN.md) for the full roadmap, or
 [REPO_LEVEL_MVP_PLAN.md](./REPO_LEVEL_MVP_PLAN.md) for the focused public
-repo-level GitHub replacement plan and E2E MVP contract.
+repo-level GitHub replacement plan and E2E MVP contract. See
+[UX_MVP_PLAN.md](./UX_MVP_PLAN.md) for the target Git/GH-like CLI experience.
 
 ## Development
 

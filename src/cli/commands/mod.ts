@@ -223,6 +223,16 @@ async function createModerationEvent(
     createdAt : new Date().toISOString(),
   };
   const tags = moderationTags(data);
+  for (const line of formatModerationEventSummary({
+    action   : data.action,
+    actorDid : ctx.did,
+    ownerDid,
+    repoName : repo.name,
+    target   : moderationTargetLabel(data),
+    reason   : data.reason,
+  })) {
+    console.log(line);
+  }
 
   const { status, record } = await ctx.repo.records.create('repo/moderationEvent' as any, {
     data,
@@ -286,4 +296,30 @@ function parseReportKind(value: string | undefined): ModerationEventData['target
   if (value === 'issue-comment') { return 'issueComment'; }
   if (value === 'pr-comment') { return 'prComment'; }
   return 'issue';
+}
+
+export type ModerationEventSummary = {
+  action : string;
+  actorDid : string;
+  ownerDid : string;
+  repoName : string;
+  target : string;
+  reason?: string;
+};
+
+export function formatModerationEventSummary(summary: ModerationEventSummary): string[] {
+  return [
+    `Moderation: ${summary.action}`,
+    `  Repo:   ${summary.ownerDid}/${summary.repoName}`,
+    `  Actor:  ${summary.actorDid}`,
+    `  Target: ${summary.target}`,
+    ...(summary.reason ? [`  Reason: ${summary.reason}`] : []),
+  ];
+}
+
+function moderationTargetLabel(data: ModerationEventData): string {
+  if (data.targetDid) { return data.targetDid; }
+  if (data.targetId && data.targetKind) { return `${data.targetKind}:${data.targetId}`; }
+  if (data.interactionLimit) { return `repo:${data.interactionLimit}`; }
+  return data.targetKind ?? 'repo';
 }
