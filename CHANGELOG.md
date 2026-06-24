@@ -1,5 +1,16 @@
 # @enbox/gitd
 
+## 0.9.7
+
+### Patch Changes
+
+- [#182](https://github.com/enboxorg/gitd/pull/182) [`c186b0e`](https://github.com/enboxorg/gitd/commit/c186b0e0aa2728dd898e62cd08b4476c010a70be) Thanks [@LiranCohen](https://github.com/LiranCohen)! - fix: install gitd through the Bun package path
+
+  The curl installer now installs the published `@enbox/gitd` package with Bun
+  and links wrappers into `~/.gitd/bin`. Standalone release artifacts are disabled
+  until gitd no longer depends on native packages that need platform-local
+  installation.
+
 ## 0.9.6
 
 ### Patch Changes
