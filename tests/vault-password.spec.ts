@@ -10,8 +10,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 
-import { getVaultSecret, setVaultSecret } from '../src/auth/secret-store.js';
 import { forgetVaultSecret, rememberVaultSecret, resolveVaultPassword } from '../src/auth/vault-password.js';
+import { getVaultSecret, setVaultSecret } from '../src/auth/secret-store.js';
 
 let tempDir: string;
 let originalEnboxHome: string | undefined;
