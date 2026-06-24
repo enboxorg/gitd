@@ -4,11 +4,12 @@
  * When Git invokes `git-remote-did` or `git-remote-did-credential`, it
  * owns stdin and stdout for the helper protocol.  This module opens
  * `/dev/tty` directly — the same technique used by `ssh`, `gpg`, and
- * `sudo` — so we can prompt the user for a vault password without
+ * `sudo` — so we can prompt the user for an identity password without
  * interfering with the git protocol streams.
  *
- * Falls back to `GITD_PASSWORD` if the env var is already set, or
- * returns `null` when no TTY is available (e.g. CI, piped input).
+ * Falls back to `GITD_PASSWORD` if the env var is already set, then to the
+ * hidden public-read profile password when the active profile is the local
+ * reader. Returns `null` when no password source is available.
  *
  * @module
  */
@@ -16,17 +17,20 @@
 import { execSync } from 'node:child_process';
 import { closeSync, openSync, readSync, writeSync } from 'node:fs';
 
+import { readPublicReaderPasswordForActiveProfile } from '../profiles/public-reader.js';
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Get the vault password, prompting on `/dev/tty` if necessary.
+ * Get the identity unlock password, prompting on `/dev/tty` if necessary.
  *
  * Resolution order:
  *   1. `GITD_PASSWORD` environment variable (non-interactive)
- *   2. Interactive prompt via `/dev/tty` (hidden input)
- *   3. `null` if no TTY is available
+ *   2. Hidden public-read profile password
+ *   3. Interactive prompt via `/dev/tty` (hidden input)
+ *   4. `null` if no TTY is available
  *
  * @returns The password string, or `null` if unavailable.
  */
@@ -34,7 +38,10 @@ export function getVaultPassword(): string | null {
   const env = process.env.GITD_PASSWORD;
   if (env) { return env; }
 
-  return promptTtyPassword('Vault password: ');
+  const publicReaderPassword = readPublicReaderPasswordForActiveProfile();
+  if (publicReaderPassword) { return publicReaderPassword; }
+
+  return promptTtyPassword('Identity password: ');
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +61,7 @@ export function getVaultPassword(): string | null {
  * line editing natively, which is more reliable across shells than
  * reading raw bytes.
  *
- * @param prompt - The prompt string to display (e.g. "Vault password: ")
+ * @param prompt - The prompt string to display (e.g. "Identity password: ")
  * @returns The entered string, or `null` if no TTY is available.
  */
 function promptTtyPassword(prompt: string): string | null {

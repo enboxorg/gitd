@@ -22,6 +22,38 @@ import { enboxHome, profilesDir } from '../profiles/config.js';
 // Types
 // ---------------------------------------------------------------------------
 
+export const DEFAULT_HELPER_CAPABILITIES = [
+  'git-transport',
+  'dwn-restore',
+  'push-tokens',
+  'contributor-branch-writeback',
+  'public-read-cache',
+] as const;
+
+export type HelperCapability = typeof DEFAULT_HELPER_CAPABILITIES[number];
+export type HelperSessionExpiryPolicy = 'helper-lifetime';
+
+export type HelperRepoContext = {
+  /** Canonical repo owner DID. */
+  ownerDid: string;
+  /** Repository name under the owner DID. */
+  repo: string;
+  /** Local working tree path, when the helper saw one. */
+  path?: string;
+  /** Git remote URL used for this repo, when known. */
+  remoteUrl?: string;
+  /** Repo default branch, when known. */
+  defaultBranch?: string;
+  /** Last time this repo context was observed by gitd. */
+  lastSeenAt: string;
+};
+
+export type HelperRepoContextInput = Omit<HelperRepoContext, 'lastSeenAt'> & {
+  lastSeenAt?: string;
+};
+
+const MAX_HELPER_REPO_CONTEXTS = 20;
+
 /** Data stored in the daemon lockfile. */
 export type DaemonLock = {
   /** The PID of the daemon process. */
@@ -38,6 +70,24 @@ export type DaemonLock = {
 
   /** The DID of the identity that owns this daemon. */
   ownerDid?: string;
+
+  /** Stable enough local session id for display/revocation UX. */
+  sessionId?: string;
+
+  /** Named profile this daemon serves. */
+  profileName?: string;
+
+  /** Bare repository cache path served by this daemon. */
+  reposPath?: string;
+
+  /** Session-like capabilities currently exposed by the local helper. */
+  capabilities?: string[];
+
+  /** Helper session expiry policy. MVP sessions last until the helper stops. */
+  expiryPolicy?: HelperSessionExpiryPolicy;
+
+  /** Repositories this helper session has seen through local CLI use. */
+  repoContexts?: HelperRepoContext[];
 
   /**
    * True when this daemon can serve as a local DWN-backed helper for repos
@@ -74,7 +124,71 @@ export type WriteLockfileOptions = {
   dwnHelper?: boolean;
   /** Named profile this daemon serves. Defaults to the active GITD/ENBOX profile env. */
   profileName?: string;
+  /** Bare repository cache path served by this daemon. */
+  reposPath?: string;
+  /** Session-like helper capabilities to advertise. */
+  capabilities?: readonly string[];
+  /** Helper session expiry policy. Defaults to helper lifetime. */
+  expiryPolicy?: HelperSessionExpiryPolicy;
+  /** Initial repositories this helper session has seen through local CLI use. */
+  repoContexts?: readonly HelperRepoContextInput[];
+  /** Override the generated local session id. Mostly useful for tests. */
+  sessionId?: string;
 };
+
+export function helperSessionId(profileName: string | undefined, pid = process.pid): string {
+  return `helper:${profileName ?? 'global'}:${pid}`;
+}
+
+function normalizeCapabilities(capabilities: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const capability of capabilities ?? []) {
+    const trimmed = capability.trim();
+    if (!trimmed || seen.has(trimmed)) { continue; }
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function repoContextKey(context: Pick<HelperRepoContext, 'ownerDid' | 'repo' | 'path'>): string {
+  return `${context.ownerDid}\0${context.repo}\0${context.path ?? ''}`;
+}
+
+function normalizeRepoContext(context: HelperRepoContextInput): HelperRepoContext | null {
+  const ownerDid = context.ownerDid.trim();
+  const repo = context.repo.trim();
+
+  if (!ownerDid || !repo) { return null; }
+
+  return {
+    ownerDid,
+    repo,
+    ...(context.path ? { path: context.path } : {}),
+    ...(context.remoteUrl ? { remoteUrl: context.remoteUrl } : {}),
+    ...(context.defaultBranch ? { defaultBranch: context.defaultBranch } : {}),
+    lastSeenAt: context.lastSeenAt ?? new Date().toISOString(),
+  };
+}
+
+function normalizeRepoContexts(contexts: readonly HelperRepoContextInput[] | undefined): HelperRepoContext[] {
+  const seen = new Set<string>();
+  const normalized: HelperRepoContext[] = [];
+
+  for (const context of contexts ?? []) {
+    const next = normalizeRepoContext(context);
+    if (!next) { continue; }
+    const key = repoContextKey(next);
+    if (seen.has(key)) { continue; }
+    seen.add(key);
+    normalized.push(next);
+  }
+
+  return normalized.slice(0, MAX_HELPER_REPO_CONTEXTS);
+}
 
 /** Write the daemon lockfile. Overwrites any existing file. */
 export function writeLockfile(
@@ -83,17 +197,52 @@ export function writeLockfile(
   ownerDid?: string,
   options: WriteLockfileOptions = {},
 ): void {
+  const profileName = lockfileProfile(options.profileName);
+  const capabilities = normalizeCapabilities(options.capabilities);
+  const repoContexts = normalizeRepoContexts(options.repoContexts);
   const lock: DaemonLock = {
-    pid       : process.pid,
+    pid          : process.pid,
     port,
-    startedAt : new Date().toISOString(),
+    startedAt    : new Date().toISOString(),
     ...(version ? { version } : {}),
     ...(ownerDid ? { ownerDid } : {}),
+    sessionId    : options.sessionId ?? helperSessionId(profileName),
+    ...(profileName ? { profileName } : {}),
+    ...(options.reposPath ? { reposPath: options.reposPath } : {}),
+    ...(capabilities.length > 0 ? { capabilities } : {}),
+    expiryPolicy : options.expiryPolicy ?? 'helper-lifetime',
+    ...(repoContexts.length > 0 ? { repoContexts } : {}),
     ...(options.dwnHelper ? { dwnHelper: true } : {}),
   };
   const path = lockfilePath(options.profileName);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(lock, null, 2) + '\n', { mode: 0o644 });
+}
+
+/** Record a repo context on an already-running helper lockfile. */
+export function recordLockfileRepoContext(
+  repoContext: HelperRepoContextInput,
+  profileName?: string,
+): boolean {
+  const lock = readLockfile(profileName);
+  if (!lock) { return false; }
+
+  const next = normalizeRepoContext(repoContext);
+  if (!next) { return false; }
+
+  const key = repoContextKey(next);
+  const repoContexts = [
+    next,
+    ...(lock.repoContexts ?? []).filter((context) => repoContextKey(context) !== key),
+  ].slice(0, MAX_HELPER_REPO_CONTEXTS);
+
+  const path = lockfilePath(profileName);
+  writeFileSync(path, JSON.stringify({
+    ...lock,
+    repoContexts,
+  }, null, 2) + '\n', { mode: 0o644 });
+
+  return true;
 }
 
 /** Remove the daemon lockfile if it exists and belongs to this process. */

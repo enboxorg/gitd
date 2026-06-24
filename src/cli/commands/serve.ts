@@ -1,5 +1,5 @@
 /**
- * `gitd serve` — start the git transport sidecar server.
+ * `gitd serve` — start the GitTransport sidecar.
  *
  * Starts a smart HTTP git server that serves bare repositories and
  * authenticates pushes using DID-signed tokens. After each successful
@@ -9,8 +9,9 @@
  * Multi-repo: ref/bundle sync is resolved per-push using the repo name
  * from the push URL. Each repo has its own contextId in the DWN.
  *
- * Usage: gitd serve [--port <port>] [--repos <path>] [--prefix <path>]
- *                       [--public-url <url>] [--check]
+ * Usage: gitd publish --public-url <url> [--port <port>] [--repos <path>]
+ *        gitd serve --public-url <url> [--port <port>] [--repos <path>]
+ *        gitd serve --foreground [--port <port>] [--repos <path>]
  *
  * Environment:
  *   GITD_PORT        — server port (default: 9418)
@@ -48,6 +49,7 @@ import {
   encodePushToken,
   formatAuthPassword,
 } from '../../git-server/auth.js';
+import { DEFAULT_HELPER_CAPABILITIES, removeLockfile, writeLockfile } from '../../daemon/lockfile.js';
 import { flagValue, hasFlag, parsePort, resolveReposPath } from '../flags.js';
 import { fromOpt, getRepoContext, getRepoContextForDid } from '../repo-context.js';
 import {
@@ -55,8 +57,6 @@ import {
   registerGitService,
   startDidRepublisher,
 } from '../../git-server/did-service.js';
-import { removeLockfile, writeLockfile } from '../../daemon/lockfile.js';
-
 
 // ---------------------------------------------------------------------------
 // Public URL check
@@ -684,8 +684,10 @@ export async function serveCommand(ctx: AgentContext, args: string[]): Promise<v
 
   // Register the daemon so git-remote-did can discover it.
   writeLockfile(server.port, getVersion() ?? undefined, ctx.did, {
-    dwnHelper   : true,
-    profileName : ctx.profileName,
+    capabilities : DEFAULT_HELPER_CAPABILITIES,
+    dwnHelper    : true,
+    profileName  : ctx.profileName,
+    reposPath    : basePath,
   });
 
   // Wire up the idle shutdown function now that we have all the pieces.

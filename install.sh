@@ -207,7 +207,14 @@ main() {
 
   printf '==> Installed to %s\n' "$INSTALL_DIR"
   "${INSTALL_DIR}/gitd" --version
-  printf 'Run: gitd setup\n'
+
+  printf '==> Configuring Git DID remotes\n'
+  if ! "${INSTALL_DIR}/gitd" setup --bin-dir "$INSTALL_DIR" --quiet; then
+    printf 'warning: gitd installed, but Git DID remote setup did not complete.\n' >&2
+    printf 'Run: gitd repair\n' >&2
+  fi
+
+  printf 'Next: gitd auth login\n'
 }
 
 main "$@"

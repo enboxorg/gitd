@@ -146,8 +146,8 @@ async function handleGet(request: { protocol?: string; host?: string; path?: str
   // --- Fallback: direct agent connection (no daemon running) ---
   const password = getVaultPassword();
   if (!password) {
-    console.error('git-remote-did-credential: no running daemon and no vault password available.');
-    console.error('Hint: run `gitd serve` in another terminal, or set GITD_PASSWORD and retry.');
+    console.error('git-remote-did-credential: no running daemon and no identity password available.');
+    console.error('Hint: run `gitd helper start` in another terminal, or set GITD_PASSWORD and retry.');
     process.exit(1);
   }
 

@@ -7,7 +7,7 @@
  */
 import { DidDht } from '@enbox/dids';
 import { parseDidUrl } from '../src/git-remote/parse-url.js';
-import { __setResolverForTests, resolveGitEndpoint } from '../src/git-remote/resolve.js';
+import { __setResolverForTests, resolveGitEndpoint, selectLocalDaemonProfile } from '../src/git-remote/resolve.js';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
@@ -385,6 +385,7 @@ import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
 
+import { PUBLIC_READER_PROFILE } from '../src/profiles/public-reader.js';
 import { writeConfig } from '../src/profiles/config.js';
 import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
@@ -553,6 +554,109 @@ describe('resolveGitEndpoint with a default profile daemon', () => {
     const result = await resolveGitEndpoint(ownerDid, 'my-repo');
     expect(result.source).toBe('LocalDaemon');
     expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(ownerDid)}/my-repo`);
+  });
+});
+
+describe('resolveGitEndpoint with implicit public reader daemon', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  const envHome = process.env.ENBOX_HOME;
+  const envGitdProfile = process.env.GITD_PROFILE;
+  const envEnboxProfile = process.env.ENBOX_PROFILE;
+  const envGitdPassword = process.env.GITD_PASSWORD;
+  const remoteDid = 'did:dht:remote-public-reader';
+  const readerDid = 'did:dht:local-public-reader';
+  const testHome = '__TESTDATA__/git-remote-public-reader-home';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+  });
+
+  beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    delete process.env.GITD_PROFILE;
+    delete process.env.ENBOX_PROFILE;
+    delete process.env.GITD_PASSWORD;
+    writeConfig({ version: 1, defaultProfile: '', profiles: {} });
+    writeLockfile(port, '1.0.0', readerDid, {
+      profileName : PUBLIC_READER_PROFILE,
+      dwnHelper   : true,
+    });
+    __setResolverForTests({
+      resolve: async (did: string) => ({
+        didDocument: {
+          id      : did,
+          service : [
+            { id: '#dwn', type: 'DecentralizedWebNode', serviceEndpoint: 'https://dwn.example.com' },
+          ],
+        },
+        didDocumentMetadata   : {},
+        didResolutionMetadata : {},
+      } as any),
+    });
+  });
+
+  afterEach(() => {
+    removeLockfile(PUBLIC_READER_PROFILE);
+    rmSync(testHome, { recursive: true, force: true });
+    __setResolverForTests();
+    if (envHome !== undefined) {
+      process.env.ENBOX_HOME = envHome;
+    } else {
+      delete process.env.ENBOX_HOME;
+    }
+    if (envGitdProfile !== undefined) {
+      process.env.GITD_PROFILE = envGitdProfile;
+    } else {
+      delete process.env.GITD_PROFILE;
+    }
+    if (envEnboxProfile !== undefined) {
+      process.env.ENBOX_PROFILE = envEnboxProfile;
+    } else {
+      delete process.env.ENBOX_PROFILE;
+    }
+    if (envGitdPassword !== undefined) {
+      process.env.GITD_PASSWORD = envGitdPassword;
+    } else {
+      delete process.env.GITD_PASSWORD;
+    }
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('selects the hidden reader only for DWN-helper fallback', () => {
+    expect(selectLocalDaemonProfile('owner-only', undefined)).toEqual({
+      implicitPublicReader: false,
+    });
+    expect(selectLocalDaemonProfile('dwn-helper', undefined)).toEqual({
+      profileName          : PUBLIC_READER_PROFILE,
+      implicitPublicReader : true,
+    });
+    expect(selectLocalDaemonProfile('dwn-helper', 'work')).toEqual({
+      profileName          : 'work',
+      implicitPublicReader : false,
+    });
+  });
+
+  it('uses a public-reader scoped helper for native public clone fallback', async () => {
+    const result = await resolveGitEndpoint(remoteDid, 'their-repo');
+
+    expect(result.source).toBe('LocalDwnHelper');
+    expect(result.did).toBe(remoteDid);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(remoteDid)}/their-repo`);
   });
 });
 

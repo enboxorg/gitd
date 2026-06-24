@@ -54,6 +54,7 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.types.topic).toBeDefined();
       expect(ForgeRepoDefinition.types.submissionDecision).toBeDefined();
       expect(ForgeRepoDefinition.types.moderationEvent).toBeDefined();
+      expect(ForgeRepoDefinition.types.viewSnapshot).toBeDefined();
       expect(ForgeRepoDefinition.types.webhook).toBeDefined();
     });
 
@@ -115,6 +116,7 @@ describe('@enbox/gitd', () => {
       expect(ForgeRepoDefinition.structure.repo.webhook).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.bundle).toBeDefined();
       expect(ForgeRepoDefinition.structure.repo.moderationEvent).toBeDefined();
+      expect(ForgeRepoDefinition.structure.repo.viewSnapshot).toBeDefined();
     });
 
     it('should enable $squash on bundle records', () => {
@@ -172,6 +174,24 @@ describe('@enbox/gitd', () => {
       expect(anyoneAction?.can).toContain('read');
       expect(maintainerAction?.can).toContain('create');
       expect(moderatorAction?.can).toContain('create');
+    });
+
+    it('should support squashed view snapshots for reduced repo views', () => {
+      const snapshot = ForgeRepoDefinition.structure.repo.viewSnapshot;
+      expect(snapshot.$squash).toBe(true);
+      expect(snapshot.$tags.$requiredTags).toEqual(['kind']);
+      expect(snapshot.$tags.$allowUndefinedTags).toBe(false);
+      expect(snapshot.$tags.kind.enum).toEqual(['issue', 'pr', 'moderation', 'report']);
+      expect(snapshot.$tags.targetId.type).toBe('string');
+      expect(snapshot.$tags.actorDid.type).toBe('string');
+      expect(snapshot.$tags.lastRecordId.type).toBe('string');
+
+      const anyoneAction = snapshot.$actions.find((a) => 'who' in a && a.who === 'anyone');
+      const maintainerAction = snapshot.$actions.find((a) => 'role' in a && a.role === 'repo/maintainer');
+      const moderatorAction = snapshot.$actions.find((a) => 'role' in a && a.role === 'repo/moderator');
+      expect(anyoneAction?.can).toContain('read');
+      expect(maintainerAction?.can).toEqual(expect.arrayContaining(['create', 'squash']));
+      expect(moderatorAction?.can).toEqual(expect.arrayContaining(['create', 'squash']));
     });
 
     it('should wrap definition via defineProtocol()', () => {

@@ -6,9 +6,9 @@
  * helper so that `git push` to DID remotes uses DID-signed tokens.
  *
  * Usage:
- *   gitd setup [--bin-dir <path>]     Install and configure
- *   gitd setup --check                Validate without modifying anything
- *   gitd setup --uninstall            Remove configuration and wrapper commands
+ *   gitd setup [--bin-dir <path>] [--quiet]  Install and configure
+ *   gitd setup --check                       Validate without modifying anything
+ *   gitd setup --uninstall                   Remove configuration and wrapper commands
  *
  * The default bin directory is `~/.gitd/bin`.
  *
@@ -16,6 +16,7 @@
  */
 
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import {
   accessSync,
@@ -28,7 +29,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { flagValue, hasFlag } from '../flags.js';
 
@@ -68,18 +69,23 @@ function gitConfigUnset(key: string): void {
   }
 }
 
-/** Resolve the dist/esm directory relative to the compiled setup.js file. */
-function resolveDistEsm(): string {
-  const thisFile = new URL(import.meta.url).pathname;
-  return resolve(thisFile, '..', '..', '..');
+/** Resolve the dist/esm or src root relative to this command module. */
+function resolveModuleRoot(): string {
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  return resolve(thisDir, '..', '..');
 }
 
 /** Resolve the source binary paths. */
 function resolveSourceBinaries(): Record<string, string> {
-  const distEsm = resolveDistEsm();
+  const moduleRoot = resolveModuleRoot();
+  const remoteJs = join(moduleRoot, 'git-remote', 'main.js');
+  const credentialJs = join(moduleRoot, 'git-remote', 'credential-main.js');
+  const remoteTs = join(moduleRoot, 'git-remote', 'main.ts');
+  const credentialTs = join(moduleRoot, 'git-remote', 'credential-main.ts');
+
   return {
-    'git-remote-did'            : join(distEsm, 'git-remote', 'main.js'),
-    'git-remote-did-credential' : join(distEsm, 'git-remote', 'credential-main.js'),
+    'git-remote-did'            : existsSync(remoteJs) ? remoteJs : remoteTs,
+    'git-remote-did-credential' : existsSync(credentialJs) ? credentialJs : credentialTs,
   };
 }
 
@@ -230,6 +236,7 @@ function uninstallSetup(binDir: string): void {
 
 export async function setupCommand(args: string[]): Promise<void> {
   const binDir = flagValue(args, '--bin-dir') ?? DEFAULT_BIN_DIR;
+  const quiet = hasFlag(args, '--quiet');
 
   if (hasFlag(args, '--check')) {
     checkSetup(binDir);
@@ -242,6 +249,9 @@ export async function setupCommand(args: string[]): Promise<void> {
   }
 
   // --- Install mode ---
+  const log = (...values: string[]): void => {
+    if (!quiet) { console.log(...values); }
+  };
 
   // 1. Create wrapper commands.
   mkdirSync(binDir, { recursive: true });
@@ -259,7 +269,7 @@ export async function setupCommand(args: string[]): Promise<void> {
     }
 
     writeWrapper(wrapperPath, target);
-    console.log(`  Installed: ${name} -> ${target}`);
+    log(`  Installed: ${name} -> ${target}`);
   }
 
   // 2. Configure credential helper.
@@ -270,31 +280,31 @@ export async function setupCommand(args: string[]): Promise<void> {
     // Already configured — update the path in case binDir changed.
     gitConfigUnset('credential.helper');
   } else if (existingHelper) {
-    console.log('');
-    console.log(`  Note: existing credential.helper detected: ${existingHelper}`);
-    console.log('  Adding gitd helper alongside it.');
+    log('');
+    log(`  Note: existing credential.helper detected: ${existingHelper}`);
+    log('  Adding gitd helper alongside it.');
   }
 
   gitConfigSet('credential.helper', credBinPath);
-  console.log(`  Configured: credential.helper = ${credBinPath}`);
+  log(`  Configured: credential.helper = ${credBinPath}`);
 
   // 3. Summary.
-  console.log('');
+  log('');
 
   const onPath = isOnPath(binDir);
   if (onPath) {
-    console.log(`Setup complete. ${binDir} is already on your PATH.`);
+    log(`Setup complete. ${binDir} is already on your PATH.`);
   } else {
-    console.log('Setup complete. Add the bin directory to your PATH:');
-    console.log('');
-    console.log(`  export PATH="${binDir}:$PATH"`);
-    console.log('');
-    console.log('Add that line to your ~/.bashrc or ~/.zshrc to make it permanent.');
+    log('Setup complete. Add the bin directory to your PATH:');
+    log('');
+    log(`  export PATH="${binDir}:$PATH"`);
+    log('');
+    log('Add that line to your ~/.bashrc or ~/.zshrc to make it permanent.');
   }
 
-  console.log('');
-  console.log('Next steps:');
-  console.log('  gitd auth login          Create an identity');
-  console.log('  git clone did::<did>/<repo>   Clone a repo');
-  console.log('  gitd setup --check       Verify configuration');
+  log('');
+  log('Next steps:');
+  log('  gitd auth login          Create an identity');
+  log('  git clone did::<did>/<repo>   Clone a repo');
+  log('  gitd setup --check       Verify configuration');
 }

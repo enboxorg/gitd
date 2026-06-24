@@ -73,6 +73,8 @@ export type AgentContext = {
   wiki : TypedEnbox<typeof ForgeWikiProtocol.definition, ForgeWikiSchemaMap>;
   org : TypedEnbox<typeof ForgeOrgProtocol.definition, ForgeOrgSchemaMap>;
   enbox : Enbox;
+  /** Release CLI-owned agent/auth resources after one-shot commands. */
+  close? : () => Promise<void>;
   /** Test/adapter hook for sending store:false records to another DID. */
   sendRecord? : (record: any, targetDid: string) => Promise<void>;
 };
@@ -286,8 +288,13 @@ export async function connectAgent(options: ConnectOptions): Promise<AgentContex
 
   // Build the Enbox API from the caller-owned AuthManager session.
   const enbox = Enbox.fromSession(session);
+  let closePromise: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    closePromise ??= closeAgentResources(enbox, auth, session.agent);
+    return closePromise;
+  };
 
-  return bindProtocols(enbox, session.did, session.recoveryPhrase);
+  return bindProtocols(enbox, session.did, session.recoveryPhrase, close);
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +401,7 @@ async function bindProtocols(
   enbox: Enbox,
   did: string,
   recoveryPhrase?: string,
+  close?: () => Promise<void>,
 ): Promise<AgentContext & { recoveryPhrase?: string }> {
   const repo = enbox.using(ForgeRepoProtocol);
   const refs = enbox.using(ForgeRefsProtocol);
@@ -425,6 +433,24 @@ async function bindProtocols(
   return {
     did, repo, refs, issues, patches, ci, releases,
     registry, social, notifications, wiki, org, enbox,
+    close,
     recoveryPhrase,
   };
+}
+
+async function closeAgentResources(enbox: Enbox, auth: AuthManager, agent: unknown): Promise<void> {
+  try {
+    await enbox.disconnect();
+  } finally {
+    try {
+      await auth.shutdown();
+    } finally {
+      await closeLocalDwn(agent);
+    }
+  }
+}
+
+async function closeLocalDwn(agent: unknown): Promise<void> {
+  const dwn = (agent as { dwn?: { _dwn?: { close?: () => Promise<void> } } })?.dwn?._dwn;
+  await dwn?.close?.();
 }

@@ -5,6 +5,7 @@
  *
  * Usage: gitd init <name> [--description <text>] [--branch <name>]
  *                         [--repos <path>] [--dwn-endpoint <url>]
+ *                         [--publish] [--public-url <url>]
  *                         [--no-local]
  *
  * By default the command also initializes a git repository in the current
@@ -22,6 +23,7 @@ import type { AgentContext } from '../agent.js';
 
 import { getDwnEndpoints } from '../../git-server/did-service.js';
 import { GitBackend } from '../../git-server/git-backend.js';
+import { recordLockfileRepoContext } from '../../daemon/lockfile.js';
 import { flagValue, hasFlag, resolveReposPath } from '../flags.js';
 
 // ---------------------------------------------------------------------------
@@ -37,9 +39,11 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
   const skipLocal = hasFlag(args, '--no-local');
   const isPrivate = hasFlag(args, '--private');
   const visibility = isPrivate ? 'private' : 'public';
+  const publicUrl = flagValue(args, '--public-url');
+  const showPublishGuidance = hasFlag(args, '--publish') || !!publicUrl;
 
   if (!name) {
-    console.error('Usage: gitd init <name> [--private] [--description <text>] [--branch <name>] [--repos <path>] [--dwn-endpoint <url>] [--no-local]');
+    console.error('Usage: gitd init <name> [--private] [--description <text>] [--branch <name>] [--repos <path>] [--dwn-endpoint <url>] [--publish] [--public-url <url>] [--no-local]');
     process.exit(1);
   }
 
@@ -92,11 +96,12 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
 
   const remoteUrl = `did::${ctx.did}/${name}`;
 
-  console.log(`Initialized forge repo "${name}" (branch: ${branch}, ${visibility})`);
-  console.log(`  DID:       ${ctx.did}`);
-  console.log(`  Record ID: ${record.id}`);
-  console.log(`  Context:   ${record.contextId}`);
-  console.log(`  Git path:  ${gitPath}`);
+  console.log(`Created repo ${name}`);
+  console.log(`Remote: ${remoteUrl}`);
+  console.log(`Branch: ${branch}`);
+  console.log(`Visibility: ${visibility}`);
+  console.log(`Record ID: ${record.id}`);
+  console.log(`Git path: ${gitPath}`);
 
   // -----------------------------------------------------------------------
   // Local working directory setup
@@ -117,31 +122,41 @@ export async function initCommand(ctx: AgentContext, args: string[]): Promise<vo
 
     // Store the repo name in git config so subsequent commands can auto-detect it.
     spawnSync('git', ['config', 'enbox.repo', name], { stdio: 'pipe' });
+    spawnSync('git', ['config', 'enbox.owner', ctx.did], { stdio: 'pipe' });
+    spawnSync('git', ['config', 'enbox.defaultBranch', branch], { stdio: 'pipe' });
     if (ctx.profileName) {
       spawnSync('git', ['config', 'enbox.profile', ctx.profileName], { stdio: 'pipe' });
     }
   }
+
+  recordLockfileRepoContext({
+    ownerDid      : ctx.did,
+    repo          : name,
+    defaultBranch : branch,
+    remoteUrl,
+    ...(!skipLocal ? { path: process.cwd() } : {}),
+  }, ctx.profileName);
 
   // -----------------------------------------------------------------------
   // Next steps
   // -----------------------------------------------------------------------
 
   console.log('');
-  console.log('Next steps:');
-  console.log('');
+  console.log('Next:');
   if (skipLocal) {
     console.log(`  git remote add origin ${remoteUrl}`);
   }
   console.log('  git add .');
   console.log('  git commit -m "initial commit"');
   console.log(`  git push -u origin ${branch}`);
-  console.log('');
-  console.log('A local git server is running in the background.');
-  console.log('To make it publicly accessible (requires a public URL with TLS):');
-  console.log('');
-  console.log('  gitd serve --public-url https://git.example.com');
-  console.log('');
-  console.log('See DEPLOY.md for reverse proxy and deployment guidance.');
+
+  if (showPublishGuidance) {
+    console.log('');
+    console.log('Publish:');
+    console.log(`  gitd publish --public-url ${publicUrl ?? 'https://git.example.com'}`);
+    console.log('');
+    console.log('See DEPLOY.md for reverse proxy and deployment guidance.');
+  }
 }
 
 // ---------------------------------------------------------------------------

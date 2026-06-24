@@ -144,7 +144,7 @@ async function main(): Promise<void> {
       console.error('Please make sure:');
       console.error('  - The repository exists (create it with `gitd init <name>`)');
       console.error('  - The DID is correct and resolvable');
-      console.error('  - The daemon is running (`gitd serve`)');
+      console.error('  - The local helper is running (`gitd helper status`)');
     }
     process.exit(code ?? 128);
   });
