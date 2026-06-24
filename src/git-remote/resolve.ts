@@ -71,6 +71,18 @@ export function __setResolverForTests(testResolver?: DidResolver): void {
   resolver = testResolver;
 }
 
+/**
+ * Daemon auto-starter, overridable in tests. Auto-start spawns a real helper
+ * and binds a port, which is non-deterministic in CI (and collides with a
+ * developer's running daemon), so tests that assert "no daemon" override this.
+ */
+let daemonStarter: typeof ensureDaemon = ensureDaemon;
+
+/** Test hook to override (or reset) the local-daemon auto-starter. */
+export function __setDaemonStarterForTests(starter?: typeof ensureDaemon): void {
+  daemonStarter = starter ?? ensureDaemon;
+}
+
 /** Default DID resolution timeout in milliseconds. */
 const DEFAULT_DID_RESOLUTION_TIMEOUT_MS = 30_000;
 
@@ -228,7 +240,7 @@ async function resolveLocalDaemon(
   }
 
   try {
-    const result = await ensureDaemon(password, { profileName });
+    const result = await daemonStarter(password, { profileName });
     const spawnedLock = readLockfile(profileName);
     if (profileSelection.implicitPublicReader && spawnedLock?.ownerDid) {
       recordPublicReaderDid(spawnedLock.ownerDid);

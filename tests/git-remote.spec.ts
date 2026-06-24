@@ -7,7 +7,7 @@
  */
 import { DidDht } from '@enbox/dids';
 import { parseDidUrl } from '../src/git-remote/parse-url.js';
-import { __setResolverForTests, resolveGitEndpoint, selectLocalDaemonProfile } from '../src/git-remote/resolve.js';
+import { __setDaemonStarterForTests, __setResolverForTests, resolveGitEndpoint, selectLocalDaemonProfile } from '../src/git-remote/resolve.js';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
@@ -248,6 +248,26 @@ describe('GitTransport service type', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveGitEndpoint', () => {
+  // Isolate ENBOX_HOME so a daemon lockfile written by a concurrent test file
+  // (e.g. daemon-lifecycle.spec.ts) to the shared ~/.enbox can't be picked up
+  // here and make these resolve instead of reject.
+  const envHome = process.env.ENBOX_HOME;
+  const testHome = '__TESTDATA__/git-remote-resolve-reject-home';
+
+  beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    // These tests assert there is no daemon, so never auto-start a real one
+    // (which is non-deterministic in CI and collides with a dev daemon).
+    __setDaemonStarterForTests(async () => { throw new Error('auto-start disabled in test'); });
+  });
+
+  afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    __setDaemonStarterForTests();
+    if (envHome !== undefined) { process.env.ENBOX_HOME = envHome; } else { delete process.env.ENBOX_HOME; }
+  });
+
   it('should reject an unresolvable DID', async () => {
     await expect(
       resolveGitEndpoint('did:jwk:invalidjwk'),
@@ -670,6 +690,8 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
 
   const ownerDid = 'did:dht:localowner';
   const remoteDid = 'did:dht:remoteuser';
+  const envHome = process.env.ENBOX_HOME;
+  const testHome = '__TESTDATA__/git-remote-non-owner-home';
 
   beforeAll(async () => {
     server = createServer((_req, res) => {
@@ -685,6 +707,13 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
   });
 
   beforeEach(() => {
+    // Isolate ENBOX_HOME so a concurrent test file can't leak a daemon lockfile
+    // into the shared ~/.enbox and make these resolve instead of skip/reject.
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    // Never auto-start a real daemon — these tests assert routing/skip behavior
+    // against a fixed lockfile, not against a freshly spawned helper.
+    __setDaemonStarterForTests(async () => { throw new Error('auto-start disabled in test'); });
     // Default to a daemon that serves only its owner DID. Individual tests
     // opt into DWN-helper capability when they need remote-owner routing.
     writeLockfile(port, '1.0.0', ownerDid);
@@ -697,6 +726,10 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
 
   afterEach(() => {
     __setResolverForTests();
+    __setDaemonStarterForTests();
+    removeLockfile();
+    rmSync(testHome, { recursive: true, force: true });
+    if (envHome !== undefined) { process.env.ENBOX_HOME = envHome; } else { delete process.env.ENBOX_HOME; }
   });
 
   it('should use local daemon when requested DID matches ownerDid', async () => {
