@@ -14,7 +14,7 @@
  */
 
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 
 import { enboxHome, profilesDir } from '../profiles/config.js';
 
@@ -216,7 +216,17 @@ export function writeLockfile(
   };
   const path = lockfilePath(options.profileName);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(lock, null, 2) + '\n', { mode: 0o644 });
+  atomicWriteFileSync(path, JSON.stringify(lock, null, 2) + '\n', 0o644);
+}
+
+/**
+ * Write a file atomically: write a temp sibling then rename over the target,
+ * so a crash mid-write can never leave a half-written (corrupt) lockfile.
+ */
+function atomicWriteFileSync(path: string, data: string, mode: number): void {
+  const tmp = `${path}.tmp.${process.pid}`;
+  writeFileSync(tmp, data, { mode });
+  renameSync(tmp, path);
 }
 
 /** Record a repo context on an already-running helper lockfile. */
@@ -237,10 +247,10 @@ export function recordLockfileRepoContext(
   ].slice(0, MAX_HELPER_REPO_CONTEXTS);
 
   const path = lockfilePath(profileName);
-  writeFileSync(path, JSON.stringify({
+  atomicWriteFileSync(path, JSON.stringify({
     ...lock,
     repoContexts,
-  }, null, 2) + '\n', { mode: 0o644 });
+  }, null, 2) + '\n', 0o644);
 
   return true;
 }

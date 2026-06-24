@@ -161,7 +161,7 @@ async function helperStartCredentials(
   const setup = await maybePromptForFirstIdentitySetup(surface, args, flagValue(args, '--profile'));
   if (!setup) {
     return {
-      password: getVaultPassword() ?? undefined,
+      password: (await getVaultPassword()) ?? undefined,
       profileName,
     };
   }
