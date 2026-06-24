@@ -13,7 +13,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { getVersion } from '../version.js';
@@ -37,6 +37,7 @@ const MAX_BACKOFF_MS = 1_000;
 
 /** Timeout for each individual health probe (ms). */
 const HEALTH_PROBE_TIMEOUT_MS = 2_000;
+const DEFERRED_START_WINDOW_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -49,6 +50,50 @@ export function daemonLogPath(profileName?: string): string {
     return join(profilesDir(), profile, 'gitd', 'daemon.log');
   }
   return join(enboxHome(), 'gitd', 'daemon.log');
+}
+
+/** Read the last lines from the daemon log for actionable startup failures. */
+export function daemonLogTail(profileName?: string, maxLines = 20): string {
+  const path = daemonLogPath(profileName);
+  if (!existsSync(path)) {
+    return '';
+  }
+
+  try {
+    return readFileSync(path, 'utf-8')
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0)
+      .slice(-maxLines)
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
+export function deferredDaemonStartPath(profileName?: string): string {
+  return join(dirname(daemonLogPath(profileName)), 'daemon-start.pending');
+}
+
+export function markDeferredDaemonStart(profileName?: string): void {
+  const path = deferredDaemonStartPath(profileName);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, String(Date.now()), 'utf-8');
+}
+
+export function hasRecentDeferredDaemonStart(profileName?: string, now = Date.now()): boolean {
+  const path = deferredDaemonStartPath(profileName);
+  if (!existsSync(path)) { return false; }
+
+  try {
+    const startedAt = Number.parseInt(readFileSync(path, 'utf-8'), 10);
+    if (Number.isFinite(startedAt) && now - startedAt <= DEFERRED_START_WINDOW_MS) {
+      return true;
+    }
+    unlinkSync(path);
+  } catch {
+    try { unlinkSync(path); } catch { /* ignore cleanup */ }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +177,18 @@ export async function ensureDaemon(
     }
   }
 
-  // Spawn a new daemon in the background.
-  return spawnDaemon(password, options);
+  // Spawn a new daemon in the background. A just-closed foreground agent can
+  // leave LevelDB handles unavailable for a brief moment, so retry one early
+  // spawn failure before surfacing the startup error.
+  try {
+    return await spawnDaemon(password, options);
+  } catch (err) {
+    if (!shouldRetrySpawnFailure(err, options.profileName)) {
+      throw err;
+    }
+    await sleep(500);
+    return spawnDaemon(password, options);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +251,15 @@ async function spawnDaemon(
     });
   });
 
+  const earlyExit = new Promise<never>((_, reject) => {
+    child.once('exit', (code, signal) => {
+      reject(new Error(
+        `gitd helper exited before becoming healthy (${signal ? `signal ${signal}` : `code ${code ?? 'unknown'}`}).`
+        + daemonTailMessage(options.profileName),
+      ));
+    });
+  });
+
   // Detach the child so it survives after we exit.
   child.unref();
 
@@ -204,8 +268,18 @@ async function spawnDaemon(
 
   // Poll the health endpoint until the daemon is ready, but fail fast
   // if the spawn itself errored (e.g. binary not found).
-  const port = await Promise.race([waitForDaemon(options), spawnError]);
+  const port = await Promise.race([waitForDaemon(options), spawnError, earlyExit]);
   return { port, spawned: true };
+}
+
+function shouldRetrySpawnFailure(err: unknown, profileName?: string): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes('Database is not open')) { return true; }
+  if (message.includes('LEVEL_LOCKED') || message.includes('LOCK')) { return true; }
+  const tail = daemonLogTail(profileName);
+  return tail.includes('Database is not open')
+    || tail.includes('LEVEL_LOCKED')
+    || tail.includes('LOCK');
 }
 
 /**
@@ -231,8 +305,15 @@ async function waitForDaemon(options: DaemonLifecycleOptions = {}): Promise<numb
 
   throw new Error(
     'Timed out waiting for the gitd daemon to start. '
-    + `Check the log at ${daemonLogPath(options.profileName)} for details, or run \`gitd serve\` manually to debug.`,
+    + `Check the log at ${daemonLogPath(options.profileName)} for details, or run \`gitd helper start\` manually to debug.`
+    + daemonTailMessage(options.profileName),
   );
+}
+
+function daemonTailMessage(profileName?: string): string {
+  const tail = daemonLogTail(profileName);
+  if (!tail) { return ''; }
+  return `\n\nLast daemon log lines:\n${tail}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +356,14 @@ export type DaemonStatus = {
   startedAt?: string;
   version?: string;
   uptime?: string;
+  ownerDid?: string;
+  sessionId?: string;
+  profileName?: string;
+  reposPath?: string;
+  capabilities?: string[];
+  expiryPolicy?: DaemonLock['expiryPolicy'];
+  repoContexts?: DaemonLock['repoContexts'];
+  dwnHelper?: boolean;
 };
 
 /**
@@ -298,11 +387,19 @@ export function daemonStatus(options: DaemonLifecycleOptions = {}): DaemonStatus
       : `${secs}s`;
 
   return {
-    running   : true,
-    pid       : lock.pid,
-    port      : lock.port,
-    startedAt : lock.startedAt,
-    version   : lock.version,
+    running      : true,
+    pid          : lock.pid,
+    port         : lock.port,
+    startedAt    : lock.startedAt,
+    version      : lock.version,
+    ownerDid     : lock.ownerDid,
+    sessionId    : lock.sessionId,
+    profileName  : lock.profileName,
+    reposPath    : lock.reposPath,
+    capabilities : lock.capabilities,
+    expiryPolicy : lock.expiryPolicy,
+    repoContexts : lock.repoContexts,
+    dwnHelper    : lock.dwnHelper,
     uptime,
   };
 }

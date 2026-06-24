@@ -264,22 +264,47 @@ export function createGitHttpHandler(
       // successfully.  Git always returns HTTP 200 — rejections (non-fast-
       // forward, hook failures) are communicated inside the pack protocol,
       // so the subprocess exit code is the only reliable indicator.
-      if (onPushComplete) {
-        exitCode.then((code) => {
-          if (code === 0) {
+      exitCode.then(async (code) => {
+        if (code === 0) {
+          await repairDanglingHead(backend, did, repo, updates);
+          if (onPushComplete) {
             const repoPath = backend.repoPath(did, repo);
-            return onPushComplete(did, repo, repoPath, { updates });
+            await onPushComplete(did, repo, repoPath, { updates });
           }
-        }).catch((err) => {
-          console.error(`onPushComplete error for ${did}/${repo}: ${(err as Error).message}`);
-        });
-      }
+        }
+      }).catch((err) => {
+        console.error(`post-push error for ${did}/${repo}: ${(err as Error).message}`);
+      });
 
       return response;
     }
 
     return new Response('Not Found', { status: 404 });
   };
+}
+
+async function repairDanglingHead(
+  backend: GitBackend,
+  did: string,
+  repo: string,
+  updates: readonly PushRefUpdate[],
+): Promise<void> {
+  if (await backend.headResolves(did, repo)) { return; }
+
+  const branch = preferredPushedBranch(updates);
+  if (!branch) { return; }
+
+  await backend.setHeadBranch(did, repo, branch);
+}
+
+function preferredPushedBranch(updates: readonly PushRefUpdate[]): string | undefined {
+  const branches = updates
+    .filter((update) => update.newTarget && update.refName.startsWith('refs/heads/'))
+    .map((update) => update.refName.slice('refs/heads/'.length));
+
+  return branches.find((branch) => branch === 'main')
+    ?? branches.find((branch) => branch === 'master')
+    ?? branches[0];
 }
 
 // ---------------------------------------------------------------------------

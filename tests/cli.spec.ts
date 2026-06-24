@@ -37,8 +37,9 @@ import { shortId } from '../src/github-shim/helpers.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_PATH = '__TESTDATA__/cli-agent';
-const REPOS_PATH = '__TESTDATA__/cli-repos';
+const TEST_DATA_ROOT = resolve('__TESTDATA__');
+const DATA_PATH = join(TEST_DATA_ROOT, 'cli-agent');
+const REPOS_PATH = join(TEST_DATA_ROOT, 'cli-repos');
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -82,6 +83,16 @@ function captureError(fn: () => Promise<void>): Promise<{ errors: string[]; exit
     }
     return { errors, exitCode };
   })();
+}
+
+function localGitConfig(cwd: string, key: string): string {
+  const result = spawnSync('git', ['config', '--local', key], {
+    cwd,
+    encoding : 'utf-8',
+    stdio    : 'pipe',
+  });
+  expect(result.status).toBe(0);
+  return result.stdout.trim();
 }
 
 function fakeJsonRecord(
@@ -405,7 +416,7 @@ describe('gitd CLI commands', () => {
       const logs = await captureLog(() =>
         initCommand(ctx, ['my-test-repo', '--branch', 'main', '--repos', REPOS_PATH]),
       );
-      expect(logs.some((l) => l.includes('Initialized forge repo'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created repo my-test-repo'))).toBe(true);
       expect(logs.some((l) => l.includes('my-test-repo'))).toBe(true);
       expect(logs.some((l) => l.includes('Record ID'))).toBe(true);
       expect(logs.some((l) => l.includes('Git path'))).toBe(true);
@@ -422,7 +433,7 @@ describe('gitd CLI commands', () => {
       const logs = await captureLog(() =>
         initCommand(ctx, ['second-repo', '--branch', 'main', '--repos', REPOS_PATH]),
       );
-      expect(logs.some((l) => l.includes('Initialized forge repo'))).toBe(true);
+      expect(logs.some((l) => l.includes('Created repo second-repo'))).toBe(true);
       expect(logs.some((l) => l.includes('second-repo'))).toBe(true);
 
       // With multiple repos, set the default so subsequent tests resolve
@@ -645,18 +656,20 @@ describe('gitd CLI commands', () => {
       const logs = await captureLog(() =>
         initCommand(ctx, ['post-init-test', '--repos', REPOS_PATH]),
       );
-      expect(logs.some((l) => l.includes('Next steps'))).toBe(true);
+      expect(logs.some((l) => l.includes('Next:'))).toBe(true);
       expect(logs.some((l) => l.includes('git push'))).toBe(true);
-      expect(logs.some((l) => l.includes('gitd serve'))).toBe(true);
+      expect(logs.some((l) => l.includes('gitd publish'))).toBe(false);
+      expect(logs.some((l) => l.includes('DEPLOY.md'))).toBe(false);
       // Should include the DID somewhere in the output.
       expect(logs.some((l) => l.includes(ctx.did))).toBe(true);
     });
 
-    it('should mention --public-url and DEPLOY.md in post-init output', async () => {
+    it('should mention publish guidance only when requested', async () => {
       const { initCommand } = await import('../src/cli/commands/init.js');
       const logs = await captureLog(() =>
-        initCommand(ctx, ['post-init-url-test', '--repos', REPOS_PATH]),
+        initCommand(ctx, ['post-init-url-test', '--repos', REPOS_PATH, '--public-url', 'https://git.example.com']),
       );
+      expect(logs.some((l) => l.includes('gitd publish --public-url https://git.example.com'))).toBe(true);
       expect(logs.some((l) => l.includes('--public-url'))).toBe(true);
       expect(logs.some((l) => l.includes('DEPLOY.md'))).toBe(true);
     });
@@ -705,6 +718,27 @@ describe('gitd CLI commands', () => {
         });
         expect(remoteCheck.status).toBe(0);
         expect(remoteCheck.stdout.toString().trim()).toContain(ctx.did);
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should store repo context in local git config', async () => {
+      const { initCommand } = await import('../src/cli/commands/init.js');
+      const absReposPath = resolve(REPOS_PATH);
+      const tmpDir = join(absReposPath, '__profile-local-test');
+      mkdirSync(tmpDir, { recursive: true });
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpDir);
+        await captureLog(() =>
+          initCommand({ ...ctx, profileName: 'alice' }, ['profile-local-test', '--repos', absReposPath]),
+        );
+        expect(localGitConfig(tmpDir, 'enbox.profile')).toBe('alice');
+        expect(localGitConfig(tmpDir, 'enbox.owner')).toBe(ctx.did);
+        expect(localGitConfig(tmpDir, 'enbox.repo')).toBe('profile-local-test');
+        expect(localGitConfig(tmpDir, 'enbox.defaultBranch')).toBe('main');
       } finally {
         process.chdir(origCwd);
         rmSync(tmpDir, { recursive: true, force: true });
@@ -1532,6 +1566,7 @@ describe('gitd CLI commands', () => {
         ]),
       );
       expect(createLogs.some((l) => l.includes('Created PR'))).toBe(true);
+      expect(createLogs.some((l) => l.includes('Publish branch: git push origin HEAD:refs/heads/users/'))).toBe(true);
       expect(sent).toHaveLength(1);
       expect(sent[0].targetDid).toBe(remoteOwnerDid);
       expect(captured[0]).toMatchObject({
@@ -1560,6 +1595,49 @@ describe('gitd CLI commands', () => {
         && entry.options.protocolRole === 'repo:repo/contributor'
         && entry.options.store === false,
       )).toBe(true);
+    });
+
+    it('should reject remote PR merge before local Git work without maintainer access', async () => {
+      const { prCommand } = await import('../src/cli/commands/pr.js');
+      const remoteOwnerDid = 'did:jwk:remote-pr-merge-owner';
+      const { records: repos } = await ctx.repo.records.query('repo', {
+        filter: { tags: { name: 'my-test-repo' } },
+      });
+      const patch = {
+        ...fakeJsonRecord(
+          'remote-moderator-merge-pr',
+          repos[0].contextId,
+          { title: 'Moderator cannot merge', body: '' },
+          { status: 'open', baseBranch: 'main', headBranch: 'feature-x' },
+        ),
+        protocolPath: 'repo/patch',
+      };
+      const sent: SentRecord[] = [{ record: patch, targetDid: remoteOwnerDid }];
+      const captured: CapturedCreate[] = [];
+      const remoteCtx = withRemoteOwnerRecords(ctx, remoteOwnerDid, repos[0], 'moderator', sent, captured);
+      const tmpRepo = resolve('__TESTDATA__/pr-remote-moderator-merge-repo');
+      rmSync(tmpRepo, { recursive: true, force: true });
+
+      spawnSync('git', ['init', '-b', 'main', tmpRepo], { stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tmpRepo, stdio: 'pipe' });
+      writeFileSync(join(tmpRepo, 'README.md'), '# Remote merge permission test\n');
+      spawnSync('git', ['add', '.'], { cwd: tmpRepo, stdio: 'pipe' });
+      spawnSync('git', ['commit', '-m', 'initial commit'], { cwd: tmpRepo, stdio: 'pipe' });
+
+      const origCwd = process.cwd();
+      try {
+        process.chdir(tmpRepo);
+        const { errors, exitCode } = await captureError(() =>
+          prCommand(remoteCtx, ['merge', shortId(patch.id), '--owner', remoteOwnerDid]),
+        );
+        expect(exitCode).toBe(1);
+        expect(errors[0]).toContain('maintainer access');
+        expect(captured).toHaveLength(0);
+      } finally {
+        process.chdir(origCwd);
+        rmSync(tmpRepo, { recursive: true, force: true });
+      }
     });
 
     it('should enforce PR locks and hide moderated PR comments', async () => {
@@ -2168,19 +2246,19 @@ describe('gitd CLI commands', () => {
       }
     });
 
-    it('--check should report failure when binary exists but is not a symlink', async () => {
+    it('--check should report failure when binary exists but is not the expected wrapper', async () => {
       const { setupCommand } = await import('../src/cli/commands/setup.js');
       const binDir = '__TESTDATA__/cli-bin-exists';
       mkdirSync(binDir, { recursive: true });
-      // Create regular files instead of symlinks.
+      // Create regular files that are not gitd wrappers.
       for (const name of ['git-remote-did', 'git-remote-did-credential']) {
         writeFileSync(join(binDir, name), '#!/bin/sh\n');
       }
       try {
         const logs = await captureLog(() => setupCommand(['--check', '--bin-dir', binDir]));
         const allOutput = logs.join('\n');
-        expect(allOutput).toContain('[EXISTS]');
-        expect(allOutput).toContain('not a symlink');
+        expect(allOutput).toContain('[MISMATCH]');
+        expect(allOutput).toContain('Expected target');
         expect(allOutput).toContain('Some checks failed');
         expect(allOutput).not.toContain('All checks passed');
       } finally {
@@ -2188,7 +2266,7 @@ describe('gitd CLI commands', () => {
       }
     });
 
-    it('--uninstall should remove symlinks', async () => {
+    it('--uninstall should remove wrapper commands', async () => {
       const { setupCommand } = await import('../src/cli/commands/setup.js');
       const logs = await captureLog(() => setupCommand(['--uninstall', '--bin-dir', '__TESTDATA__/cli-bin']));
       const allOutput = logs.join('\n');

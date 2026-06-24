@@ -100,7 +100,7 @@ export class GitBackend {
    * @returns The path to the new bare repository
    * @throws If `git init --bare` fails
    */
-  public async initRepo(did: string, repo: string): Promise<string> {
+  public async initRepo(did: string, repo: string, defaultBranch = 'main'): Promise<string> {
     const path = this.repoPath(did, repo);
     mkdirSync(path, { recursive: true });
 
@@ -108,8 +108,30 @@ export class GitBackend {
     if (exitCode !== 0) {
       throw new Error(`git init --bare failed with exit code ${exitCode} for ${path}`);
     }
+    await this.setHeadBranch(did, repo, defaultBranch);
 
     return path;
+  }
+
+  /** Return true when HEAD resolves to an existing commit. */
+  public async headResolves(did: string, repo: string): Promise<boolean> {
+    const path = this.repoPath(did, repo);
+    const exitCode = await runGit(['--git-dir', path, 'rev-parse', '--verify', 'HEAD^{commit}']);
+    return exitCode === 0;
+  }
+
+  /** Point bare-repo HEAD at a branch. The branch does not need to exist yet. */
+  public async setHeadBranch(did: string, repo: string, branch: string): Promise<void> {
+    const path = this.repoPath(did, repo);
+    const valid = await runGit(['check-ref-format', '--branch', branch]);
+    if (valid !== 0) {
+      throw new Error(`Invalid branch name: ${branch}`);
+    }
+
+    const exitCode = await runGit(['--git-dir', path, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`]);
+    if (exitCode !== 0) {
+      throw new Error(`git symbolic-ref HEAD failed with exit code ${exitCode} for ${path}`);
+    }
   }
 
   /**

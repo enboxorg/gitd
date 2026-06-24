@@ -5,7 +5,7 @@ import type { DidDocument } from '@enbox/dids';
 
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 
 import { HttpDwnRpcClient } from '@enbox/dwn-clients';
@@ -78,6 +78,229 @@ describe('E2E: spawned helper syncs to a passive DWN endpoint', () => {
       await passiveDwn.stop();
     }
   }, 90_000);
+
+  it('clones Alice public repo on a fresh reader machine without identity setup', async () => {
+    rmSync(BASE, { recursive: true, force: true });
+
+    const passiveDwn = await startPassiveDwnServer({ dataPath: resolve(BASE, 'passive-dwn') });
+    try {
+      const alice = bootstrapProfile('alice', passiveDwn.url);
+      passiveDwn.addDidDocument({
+        didDocument         : alice.didDocument,
+        didDocumentMetadata : alice.didDocumentMetadata,
+      });
+
+      run('bun', [
+        GITD_MAIN,
+        'init',
+        'passive-demo',
+        '--no-local',
+      ], { env: testEnv('alice', passiveDwn.url) });
+
+      const alicePort = await freePort();
+      const aliceServe = await startServe('alice', passiveDwn.url, alicePort);
+      processes.push(aliceServe.proc);
+
+      const remoteUrl = await authenticatedRemoteUrl(
+        alicePort,
+        alice.did,
+        'passive-demo',
+        () => `stdout:\n${aliceServe.stdout()}\nstderr:\n${aliceServe.stderr()}`,
+      );
+      createAndPushMain(resolve(BASE, 'alice-public-reader-work'), remoteUrl);
+
+      await waitFor(async () => {
+        return aliceServe.stderr().includes('[push-sync] dwn pushed');
+      }, async () => {
+        return `Alice helper did not sync pushed repo to passive DWN\nstdout:\n${aliceServe.stdout()}\nstderr:\n${aliceServe.stderr()}`;
+      }, 40_000);
+
+      const binDir = resolve(BASE, 'reader-bin');
+      writeRemoteHelperWrapper(binDir);
+      const readerPort = await freePort();
+      const readerEnv = freshReaderEnv(passiveDwn.url, binDir, readerPort);
+      const readerClone = resolve(BASE, 'fresh-reader-clone');
+      let clone = { stdout: '', stderr: '' };
+
+      await waitFor(async () => {
+        rmSync(readerClone, { recursive: true, force: true });
+        const result = await runAsyncRaw('bun', [
+          GITD_MAIN,
+          'clone',
+          `${alice.did}/passive-demo`,
+          readerClone,
+        ], {
+          cwd       : resolve('.'),
+          timeoutMs : 90_000,
+          env       : readerEnv,
+        });
+        clone = {
+          stdout : result.stdout,
+          stderr : result.stderr,
+        };
+        return result.status === 0;
+      }, async () => {
+        return [
+          'Fresh reader could not clone Alice repo through passive DWN',
+          `stdout:\n${clone.stdout}`,
+          `stderr:\n${clone.stderr}`,
+        ].join('\n');
+      }, 120_000);
+
+      expect(clone.stdout).toContain('local public-read cache');
+      expect(clone.stdout).not.toContain('Recovery phrase');
+      expect(clone.stdout).not.toContain('Identity password');
+      expect(clone.stderr).toContain('(via LocalDwnHelper)');
+      expect(readFileSync(resolve(readerClone, 'README.md'), 'utf-8')).toContain('Passive DWN demo');
+      expect(run('git', ['config', '--local', 'enbox.profile'], { cwd: readerClone }).stdout.trim()).toBe('public-reader');
+
+      const readerConfigPath = resolve(BASE, 'fresh-reader-home', 'config.json');
+      if (existsSync(readerConfigPath)) {
+        const readerConfig = JSON.parse(readFileSync(readerConfigPath, 'utf-8')) as { profiles?: Record<string, unknown> };
+        expect(readerConfig.profiles ?? {}).toEqual({});
+      }
+
+      await runAsyncRaw('bun', [
+        GITD_MAIN,
+        'helper',
+        'stop',
+        '--profile',
+        'public-reader',
+      ], {
+        cwd       : resolve('.'),
+        timeoutMs : 10_000,
+        env       : readerEnv,
+      });
+    } finally {
+      await passiveDwn.stop();
+    }
+  }, 180_000);
+
+  it('creates a contributor PR with --push without a manual branch refspec', async () => {
+    rmSync(BASE, { recursive: true, force: true });
+
+    const passiveDwn = await startPassiveDwnServer({ dataPath: resolve(BASE, 'passive-dwn') });
+    try {
+      const alice = bootstrapProfile('alice', passiveDwn.url);
+      const bob = bootstrapProfile('bob', passiveDwn.url);
+      const actors = [alice, bob];
+
+      for (const actor of actors) {
+        passiveDwn.addDidDocument({
+          didDocument         : actor.didDocument,
+          didDocumentMetadata : actor.didDocumentMetadata,
+        });
+      }
+      cacheDidDocuments(actors, passiveDwn.url);
+
+      run('bun', [
+        GITD_MAIN,
+        'init',
+        'passive-demo',
+        '--no-local',
+      ], { env: testEnv('alice', passiveDwn.url) });
+
+      const addContributor = await runEventually('bun', [
+        GITD_MAIN,
+        'repo',
+        'add-contributor',
+        bob.did,
+        '--repo',
+        'passive-demo',
+      ], { env: testEnv('alice', passiveDwn.url) });
+      expect(addContributor.stdout).toContain('Added contributor');
+
+      const alicePort = await freePort();
+      const aliceServe = await startServe('alice', passiveDwn.url, alicePort);
+      processes.push(aliceServe.proc);
+
+      const remoteUrl = await authenticatedRemoteUrl(
+        alicePort,
+        alice.did,
+        'passive-demo',
+        () => `stdout:\n${aliceServe.stdout()}\nstderr:\n${aliceServe.stderr()}`,
+      );
+      createAndPushMain(resolve(BASE, 'alice-contributor-pr-work'), remoteUrl);
+
+      await waitFor(async () => {
+        return aliceServe.stderr().includes('[push-sync] dwn pushed');
+      }, async () => {
+        return `Alice helper did not sync pushed repo to passive DWN\nstdout:\n${aliceServe.stdout()}\nstderr:\n${aliceServe.stderr()}`;
+      }, 40_000);
+
+      await stopProcess(aliceServe.proc);
+
+      const bobPort = await freePort();
+      const bobServe = await startServe('bob', passiveDwn.url, bobPort);
+      processes.push(bobServe.proc);
+
+      const binDir = resolve(BASE, 'contributor-bin');
+      writeRemoteHelperWrapper(binDir);
+      const bobEnv = {
+        ...testEnv('bob', passiveDwn.url),
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      };
+      const bobClone = resolve(BASE, 'bob-contributor-pr-clone');
+
+      const clone = await runAsync('bun', [
+        GITD_MAIN,
+        'clone',
+        `${alice.did}/passive-demo`,
+        bobClone,
+      ], {
+        cwd       : resolve('.'),
+        timeoutMs : 90_000,
+        env       : bobEnv,
+      });
+      expect(clone.stdout).toContain('Checked out');
+
+      run('git', ['config', 'user.email', 'bob@example.com'], { cwd: bobClone });
+      run('git', ['config', 'user.name', 'Bob'], { cwd: bobClone });
+      run('git', ['checkout', '-b', 'contributor-pr'], { cwd: bobClone });
+      writeFileSync(resolve(bobClone, 'contributor-pr.txt'), 'Contributor PR through gitd pr create --push.\n', 'utf-8');
+      run('git', ['add', 'contributor-pr.txt'], { cwd: bobClone });
+      run('git', ['commit', '-m', 'feat: contributor pr create push'], { cwd: bobClone });
+
+      const pr = await runAsync('bun', [
+        GITD_MAIN,
+        'pr',
+        'create',
+        'Contributor PR create push',
+        '--body',
+        'Created without manually pushing a contributor refspec.',
+        '--repo',
+        'passive-demo',
+        '--owner',
+        alice.did,
+        '--push',
+      ], {
+        cwd       : bobClone,
+        timeoutMs : 120_000,
+        env       : bobEnv,
+      });
+
+      expect(pr.stdout).toContain('Created PR');
+      expect(pr.stdout).toContain('Contributor branch: refs/heads/users/');
+      expect(pr.stdout).toContain('Publishing branch: git push origin HEAD:refs/heads/users/');
+      expect(pr.stderr).toContain('[dwn-apply] PR: Applied');
+
+      await waitFor(async () => {
+        return bobServe.stderr().includes('[push-sync] remote branch writeback complete')
+          && bobServe.stderr().includes('[dwn-apply] remote branch writeback')
+          && bobServe.stderr().includes(': Applied');
+      }, async () => {
+        return [
+          'Bob contributor PR --push did not write the branch to Alice passive DWN',
+          `pr stdout:\n${pr.stdout}`,
+          `pr stderr:\n${pr.stderr}`,
+          `helper stdout:\n${bobServe.stdout()}`,
+          `helper stderr:\n${bobServe.stderr()}`,
+        ].join('\n');
+      }, 60_000);
+    } finally {
+      await passiveDwn.stop();
+    }
+  }, 180_000);
 
   it('runs contributor push, canonical work items, moderation, maintainer merge, and clone through passive DWN', async () => {
     rmSync(BASE, { recursive: true, force: true });
@@ -725,6 +948,26 @@ function testEnv(profile: string, dwnEndpoint: string): NodeJS.ProcessEnv {
     GITD_DEBUG                     : '1',
     GITD_DID_RESOLUTION_TIMEOUT_MS : '1000',
   };
+}
+
+function freshReaderEnv(dwnEndpoint: string, binDir: string, port: number): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME                           : resolve(BASE, 'fresh-reader-home'),
+    ENBOX_HOME                     : resolve(BASE, 'fresh-reader-home'),
+    PATH                           : `${binDir}:${process.env.PATH ?? ''}`,
+    GITD_PORT                      : String(port),
+    GITD_DWN_ENDPOINT              : dwnEndpoint,
+    GITD_DWN_REGISTRATION          : 'off',
+    GITD_DID_REPUBLISH             : 'off',
+    GITD_DEBUG                     : '1',
+    GITD_DID_RESOLUTION_TIMEOUT_MS : '1000',
+    GIT_TERMINAL_PROMPT            : '0',
+  };
+  delete env.GITD_PROFILE;
+  delete env.ENBOX_PROFILE;
+  delete env.GITD_PASSWORD;
+  return env;
 }
 
 async function freePort(): Promise<number> {

@@ -66,12 +66,19 @@
  *   gitd shim go  [--port 4874]             Start Go module proxy (GOPROXY)
  *   gitd shim oci [--port 5555]             Start OCI/Docker registry proxy
  *   gitd log                                Show recent activity
- *   gitd serve [--port <port>] [--foreground]  Start the git transport server
+ *   gitd helper status                      Show local helper status
+ *   gitd helper start                       Start the local helper
+ *   gitd auth sessions                      List active local helper sessions
+ *   gitd auth revoke helper                 Revoke the active helper session
+ *   gitd publish --public-url <url>         Publish a public GitTransport endpoint
+ *   gitd serve --public-url <url>           Publish a public GitTransport endpoint
+ *   gitd doctor                             Diagnose local setup
+ *   gitd repair                             Repair local setup
  *   gitd whoami                             Show connected DID
  *
  * Environment:
- *   GITD_PASSWORD  — vault password (prompted interactively if not set)
- *   GITD_PORT      — server port for `serve` (default: 9418)
+ *   GITD_PASSWORD  — identity unlock password (prompted interactively if not set)
+ *   GITD_PORT      — local helper/GitTransport port (default: 9418)
  *   GITD_REPOS     — base path for bare repos (default: ./repos)
  *
  * @module
@@ -79,19 +86,29 @@
 
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
+
+import type { FirstIdentitySetup } from './identity-wizard.js';
+import type { ResolvedPassword } from '../auth/vault-password.js';
 
 import { authCommand } from './commands/auth.js';
 import { cloneCommand } from './commands/clone.js';
 import { connectAgent } from './agent.js';
 import { dispatchAgentCommand } from './dispatch.js';
-import { ensureDaemon } from '../daemon/lifecycle.js';
+import { doctorCommand } from './commands/doctor.js';
+import { flagValue } from './flags.js';
 import { forwardCliCommandIfAvailable } from './local-rpc.js';
-import { serveDaemonCommand } from './commands/serve-lifecycle.js';
+import { repairCommand } from './commands/repair.js';
 import { setupCommand } from './commands/setup.js';
 import { checkGit, requireGit, warnGit } from './preflight.js';
-import { flagValue, hasFlag } from './flags.js';
-import { profileDataPath, resolveProfile } from '../profiles/config.js';
+import { createFirstIdentityFromSetup, maybePromptForFirstIdentitySetup } from './identity-wizard.js';
+import { ensureDaemon, findGitdBin, markDeferredDaemonStart } from '../daemon/lifecycle.js';
+import { forgetVaultSecret, rememberVaultSecret, resolveVaultPassword } from '../auth/vault-password.js';
+import { helperCommand, serveDaemonCommand } from './commands/serve-lifecycle.js';
+import { printImplicitRecoveryPhrase, recordConnectedProfile, resolveCommandProfile } from './profile-session.js';
+import { publicReaderWriteBlockMessage, shouldBlockPublicReaderCommand } from './public-reader-guard.js';
+import { serveLocalHelperAliasLines, shouldStartLocalHelperFromServe } from './serve-ux.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -100,6 +117,8 @@ import { profileDataPath, resolveProfile } from '../profiles/config.js';
 const args = process.argv.slice(2);
 const command = args[0];
 const rest = args.slice(1);
+
+const HELPER_START_DELAY_ENV = 'GITD_HELPER_START_DELAY_MS';
 
 // ---------------------------------------------------------------------------
 // Usage
@@ -110,17 +129,28 @@ function printUsage(): void {
   console.log('Commands:');
   console.log('  auth                                        Show current identity info');
   console.log('  auth login                                  Create or import an identity');
-  console.log('  auth list                                   List all profiles');
-  console.log('  auth use <profile> [--global]               Set active profile');
+  console.log('  auth list                                   List identities');
+  console.log('  auth switch <identity>                      Set default identity');
+  console.log('  auth use <identity> [--global]              Set active identity');
+  console.log('  auth sessions                               List active local helper sessions');
+  console.log('  auth revoke helper                          Revoke the active helper session');
   console.log('');
   console.log('  setup [--check | --uninstall]                Configure git for DID-based remotes');
+  console.log('  doctor                                      Diagnose local setup');
+  console.log('  repair                                      Repair local wrappers, git config, and helper locks');
   console.log('  clone <did>/<repo>                          Clone a repository via DID');
   console.log('  init <name>                                 Create a repo record + bare git repo');
-  console.log('  serve [--port <port>] [--foreground]         Start the git transport server');
-  console.log('  serve status                                Show daemon status');
-  console.log('  serve stop                                  Stop the background daemon');
-  console.log('  serve restart                               Restart the daemon');
-  console.log('  serve logs                                  Tail daemon log file');
+  console.log('  helper status                               Show local helper status');
+  console.log('  helper start                                Start the local helper');
+  console.log('  helper stop                                 Stop the local helper');
+  console.log('  helper restart                              Restart the local helper');
+  console.log('  helper logs                                 Tail local helper logs');
+  console.log('  publish --public-url <url>                  Publish a public GitTransport endpoint');
+  console.log('  serve --public-url <url> [--foreground]     Publish a public GitTransport endpoint');
+  console.log('  serve status                                Alias for helper status');
+  console.log('  serve stop                                  Alias for helper stop');
+  console.log('  serve restart                               Alias for helper restart');
+  console.log('  serve logs                                  Alias for helper logs');
   console.log('');
   console.log('  repo info                                   Show repo metadata');
   console.log('  repo add-moderator <did>                    Grant moderator role');
@@ -151,7 +181,7 @@ function printUsage(): void {
   console.log('  issue ignore <did> <id>                     Ignore an external issue submission');
   console.log('  issue list [--status <open|closed>]         List issues');
   console.log('');
-  console.log('  pr create <title> [--base ...] [--head ...]     Open a pull request');
+  console.log('  pr create <title> [--base ...] [--head ...] [--push|--no-push] Open a pull request');
   console.log('  pr show <number>                               Show PR details and reviews');
   console.log('  pr comment <number> <body>                     Add a comment/review');
   console.log('  pr merge <number> [--squash|--rebase]           Merge a PR with actual git merge');
@@ -227,9 +257,9 @@ function printUsage(): void {
   console.log('  whoami                                      Show connected DID');
   console.log('  help                                        Show this message\n');
   console.log('Environment:');
-  console.log('  GITD_PASSWORD      vault password (prompted if not set)');
+  console.log('  GITD_PASSWORD      identity unlock password (prompted if not set)');
   console.log('  GITD_PROFILE       active identity profile (alias: ENBOX_PROFILE)');
-  console.log('  GITD_PORT          server port for `serve` (default: 9418)');
+  console.log('  GITD_PORT          local helper/GitTransport port (default: 9418)');
   console.log('  GITD_WEB_PORT      web UI port for `web` (default: 8080)');
   console.log('  GITD_REPOS         base path for bare repos (default: ~/.enbox/profiles/<name>/repos/)');
   console.log('  GITD_PUBLIC_URL    public URL for `serve` (enables DID service registration)');
@@ -253,64 +283,81 @@ function printUsage(): void {
 // Password
 // ---------------------------------------------------------------------------
 
-async function getPassword(): Promise<string> {
-  // Prefer env var for non-interactive use / testing.
-  const env = process.env.GITD_PASSWORD;
-  if (env) { return env; }
+/**
+ * Resolve the vault password for a command and, on a verified unlock, cache a
+ * freshly entered secret so later commands don't re-prompt.
+ *
+ * Resolution and caching live in `../auth/vault-password.js`; this wrapper
+ * keeps the call sites terse while threading the active profile name through.
+ */
+async function resolveCommandPassword(
+  profileName: string | undefined,
+  explicit?: string,
+): Promise<ResolvedPassword> {
+  return resolveVaultPassword({ profileName, explicit });
+}
 
-  // Interactive prompt — hide input when running in a TTY.
-  process.stdout.write('Vault password: ');
+async function maybeDelayHelperStart(args: string[]): Promise<void> {
+  if (args[0] !== 'start') { return; }
+  const raw = process.env[HELPER_START_DELAY_ENV];
+  if (!raw) { return; }
+  const delayMs = Number.parseInt(raw, 10);
+  if (!Number.isFinite(delayMs) || delayMs <= 0) { return; }
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
 
-  if (process.stdin.isTTY) {
-    // Raw mode: read character-by-character, echo nothing.
-    const password = await new Promise<string>((resolve) => {
-      let buf = '';
-      process.stdin.setRawMode(true);
-      process.stdin.setEncoding('utf8');
-      process.stdin.resume();
+function isTransientHelperLockError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('Database is not open')
+    || message.includes('LEVEL_LOCKED')
+    || message.includes('LOCK');
+}
 
-      const onData = (ch: string): void => {
-        const code = ch.charCodeAt(0);
-
-        if (ch === '\r' || ch === '\n') {
-          // Enter — done.
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-          process.stdin.removeListener('data', onData);
-          process.stdout.write('\n');
-          resolve(buf);
-        } else if (code === 3) {
-          // Ctrl-C — abort.
-          process.stdin.setRawMode(false);
-          process.stdout.write('\n');
-          process.exit(130);
-        } else if (code === 127 || code === 8) {
-          // Backspace / Delete.
-          if (buf.length > 0) {
-            buf = buf.slice(0, -1);
-          }
-        } else if (code >= 32) {
-          // Printable character.
-          buf += ch;
-        }
-      };
-
-      process.stdin.on('data', onData);
-    });
-    return password;
+function scheduleDeferredHelperStart(password: string, profileName?: string): boolean {
+  const gitdBin = findGitdBin();
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    GITD_PASSWORD            : password,
+    [HELPER_START_DELAY_ENV] : '250',
+  };
+  if (profileName) {
+    env.GITD_PROFILE = profileName;
   }
 
-  // Non-TTY fallback (piped input).
-  const response = await new Promise<string>((resolve) => {
-    let buf = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.once('data', (chunk: string) => {
-      buf += chunk;
-      resolve(buf.trim());
-    });
-    process.stdin.resume();
+  const child = spawn(gitdBin.command, [
+    ...gitdBin.prefix,
+    'helper',
+    'start',
+    ...(profileName ? ['--profile', profileName] : []),
+  ], {
+    detached : true,
+    stdio    : 'ignore',
+    env,
   });
-  return response;
+
+  child.unref();
+  markDeferredDaemonStart(profileName);
+  return true;
+}
+
+async function connectAgentWithRetry(options: Parameters<typeof connectAgent>[0]): ReturnType<typeof connectAgent> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await connectAgent(options);
+    } catch (err) {
+      lastError = err;
+      if (!isTransientHelperLockError(err)) { throw err; }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError;
+}
+
+function shouldAutoStartHelperAfterCommand(commandName: string, commandArgs: string[]): boolean {
+  if (commandName === 'whoami') { return false; }
+  if (commandName === 'init' && commandArgs.includes('--no-local')) { return false; }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +394,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'doctor') {
+    await doctorCommand(rest);
+    return;
+  }
+
   // All functional commands require git.
   requireGit();
 
@@ -356,40 +408,58 @@ async function main(): Promise<void> {
       await setupCommand(rest);
       return;
 
+    case 'repair':
+      await repairCommand(rest);
+      return;
+
     case 'clone':
       await cloneCommand(rest);
       return;
 
     case 'auth':
-      // Auth can run without a pre-existing profile (for `login`).
+      // Auth can run without a pre-existing identity (for `login`).
       await authCommand(null, rest);
+      return process.exit(0);
+
+    case 'helper':
+      await maybeDelayHelperStart(rest);
+      await helperCommand(rest);
       return;
 
     case 'serve':
       // Lifecycle subcommands don't need the agent.
-      if (rest[0] === 'status' || rest[0] === 'stop' || rest[0] === 'restart' || rest[0] === 'logs') {
+      if (rest[0] === 'status' || rest[0] === 'start' || rest[0] === 'stop' || rest[0] === 'restart' || rest[0] === 'logs') {
         await serveDaemonCommand(rest);
         return;
       }
 
-      // Auto-background: unless --foreground is passed or we ARE the
-      // background daemon, fork a background process and exit.  This
-      // follows the Ollama pattern — `gitd serve` returns immediately
-      // with a one-liner status, and only `gitd serve --foreground`
-      // blocks the terminal.
-      if (!hasFlag(rest, '--foreground') && process.env.GITD_DAEMON_BACKGROUND !== '1') {
-        const pw = await getPassword();
-        const profileName = resolveProfile(flagValue(rest, '--profile')) ?? undefined;
+      // Compatibility alias: bare `gitd serve` still starts the local helper,
+      // but public publishing flags must fall through to the agent-backed
+      // GitTransport path.
+      if (shouldStartLocalHelperFromServe(rest)) {
+        const setup = await maybePromptForFirstIdentitySetup('serve', rest, flagValue(rest, '--profile'));
+        if (setup) {
+          await createFirstIdentityFromSetup(setup);
+        }
+        let profileName: string | undefined;
         try {
-          const result = await ensureDaemon(pw, { profileName });
-          if (result.spawned) {
-            console.log(`gitd server started in the background on port ${result.port}.`);
-          } else {
-            console.log(`gitd server is already running on port ${result.port}.`);
-          }
-          console.log('Run `gitd serve status` for details, `gitd serve logs` to tail output.');
+          profileName = setup?.profileName ?? resolveCommandProfile(flagValue(rest, '--profile')).name;
         } catch (err) {
-          console.error(`Failed to start daemon: ${(err as Error).message}`);
+          console.error(`gitd: ${(err as Error).message}`);
+          process.exit(1);
+        }
+        const resolved = await resolveCommandPassword(profileName, setup?.password);
+        try {
+          const result = await ensureDaemon(resolved.password, { profileName });
+          await rememberVaultSecret(profileName, resolved);
+          for (const line of serveLocalHelperAliasLines(result.spawned, result.port)) {
+            console.log(line);
+          }
+        } catch (err) {
+          if (resolved.source === 'keychain' && profileName) {
+            await forgetVaultSecret(profileName);
+          }
+          console.error(`Failed to start local helper: ${(err as Error).message}`);
           process.exit(1);
         }
         return;
@@ -398,16 +468,42 @@ async function main(): Promise<void> {
   }
 
   const profileFlag = flagValue(rest, '--profile');
-  const profileName = resolveProfile(profileFlag);
+  let commandProfile: ReturnType<typeof resolveCommandProfile>;
+  try {
+    commandProfile = resolveCommandProfile(profileFlag);
+  } catch (err) {
+    console.error(`gitd: ${(err as Error).message}`);
+    process.exit(1);
+  }
+  let profileName = commandProfile.name;
+
+  if (shouldBlockPublicReaderCommand(profileName ?? undefined, command, rest)) {
+    for (const line of publicReaderWriteBlockMessage(command, rest)) {
+      console.error(line);
+    }
+    process.exit(1);
+  }
 
   // Resolve DWN sync interval.
   // Long-running commands default to '30s'; one-shot commands default to 'off'.
-  const longRunning = ['serve', 'web', 'daemon', 'indexer', 'github-api', 'shim'].includes(command);
+  const longRunning = ['serve', 'publish', 'web', 'daemon', 'indexer', 'github-api', 'shim'].includes(command);
   const syncDefault = longRunning ? '30s' : 'off';
   const noSync = rest.includes('--no-sync');
   const syncEnv = process.env.GITD_SYNC;
   const syncFlag = flagValue(rest, '--sync');
   const sync = noSync ? 'off' : (syncFlag ?? syncEnv ?? syncDefault);
+
+  let firstIdentitySetup: FirstIdentitySetup | undefined;
+  if (!longRunning) {
+    firstIdentitySetup = await maybePromptForFirstIdentitySetup(command, rest, profileFlag);
+    if (firstIdentitySetup) {
+      commandProfile = {
+        name     : firstIdentitySetup.profileName,
+        dataPath : firstIdentitySetup.dataPath,
+      };
+      profileName = commandProfile.name;
+    }
+  }
 
   if (!longRunning) {
     const forwarded = await forwardCliCommandIfAvailable(profileName ?? undefined, command, rest);
@@ -419,28 +515,64 @@ async function main(): Promise<void> {
   }
 
   // Commands that require the Enbox agent.
-  const password = await getPassword();
-  const dataPath = profileName ? profileDataPath(profileName) : undefined;
+  const resolved = await resolveCommandPassword(profileName, firstIdentitySetup?.password);
 
-  const ctx = await connectAgent({ password, dataPath, sync: sync as any });
-  ctx.profileName = profileName ?? undefined;
+  let ctx: Awaited<ReturnType<typeof connectAgentWithRetry>>;
+  try {
+    ctx = await connectAgentWithRetry({
+      password       : resolved.password,
+      dataPath       : commandProfile.dataPath,
+      sync           : sync as any,
+      recoveryPhrase : firstIdentitySetup?.recoveryPhrase,
+    });
+  } catch (err) {
+    if (resolved.source === 'keychain' && profileName) {
+      await forgetVaultSecret(profileName);
+      console.error('gitd: the cached unlock secret was rejected and cleared. Re-run the command to re-enter it.');
+    }
+    throw err;
+  }
+  await rememberVaultSecret(profileName, resolved);
+  const recordedProfile = recordConnectedProfile(profileName, ctx.did);
+  ctx.profileName = profileName;
 
-  // For one-shot commands, ensure the background daemon is running so that
-  // `git push` (via git-remote-did) works immediately after.  Long-running
-  // commands either *are* the server or manage their own lifecycle.
-  if (!longRunning) {
-    try {
-      await ensureDaemon(password, { profileName: profileName ?? undefined });
-    } catch {
-      // Non-fatal — warn but don't block the command.
-      console.error('[daemon] Could not start background server. Run `gitd serve` manually for push/clone.');
+  if (recordedProfile.created && ctx.recoveryPhrase) {
+    printImplicitRecoveryPhrase(recordedProfile.name, ctx.recoveryPhrase);
+    console.log('');
+  }
+
+  let completed = false;
+  try {
+    if (command === 'whoami') {
+      console.log(ctx.did);
+    } else {
+      await dispatchAgentCommand(ctx, command, rest);
+    }
+    completed = true;
+  } finally {
+    if (!longRunning) {
+      try {
+        await ctx.close?.();
+      } catch (err) {
+        console.error(`[agent] Could not release local identity resources: ${(err as Error).message}`);
+      }
     }
   }
 
-  if (command === 'whoami') {
-    console.log(ctx.did);
-  } else {
-    await dispatchAgentCommand(ctx, command, rest);
+  // For one-shot commands, ensure the background helper is running after the
+  // foreground agent has released its LevelDB handles. This keeps `git push`
+  // and native `git clone did::...` working immediately after commands such as
+  // `gitd init` without hiding first-run recovery phrase output in the helper.
+  if (completed && !longRunning && shouldAutoStartHelperAfterCommand(command, rest)) {
+    try {
+      await ensureDaemon(resolved.password, { profileName: profileName ?? undefined });
+    } catch (err) {
+      if (isTransientHelperLockError(err) && scheduleDeferredHelperStart(resolved.password, profileName ?? undefined)) {
+        process.exit(0);
+      }
+      // Non-fatal — warn but don't block the command.
+      console.error('[helper] Could not start local helper. Run `gitd helper start` manually for push/clone.');
+    }
   }
 
   // One-shot commands reach here after completing.  The Enbox agent keeps

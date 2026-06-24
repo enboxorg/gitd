@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://enbox.id/schemas/forge/view-snapshot",
+  "title": "ViewSnapshotData",
+  "description": "$squash checkpoint for reduced issue, PR, moderation, or report views.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["issue", "pr", "moderation", "report"]
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "reducerVersion": {
+      "type": "string"
+    },
+    "lastRecordId": {
+      "type": "string"
+    },
+    "recordCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "type": "object"
+    },
+    "actorDid": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    }
+  },
+  "required": ["kind", "state", "actorDid", "createdAt"],
+  "additionalProperties": false
+}

@@ -272,9 +272,11 @@ current tree:
   branch, branch ref-update state, squashed branch checkpoint state, and
   branch bundle records to the owner DWN after a remote-owner push accepted by
   Bob's local helper.
-- `src/repo.ts` now includes immutable `repo/moderationEvent` records, and
-  `src/cli/commands/mod.ts` writes block/unblock, lock/unlock,
-  hide/unhide/delete comment, report resolution, and interaction-limit events.
+- `src/repo.ts` now includes immutable `repo/moderationEvent` records plus
+  `$squash` `repo/viewSnapshot` checkpoint records for reduced issue, PR,
+  moderation, and report views. `src/cli/commands/mod.ts` writes
+  block/unblock, lock/unlock, hide/unhide/delete comment, report resolution,
+  and interaction-limit events.
   Block events are enforced by push authorization and by CLI issue/PR write
   paths. CLI issue/PR reads consume lock and comment visibility events when
   rendering discussion views, and CLI issue/PR comment writes reject locked
@@ -376,9 +378,12 @@ These decisions should be treated as settled for the CLI E2E MVP:
    in canonical views. Hard deletion remains owner-only emergency behavior and
    should still leave a moderation audit record where possible.
 
-9. **Block enforcement.** Blocking a DID also revokes that DID's contributor or
-   moderator role records in the repo. Unblocking does not restore roles
-   automatically.
+9. **Block enforcement.** Blocking a DID creates an authoritative moderation
+   overlay that prevents canonical pushes and issue/PR writes even if role
+   grant records remain. When the repo owner issues the block locally, gitd
+   also deletes matching contributor or moderator role records. Moderators can
+   block interaction, but they do not gain role-management authority.
+   Unblocking does not restore deleted roles automatically.
 
 10. **Report records.** Canonical report records are limited to contributors,
     moderators, maintainers, and owners. Outside reports stay actor-owned and

@@ -10,8 +10,15 @@ export type { DaemonInstance, DaemonOptions } from './server.js';
 export { createAdapterServer, resolveConfig, startDaemon } from './server.js';
 export { builtinAdapters, findAdapter } from './adapters/index.js';
 
-export type { DaemonLock } from './lockfile.js';
-export { lockfilePath, readLockfile, removeLockfile, writeLockfile } from './lockfile.js';
+export type { DaemonLock, HelperCapability, HelperRepoContext, HelperSessionExpiryPolicy } from './lockfile.js';
+export {
+  DEFAULT_HELPER_CAPABILITIES,
+  lockfilePath,
+  readLockfile,
+  recordLockfileRepoContext,
+  removeLockfile,
+  writeLockfile,
+} from './lockfile.js';
 
 export type { DaemonStatus, EnsureDaemonResult } from './lifecycle.js';
 export { daemonLogPath, daemonStatus, ensureDaemon, stopDaemon } from './lifecycle.js';

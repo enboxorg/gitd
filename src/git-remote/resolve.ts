@@ -17,9 +17,15 @@ import { promises as dns } from 'node:dns';
 
 import { DidDht, DidJwk, DidKey, DidWeb, UniversalResolver } from '@enbox/dids';
 
-import { ensureDaemon } from '../daemon/lifecycle.js';
 import { getVaultPassword } from './tty-prompt.js';
 import { readLockfile } from '../daemon/lockfile.js';
+import { resolveProfile } from '../profiles/config.js';
+import { ensureDaemon, hasRecentDeferredDaemonStart } from '../daemon/lifecycle.js';
+import {
+  getOrCreatePublicReaderPassword,
+  PUBLIC_READER_PROFILE,
+  recordPublicReaderDid,
+} from '../profiles/public-reader.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,6 +69,18 @@ function getResolver(): DidResolver {
 /** Test hook for deterministic DID resolution without network access. */
 export function __setResolverForTests(testResolver?: DidResolver): void {
   resolver = testResolver;
+}
+
+/**
+ * Daemon auto-starter, overridable in tests. Auto-start spawns a real helper
+ * and binds a port, which is non-deterministic in CI (and collides with a
+ * developer's running daemon), so tests that assert "no daemon" override this.
+ */
+let daemonStarter: typeof ensureDaemon = ensureDaemon;
+
+/** Test hook to override (or reset) the local-daemon auto-starter. */
+export function __setDaemonStarterForTests(starter?: typeof ensureDaemon): void {
+  daemonStarter = starter ?? ensureDaemon;
 }
 
 /** Default DID resolution timeout in milliseconds. */
@@ -131,11 +149,11 @@ export async function resolveGitEndpoint(did: string, repo?: string): Promise<Gi
 
     throw new Error(
       `No GitTransport service found for ${did}. `
-      + 'The DID has a DecentralizedWebNode service, but no local gitd daemon is available '
+      + 'The DID has a DecentralizedWebNode service, but no local gitd helper is available '
       + 'to restore the repo from DWN records.\n'
-      + 'Hint: run `gitd serve` in another terminal, set GITD_PASSWORD so gitd can '
-      + 'auto-start the helper, or register a public GitTransport endpoint with '
-      + '`gitd serve --public-url <url>`.',
+      + 'Hint: run `gitd helper start` in another terminal, set GITD_PASSWORD so gitd can '
+      + 'auto-start the helper, or publish a public GitTransport endpoint with '
+      + '`gitd publish --public-url <url>`.',
     );
   }
 
@@ -161,9 +179,31 @@ function didResolutionTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
 
 /** Timeout for the local daemon health probe (ms). */
 const LOCAL_PROBE_TIMEOUT_MS = 2_000;
+const LOCAL_DAEMON_WAIT_MS = 3_000;
+const LOCAL_DAEMON_WAIT_INTERVAL_MS = 100;
 const LOCAL_LOOPBACK_ORIGIN = 'http://127.0.0.1';
 
 type LocalDaemonMode = 'owner-only' | 'dwn-helper';
+
+export type LocalDaemonProfileSelection = {
+  profileName?: string;
+  implicitPublicReader : boolean;
+};
+
+export function selectLocalDaemonProfile(
+  mode: LocalDaemonMode,
+  resolvedProfile = resolveProfile() ?? undefined,
+): LocalDaemonProfileSelection {
+  if (resolvedProfile) {
+    return { profileName: resolvedProfile, implicitPublicReader: false };
+  }
+
+  if (mode === 'dwn-helper') {
+    return { profileName: PUBLIC_READER_PROFILE, implicitPublicReader: true };
+  }
+
+  return { implicitPublicReader: false };
+}
 
 /**
  * Check whether a local gitd daemon is running and reachable.
@@ -179,50 +219,32 @@ async function resolveLocalDaemon(
   repo?: string,
   mode: LocalDaemonMode = 'owner-only',
 ): Promise<GitEndpoint | null> {
-  // Fast path: check for an already-running daemon.
-  const lock = readLockfile();
-  if (lock) {
-    // Only use the local daemon when the requested DID matches the
-    // daemon's owner.  Cloning someone else's repo must fall through
-    // to DID document resolution so the request reaches the correct
-    // remote server.  Lockfiles without `ownerDid` (written by older
-    // versions) are treated as matching for backwards compatibility.
-    if (mode === 'owner-only' && lock.ownerDid && lock.ownerDid !== did) {
-      return null;
-    }
-    if (mode === 'dwn-helper' && !lock.dwnHelper) {
-      return null;
-    }
+  const profileSelection = selectLocalDaemonProfile(mode);
+  const profileName = profileSelection.profileName;
 
-    const healthUrl = `${LOCAL_LOOPBACK_ORIGIN}:${lock.port}/health`;
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
-      const res = await fetch(healthUrl, { signal: controller.signal });
-      clearTimeout(timer);
-      if (res.ok) {
-        return {
-          url    : buildUrl(`${LOCAL_LOOPBACK_ORIGIN}:${lock.port}`, did, repo),
-          did,
-          source : mode === 'dwn-helper' ? 'LocalDwnHelper' : 'LocalDaemon',
-        };
-      }
-    } catch {
-      // Not responding — fall through to auto-start.
-    }
-  }
+  // Fast path: check for an already-running daemon.
+  const local = await resolveReachableLocalDaemon(did, repo, mode, profileName);
+  if (local) { return local; }
 
   // Slow path: try to auto-start a daemon.  Prompt for the vault
   // password lazily — only when we actually need to spawn.  This avoids
   // prompting when the daemon is already running (the common case).
   // Skip auto-start entirely when no password is available — spawning
   // a daemon without a password will always fail (vault can't unlock).
-  const password = getVaultPassword() ?? undefined;
-  if (!password) { return null; }
+  const password = profileSelection.implicitPublicReader
+    ? getOrCreatePublicReaderPassword().password
+    : (await getVaultPassword()) ?? undefined;
+  if (!password) {
+    if (!hasRecentDeferredDaemonStart(profileName)) { return null; }
+    return waitForReachableLocalDaemon(did, repo, mode, profileName);
+  }
 
   try {
-    const result = await ensureDaemon(password);
-    const spawnedLock = readLockfile();
+    const result = await daemonStarter(password, { profileName });
+    const spawnedLock = readLockfile(profileName);
+    if (profileSelection.implicitPublicReader && spawnedLock?.ownerDid) {
+      recordPublicReaderDid(spawnedLock.ownerDid);
+    }
     if (mode === 'owner-only' && spawnedLock?.ownerDid && spawnedLock.ownerDid !== did) {
       return null;
     }
@@ -241,10 +263,64 @@ async function resolveLocalDaemon(
     console.error(
       `git-remote-did: could not start local daemon: ${(err as Error).message}\n`
       + 'Hint: ensure gitd is installed and on your PATH, or run from the project directory.\n'
-      + 'Hint: run `gitd serve` in another terminal, or set GITD_PASSWORD and retry.',
+      + 'Hint: run `gitd helper start` in another terminal, or set GITD_PASSWORD and retry.',
     );
     return null;
   }
+}
+
+async function resolveReachableLocalDaemon(
+  did: string,
+  repo: string | undefined,
+  mode: LocalDaemonMode,
+  profileName?: string,
+): Promise<GitEndpoint | null> {
+  const lock = readLockfile(profileName) ?? (profileName ? readLockfile() : null);
+  if (!lock) { return null; }
+
+  // Only use the local daemon when the requested DID matches the daemon's
+  // owner. Cloning someone else's repo must fall through to DID document
+  // resolution so the request reaches the correct remote server. Lockfiles
+  // without `ownerDid` (written by older versions) are treated as matching for
+  // backwards compatibility.
+  if (mode === 'owner-only' && lock.ownerDid && lock.ownerDid !== did) {
+    return null;
+  }
+  if (mode === 'dwn-helper' && !lock.dwnHelper) {
+    return null;
+  }
+
+  const healthUrl = `${LOCAL_LOOPBACK_ORIGIN}:${lock.port}/health`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOCAL_PROBE_TIMEOUT_MS);
+    const res = await fetch(healthUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) { return null; }
+    return {
+      url    : buildUrl(`${LOCAL_LOOPBACK_ORIGIN}:${lock.port}`, did, repo),
+      did,
+      source : mode === 'dwn-helper' ? 'LocalDwnHelper' : 'LocalDaemon',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function waitForReachableLocalDaemon(
+  did: string,
+  repo: string | undefined,
+  mode: LocalDaemonMode,
+  profileName?: string,
+): Promise<GitEndpoint | null> {
+  if (!profileName) { return null; }
+  const deadline = Date.now() + LOCAL_DAEMON_WAIT_MS;
+  while (Date.now() < deadline) {
+    const local = await resolveReachableLocalDaemon(did, repo, mode, profileName);
+    if (local) { return local; }
+    await new Promise((resolve) => setTimeout(resolve, LOCAL_DAEMON_WAIT_INTERVAL_MS));
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

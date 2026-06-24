@@ -348,6 +348,15 @@ describe('JSON Schemas', () => {
       expect(schema.properties.reportStatus.enum).toEqual(['open', 'resolved', 'dismissed']);
     });
 
+    it('view-snapshot.json should define squashed reducer checkpoints', () => {
+      const schema = readSchema('repo', 'view-snapshot.json');
+      expect(schema.required).toEqual(['kind', 'state', 'actorDid', 'createdAt']);
+      expect(schema.properties.kind.enum).toEqual(['issue', 'pr', 'moderation', 'report']);
+      expect(schema.properties.state.type).toBe('object');
+      expect(schema.properties.recordCount.minimum).toBe(0);
+      expect(schema.properties.lastRecordId.type).toBe('string');
+    });
+
     it('settings.json should restrict mergeStrategies items to merge, squash, rebase', () => {
       const schema = readSchema('repo', 'settings.json');
       const items = schema.properties.mergeStrategies.items;

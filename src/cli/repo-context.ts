@@ -31,6 +31,8 @@ export type RepoContext = {
   visibility: 'public' | 'private';
   /** The repo name. */
   name: string;
+  /** Repository default branch, when readable from the repo record data. */
+  defaultBranch?: string;
 };
 
 /** Repo role names that can be used as cross-protocol role grants. */
@@ -90,7 +92,7 @@ export async function getRepoContextForDid(
       throw new Error(`Repository "${repoName}" not found in ${owner}.`);
     }
 
-    const repo = extractContext(records[0], repoName);
+    const repo = await extractContext(records[0], repoName);
     rememberRepoContext(targetDid, repo);
     return repo;
   }
@@ -236,14 +238,38 @@ export async function resolveRepoProtocolRole(
 // Internal
 // ---------------------------------------------------------------------------
 
-function extractContext(record: any, name: string): RepoContext {
+async function extractContext(record: any, name: string): Promise<RepoContext> {
   const contextId = record.contextId;
   if (!contextId) {
     throw new Error('Repository record has no contextId — this should not happen.');
   }
 
+  const data = await safeRecordJson(record);
+  const repoName = typeof data?.name === 'string' && data.name.trim()
+    ? data.name
+    : name;
+  const defaultBranch = typeof data?.defaultBranch === 'string' && data.defaultBranch.trim()
+    ? data.defaultBranch
+    : undefined;
   const visibility = (record.tags?.visibility as 'public' | 'private') ?? 'public';
-  return { recordId: record.id ?? record.recordId, contextId, visibility, name };
+  return {
+    recordId : record.id ?? record.recordId,
+    contextId,
+    visibility,
+    name     : repoName,
+    ...(defaultBranch ? { defaultBranch } : {}),
+  };
+}
+
+async function safeRecordJson(record: any): Promise<Record<string, unknown> | undefined> {
+  try {
+    const data = await record.data?.json?.();
+    return typeof data === 'object' && data !== null
+      ? data as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function repoContextCacheKey(targetDid: string, repoName: string): string {

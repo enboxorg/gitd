@@ -7,7 +7,7 @@
  */
 import { DidDht } from '@enbox/dids';
 import { parseDidUrl } from '../src/git-remote/parse-url.js';
-import { __setResolverForTests, resolveGitEndpoint } from '../src/git-remote/resolve.js';
+import { __setDaemonStarterForTests, __setResolverForTests, resolveGitEndpoint, selectLocalDaemonProfile } from '../src/git-remote/resolve.js';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 
@@ -248,6 +248,26 @@ describe('GitTransport service type', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveGitEndpoint', () => {
+  // Isolate ENBOX_HOME so a daemon lockfile written by a concurrent test file
+  // (e.g. daemon-lifecycle.spec.ts) to the shared ~/.enbox can't be picked up
+  // here and make these resolve instead of reject.
+  const envHome = process.env.ENBOX_HOME;
+  const testHome = '__TESTDATA__/git-remote-resolve-reject-home';
+
+  beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    // These tests assert there is no daemon, so never auto-start a real one
+    // (which is non-deterministic in CI and collides with a dev daemon).
+    __setDaemonStarterForTests(async () => { throw new Error('auto-start disabled in test'); });
+  });
+
+  afterEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    __setDaemonStarterForTests();
+    if (envHome !== undefined) { process.env.ENBOX_HOME = envHome; } else { delete process.env.ENBOX_HOME; }
+  });
+
   it('should reject an unresolvable DID', async () => {
     await expect(
       resolveGitEndpoint('did:jwk:invalidjwk'),
@@ -383,8 +403,10 @@ describeDht('resolveGitEndpoint (did:dht integration)', () => {
 
 import { createServer } from 'node:http';
 import { dirname } from 'node:path';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync as writeFs } from 'node:fs';
 
+import { PUBLIC_READER_PROFILE } from '../src/profiles/public-reader.js';
+import { writeConfig } from '../src/profiles/config.js';
 import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
 describe('daemon lockfile', () => {
@@ -475,16 +497,16 @@ describe('resolveGitEndpoint with local daemon', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Local daemon DID ownership check
-// ---------------------------------------------------------------------------
-
-describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
+describe('resolveGitEndpoint with a default profile daemon', () => {
   let server: ReturnType<typeof createServer>;
   let port: number;
 
-  const ownerDid = 'did:dht:localowner';
-  const remoteDid = 'did:dht:remoteuser';
+  const envHome = process.env.ENBOX_HOME;
+  const envGitdProfile = process.env.GITD_PROFILE;
+  const envEnboxProfile = process.env.ENBOX_PROFILE;
+  const envGitdPassword = process.env.GITD_PASSWORD;
+  const ownerDid = 'did:dht:profileowner';
+  const testHome = '__TESTDATA__/git-remote-profile-home';
 
   beforeAll(async () => {
     server = createServer((_req, res) => {
@@ -500,6 +522,198 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
   });
 
   beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    delete process.env.GITD_PROFILE;
+    delete process.env.ENBOX_PROFILE;
+    delete process.env.GITD_PASSWORD;
+    writeConfig({
+      version        : 1,
+      defaultProfile : 'default',
+      profiles       : {
+        default: {
+          name      : 'default',
+          did       : ownerDid,
+          createdAt : new Date().toISOString(),
+        },
+      },
+    });
+    writeLockfile(port, '1.0.0', ownerDid, { profileName: 'default' });
+  });
+
+  afterEach(() => {
+    removeLockfile('default');
+    rmSync(testHome, { recursive: true, force: true });
+    if (envHome !== undefined) {
+      process.env.ENBOX_HOME = envHome;
+    } else {
+      delete process.env.ENBOX_HOME;
+    }
+    if (envGitdProfile !== undefined) {
+      process.env.GITD_PROFILE = envGitdProfile;
+    } else {
+      delete process.env.GITD_PROFILE;
+    }
+    if (envEnboxProfile !== undefined) {
+      process.env.ENBOX_PROFILE = envEnboxProfile;
+    } else {
+      delete process.env.ENBOX_PROFILE;
+    }
+    if (envGitdPassword !== undefined) {
+      process.env.GITD_PASSWORD = envGitdPassword;
+    } else {
+      delete process.env.GITD_PASSWORD;
+    }
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('should resolve through the profile-scoped daemon without GITD_PROFILE set', async () => {
+    const result = await resolveGitEndpoint(ownerDid, 'my-repo');
+    expect(result.source).toBe('LocalDaemon');
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(ownerDid)}/my-repo`);
+  });
+});
+
+describe('resolveGitEndpoint with implicit public reader daemon', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  const envHome = process.env.ENBOX_HOME;
+  const envGitdProfile = process.env.GITD_PROFILE;
+  const envEnboxProfile = process.env.ENBOX_PROFILE;
+  const envGitdPassword = process.env.GITD_PASSWORD;
+  const remoteDid = 'did:dht:remote-public-reader';
+  const readerDid = 'did:dht:local-public-reader';
+  const testHome = '__TESTDATA__/git-remote-public-reader-home';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+  });
+
+  beforeEach(() => {
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    delete process.env.GITD_PROFILE;
+    delete process.env.ENBOX_PROFILE;
+    delete process.env.GITD_PASSWORD;
+    writeConfig({ version: 1, defaultProfile: '', profiles: {} });
+    writeLockfile(port, '1.0.0', readerDid, {
+      profileName : PUBLIC_READER_PROFILE,
+      dwnHelper   : true,
+    });
+    __setResolverForTests({
+      resolve: async (did: string) => ({
+        didDocument: {
+          id      : did,
+          service : [
+            { id: '#dwn', type: 'DecentralizedWebNode', serviceEndpoint: 'https://dwn.example.com' },
+          ],
+        },
+        didDocumentMetadata   : {},
+        didResolutionMetadata : {},
+      } as any),
+    });
+  });
+
+  afterEach(() => {
+    removeLockfile(PUBLIC_READER_PROFILE);
+    rmSync(testHome, { recursive: true, force: true });
+    __setResolverForTests();
+    if (envHome !== undefined) {
+      process.env.ENBOX_HOME = envHome;
+    } else {
+      delete process.env.ENBOX_HOME;
+    }
+    if (envGitdProfile !== undefined) {
+      process.env.GITD_PROFILE = envGitdProfile;
+    } else {
+      delete process.env.GITD_PROFILE;
+    }
+    if (envEnboxProfile !== undefined) {
+      process.env.ENBOX_PROFILE = envEnboxProfile;
+    } else {
+      delete process.env.ENBOX_PROFILE;
+    }
+    if (envGitdPassword !== undefined) {
+      process.env.GITD_PASSWORD = envGitdPassword;
+    } else {
+      delete process.env.GITD_PASSWORD;
+    }
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('selects the hidden reader only for DWN-helper fallback', () => {
+    expect(selectLocalDaemonProfile('owner-only', undefined)).toEqual({
+      implicitPublicReader: false,
+    });
+    expect(selectLocalDaemonProfile('dwn-helper', undefined)).toEqual({
+      profileName          : PUBLIC_READER_PROFILE,
+      implicitPublicReader : true,
+    });
+    expect(selectLocalDaemonProfile('dwn-helper', 'work')).toEqual({
+      profileName          : 'work',
+      implicitPublicReader : false,
+    });
+  });
+
+  it('uses a public-reader scoped helper for native public clone fallback', async () => {
+    const result = await resolveGitEndpoint(remoteDid, 'their-repo');
+
+    expect(result.source).toBe('LocalDwnHelper');
+    expect(result.did).toBe(remoteDid);
+    expect(result.url).toBe(`http://127.0.0.1:${port}/${encodeURIComponent(remoteDid)}/their-repo`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local daemon DID ownership check
+// ---------------------------------------------------------------------------
+
+describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
+  let server: ReturnType<typeof createServer>;
+  let port: number;
+
+  const ownerDid = 'did:dht:localowner';
+  const remoteDid = 'did:dht:remoteuser';
+  const envHome = process.env.ENBOX_HOME;
+  const testHome = '__TESTDATA__/git-remote-non-owner-home';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        resolve();
+      });
+    });
+  });
+
+  beforeEach(() => {
+    // Isolate ENBOX_HOME so a concurrent test file can't leak a daemon lockfile
+    // into the shared ~/.enbox and make these resolve instead of skip/reject.
+    rmSync(testHome, { recursive: true, force: true });
+    process.env.ENBOX_HOME = testHome;
+    // Never auto-start a real daemon — these tests assert routing/skip behavior
+    // against a fixed lockfile, not against a freshly spawned helper.
+    __setDaemonStarterForTests(async () => { throw new Error('auto-start disabled in test'); });
     // Default to a daemon that serves only its owner DID. Individual tests
     // opt into DWN-helper capability when they need remote-owner routing.
     writeLockfile(port, '1.0.0', ownerDid);
@@ -512,6 +726,10 @@ describe('resolveGitEndpoint skips local daemon for non-owner DID', () => {
 
   afterEach(() => {
     __setResolverForTests();
+    __setDaemonStarterForTests();
+    removeLockfile();
+    rmSync(testHome, { recursive: true, force: true });
+    if (envHome !== undefined) { process.env.ENBOX_HOME = envHome; } else { delete process.env.ENBOX_HOME; }
   });
 
   it('should use local daemon when requested DID matches ownerDid', async () => {

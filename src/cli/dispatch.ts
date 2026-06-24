@@ -49,6 +49,7 @@ export async function dispatchAgentCommand(
       break;
 
     case 'serve':
+    case 'publish':
       await serveCommand(ctx, rest);
       break;
 

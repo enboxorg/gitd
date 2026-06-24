@@ -92,6 +92,18 @@ export type ModerationEventData = {
   createdAt : string;
 };
 
+/** Squashed view checkpoint for reduced issue, PR, moderation, or report views. */
+export type ViewSnapshotData = {
+  kind : 'issue' | 'pr' | 'moderation' | 'report';
+  targetId? : string;
+  reducerVersion? : string;
+  lastRecordId? : string;
+  recordCount? : number;
+  state : Record<string, unknown>;
+  actorDid : string;
+  createdAt : string;
+};
+
 export type RepositoryRulesetStateData = {
   id: number;
   name: string;
@@ -584,6 +596,7 @@ export type ForgeRepoSchemaMap = {
   topic : TopicData;
   submissionDecision : SubmissionDecisionData;
   moderationEvent : ModerationEventData;
+  viewSnapshot : ViewSnapshotData;
   webhook : WebhookData;
 };
 
@@ -639,6 +652,10 @@ export const ForgeRepoDefinition = {
     },
     moderationEvent: {
       schema      : 'https://enbox.id/schemas/forge/moderation-event',
+      dataFormats : ['application/json'],
+    },
+    viewSnapshot: {
+      schema      : 'https://enbox.id/schemas/forge/view-snapshot',
       dataFormats : ['application/json'],
     },
     bundle: {
@@ -806,6 +823,23 @@ export const ForgeRepoDefinition = {
           targetId         : { type: 'string' },
           reportStatus     : { type: 'string', enum: ['open', 'resolved', 'dismissed'] },
           interactionLimit : { type: 'string', enum: ['off', 'contributors', 'collaborators'] },
+        },
+      },
+
+      viewSnapshot: {
+        $squash  : true,
+        $actions : [
+          { who: 'anyone', can: ['read'] },
+          { role: 'repo/maintainer', can: ['create', 'squash'] },
+          { role: 'repo/moderator', can: ['create', 'squash'] },
+        ],
+        $tags: {
+          $requiredTags       : ['kind'],
+          $allowUndefinedTags : false,
+          kind                : { type: 'string', enum: ['issue', 'pr', 'moderation', 'report'] },
+          targetId            : { type: 'string' },
+          actorDid            : { type: 'string' },
+          lastRecordId        : { type: 'string' },
         },
       },
 

@@ -17,6 +17,7 @@
 import type { AgentContext } from '../agent.js';
 import type { RepoContext, RepoRoleName } from '../repo-context.js';
 
+import * as p from '@clack/prompts';
 import { RecordsWrite } from '@enbox/dwn-sdk-js';
 
 import { ForgeIssuesDefinition } from '../../issues.js';
@@ -26,6 +27,9 @@ import { discussionIsLocked, latestActiveBlock, visibleCommentRecords } from '..
 import { findByShortId, shortId } from '../../github-shim/helpers.js';
 import { flagValue, resolveRepoName, resolveRepoOwner } from '../flags.js';
 import { fromOpt, getRepoContext, getRepoContextForDid, resolveRepoProtocolRole } from '../repo-context.js';
+import { positionalArgs, shouldPromptForMissingInput } from '../command-input.js';
+
+const ISSUE_FLAGS_WITH_VALUE = new Set(['--body', '-m', '--owner', '--reason', '--repo', '--status']);
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -51,13 +55,94 @@ export async function issueCommand(ctx: AgentContext, args: string[]): Promise<v
   }
 }
 
+export type IssueCreateInputs = {
+  title?: string;
+  body?: string;
+};
+
+export type IssueCommentInputs = {
+  id?: string;
+  body?: string;
+};
+
+export function issueCommandPositionals(args: readonly string[]): string[] {
+  return positionalArgs(args, ISSUE_FLAGS_WITH_VALUE);
+}
+
+export function issueCreateInputs(args: readonly string[]): IssueCreateInputs {
+  return {
+    title : issueCommandPositionals(args)[0],
+    body  : flagValue([...args], '--body') ?? flagValue([...args], '-m') ?? undefined,
+  };
+}
+
+export function issueCommentInputs(args: readonly string[]): IssueCommentInputs {
+  const positionals = issueCommandPositionals(args);
+  const body = flagValue([...args], '--body')
+    ?? flagValue([...args], '-m')
+    ?? (positionals.length > 1 ? positionals.slice(1).join(' ') : undefined);
+  return {
+    id: positionals[0],
+    ...(body ? { body } : {}),
+  };
+}
+
+async function promptIssueCreateInputs(inputs: IssueCreateInputs): Promise<IssueCreateInputs> {
+  if (inputs.title) { return inputs; }
+
+  const title = await promptRequiredText(undefined, 'Issue title:');
+  if (!title) { return inputs; }
+
+  return {
+    title,
+    body: inputs.body ?? await promptOptionalText('Issue body (optional):'),
+  };
+}
+
+async function promptIssueId(value: string | undefined, message: string): Promise<string | undefined> {
+  return promptRequiredText(value, message);
+}
+
+async function promptRequiredText(value: string | undefined, message: string): Promise<string | undefined> {
+  if (!shouldPromptForMissingInput(value)) { return value; }
+
+  const response = await p.text({
+    message,
+    validate(input) {
+      if (!input?.trim()) { return 'Required.'; }
+    },
+  });
+
+  if (p.isCancel(response)) {
+    p.cancel('Cancelled.');
+    process.exit(130);
+  }
+
+  return (response as string).trim();
+}
+
+async function promptOptionalText(message: string): Promise<string | undefined> {
+  if (!shouldPromptForMissingInput(undefined)) { return undefined; }
+
+  const response = await p.text({ message });
+  if (p.isCancel(response)) {
+    p.cancel('Cancelled.');
+    process.exit(130);
+  }
+
+  const value = (response as string).trim();
+  return value || undefined;
+}
+
 // ---------------------------------------------------------------------------
 // issue create
 // ---------------------------------------------------------------------------
 
 async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
-  const title = args[0];
-  const body = flagValue(args, '--body') ?? flagValue(args, '-m') ?? '';
+  const parsed = issueCreateInputs(args);
+  const prompted = await promptIssueCreateInputs(parsed);
+  const title = prompted.title;
+  const body = prompted.body ?? '';
 
   if (!title) {
     console.error('Usage: gitd issue create <title> [--body <text>]');
@@ -102,7 +187,7 @@ async function issueCreate(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
-  const idStr = args[0];
+  const idStr = await promptIssueId(issueCommandPositionals(args)[0], 'Issue ID:');
   if (!idStr) {
     console.error('Usage: gitd issue show <id>');
     process.exit(1);
@@ -156,10 +241,9 @@ async function issueShow(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
-  const idStr = args[0];
-  const flagBody = flagValue(args, '--body') ?? flagValue(args, '-m');
-  const positional = args.slice(1).filter(a => !a.startsWith('-')).join(' ');
-  const body = flagBody ?? (positional || undefined);
+  const parsed = issueCommentInputs(args);
+  const idStr = await promptIssueId(parsed.id, 'Issue ID:');
+  const body = await promptRequiredText(parsed.body, 'Comment:');
 
   if (!idStr || !body) {
     console.error('Usage: gitd issue comment <id> <body>');
@@ -205,7 +289,7 @@ async function issueComment(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
-  const idStr = args[0];
+  const idStr = await promptIssueId(issueCommandPositionals(args)[0], 'Issue ID:');
   if (!idStr) {
     console.error('Usage: gitd issue close <id>');
     process.exit(1);
@@ -265,7 +349,7 @@ async function issueClose(ctx: AgentContext, args: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function issueReopen(ctx: AgentContext, args: string[]): Promise<void> {
-  const idStr = args[0];
+  const idStr = await promptIssueId(issueCommandPositionals(args)[0], 'Issue ID:');
   if (!idStr) {
     console.error('Usage: gitd issue reopen <id>');
     process.exit(1);

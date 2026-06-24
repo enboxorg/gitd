@@ -11,7 +11,7 @@ import { createGitServer } from '../src/git-server/server.js';
 import { getVersion } from '../src/version.js';
 import { profilesDir } from '../src/profiles/config.js';
 import { daemonLogPath, daemonStatus, findGitdBin, stopDaemon } from '../src/daemon/lifecycle.js';
-import { lockfilePath, readLockfile, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
+import { lockfilePath, readLockfile, recordLockfileRepoContext, removeLockfile, writeLockfile } from '../src/daemon/lockfile.js';
 
 // ---------------------------------------------------------------------------
 // Lockfile version field
@@ -58,6 +58,52 @@ describe('lockfile version field', () => {
     expect(lock).not.toBeNull();
     expect(lock!.dwnHelper).toBe(true);
     removeLockfile();
+  });
+
+  it('should write helper session metadata when advertised', () => {
+    writeLockfile(9418, '1.0.0', 'did:dht:owner123', {
+      capabilities : ['git-transport', 'dwn-restore', 'git-transport'],
+      dwnHelper    : true,
+      profileName  : 'default',
+      reposPath    : '/tmp/gitd/repos',
+    });
+    const lock = readLockfile('default');
+    expect(lock).not.toBeNull();
+    expect(lock!.sessionId).toBe(`helper:default:${process.pid}`);
+    expect(lock!.profileName).toBe('default');
+    expect(lock!.reposPath).toBe('/tmp/gitd/repos');
+    expect(lock!.capabilities).toEqual(['git-transport', 'dwn-restore']);
+    expect(lock!.expiryPolicy).toBe('helper-lifetime');
+    removeLockfile('default');
+  });
+
+  it('should record and dedupe helper repo contexts on a running lockfile', () => {
+    writeLockfile(9418, '1.0.0', 'did:dht:owner123', { profileName: 'default' });
+
+    expect(recordLockfileRepoContext({
+      ownerDid      : 'did:dht:alice',
+      repo          : 'demo',
+      path          : '/tmp/demo',
+      remoteUrl     : 'did::did:dht:alice/demo',
+      defaultBranch : 'main',
+      lastSeenAt    : '2026-06-23T00:00:00.000Z',
+    }, 'default')).toBe(true);
+    expect(recordLockfileRepoContext({
+      ownerDid   : 'did:dht:alice',
+      repo       : 'demo',
+      path       : '/tmp/demo',
+      lastSeenAt : '2026-06-23T00:01:00.000Z',
+    }, 'default')).toBe(true);
+
+    const lock = readLockfile('default');
+    expect(lock!.repoContexts).toHaveLength(1);
+    expect(lock!.repoContexts![0]).toMatchObject({
+      ownerDid   : 'did:dht:alice',
+      repo       : 'demo',
+      path       : '/tmp/demo',
+      lastSeenAt : '2026-06-23T00:01:00.000Z',
+    });
+    removeLockfile('default');
   });
 
   it('should isolate lockfiles by profile name', () => {
@@ -109,15 +155,25 @@ describe('daemonStatus', () => {
   });
 
   it('should return running with details when lockfile exists', () => {
-    writeLockfile(9418, '0.6.1');
-    const status = daemonStatus();
+    writeLockfile(9418, '0.6.1', 'did:dht:owner123', {
+      capabilities : ['git-transport'],
+      profileName  : 'default',
+      reposPath    : '/tmp/gitd/repos',
+    });
+    const status = daemonStatus({ profileName: 'default' });
     expect(status.running).toBe(true);
     expect(status.pid).toBe(process.pid);
     expect(status.port).toBe(9418);
     expect(status.version).toBe('0.6.1');
+    expect(status.ownerDid).toBe('did:dht:owner123');
+    expect(status.sessionId).toBe(`helper:default:${process.pid}`);
+    expect(status.profileName).toBe('default');
+    expect(status.reposPath).toBe('/tmp/gitd/repos');
+    expect(status.capabilities).toEqual(['git-transport']);
+    expect(status.expiryPolicy).toBe('helper-lifetime');
     expect(status.uptime).toBeDefined();
     expect(status.startedAt).toBeDefined();
-    removeLockfile();
+    removeLockfile('default');
   });
 });
 
@@ -266,9 +322,9 @@ describe('createGitServer EADDRINUSE', () => {
     ).rejects.toThrow(/Port \d+ is already in use/);
   });
 
-  it('should include a hint about gitd serve status', async () => {
+  it('should include a hint about gitd helper status', async () => {
     await expect(
       createGitServer({ basePath: '__TESTDATA__/eaddrinuse', port: blockedPort }),
-    ).rejects.toThrow(/gitd serve status/);
+    ).rejects.toThrow(/gitd helper status/);
   });
 });

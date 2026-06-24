@@ -19,10 +19,13 @@
 import type { AgentContext } from '../agent.js';
 import type { RepoContext } from '../repo-context.js';
 
+import * as p from '@clack/prompts';
+
 import { getDwnEndpoints } from '../../git-server/did-service.js';
+import { getRepoContext } from '../repo-context.js';
 import { applyMessageToDwnEndpoint, applyRecordToDwnEndpoint } from '../record-send.js';
 import { flagValue, resolveRepoName } from '../flags.js';
-import { getRepoContext, getRepoContextId } from '../repo-context.js';
+import { positionalArgs, shouldPromptForMissingInput } from '../command-input.js';
 
 // ---------------------------------------------------------------------------
 // Valid roles
@@ -32,6 +35,7 @@ const PRIMARY_ROLES = ['maintainer', 'moderator', 'contributor', 'viewer'] as co
 const COMPATIBILITY_ROLES = ['triager'] as const;
 const VALID_ROLES = [...PRIMARY_ROLES, ...COMPATIBILITY_ROLES] as const;
 type Role = typeof VALID_ROLES[number];
+const REPO_FLAGS_WITH_VALUE = new Set(['--alias', '-a', '--repo']);
 
 // ---------------------------------------------------------------------------
 // Sub-command dispatch
@@ -54,6 +58,73 @@ export async function repoCommand(ctx: AgentContext, args: string[]): Promise<vo
       console.error('Usage: gitd repo <info|list|add-moderator|remove-moderator|add-contributor|remove-contributor|add-collaborator|remove-collaborator>');
       process.exit(1);
   }
+}
+
+export type RepoRoleInputs = {
+  did?: string;
+  role?: string;
+};
+
+export function repoCommandPositionals(args: readonly string[]): string[] {
+  return positionalArgs(args, REPO_FLAGS_WITH_VALUE);
+}
+
+export function repoRoleInputs(args: readonly string[]): RepoRoleInputs {
+  const positionals = repoCommandPositionals(args);
+  return {
+    did  : positionals[0],
+    role : positionals[1],
+  };
+}
+
+async function promptRepoRoleInputs(
+  inputs: RepoRoleInputs,
+  options: { roleRequired: boolean },
+): Promise<RepoRoleInputs> {
+  const did = await promptRepoDid(inputs.did, 'Collaborator DID:');
+  const role = options.roleRequired
+    ? await promptRepoRole(inputs.role)
+    : inputs.role;
+
+  return {
+    ...(did ? { did } : {}),
+    ...(role ? { role } : {}),
+  };
+}
+
+async function promptRepoDid(value: string | undefined, message: string): Promise<string | undefined> {
+  if (!shouldPromptForMissingInput(value)) { return value; }
+
+  const response = await p.text({
+    message,
+    validate(input) {
+      if (!input?.trim()) { return 'Required.'; }
+      if (!input.startsWith('did:')) { return 'Enter a DID, for example did:dht:...'; }
+    },
+  });
+
+  if (p.isCancel(response)) {
+    p.cancel('Cancelled.');
+    process.exit(130);
+  }
+
+  return (response as string).trim();
+}
+
+async function promptRepoRole(value: string | undefined): Promise<string | undefined> {
+  if (!shouldPromptForMissingInput(value)) { return value; }
+
+  const response = await p.select({
+    message : 'Role:',
+    options : PRIMARY_ROLES.map((role) => ({ value: role, label: role })),
+  });
+
+  if (p.isCancel(response)) {
+    p.cancel('Cancelled.');
+    process.exit(130);
+  }
+
+  return response as string;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +214,9 @@ async function repoList(ctx: AgentContext): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void> {
-  const did = args[0];
-  const role = args[1] as Role | undefined;
+  const inputs = await promptRepoRoleInputs(repoRoleInputs(args), { roleRequired: true });
+  const did = inputs.did;
+  const role = inputs.role as Role | undefined;
 
   if (!did || !role) {
     console.error('Usage: gitd repo add-collaborator <did> <role> [--alias <name>]');
@@ -157,11 +229,11 @@ async function addCollaborator(ctx: AgentContext, args: string[]): Promise<void>
     process.exit(1);
   }
 
-  await addRole(ctx, args, role);
+  await addRole(ctx, args, role, did);
 }
 
-async function addRole(ctx: AgentContext, args: string[], role: Role): Promise<void> {
-  const did = args[0];
+async function addRole(ctx: AgentContext, args: string[], role: Role, didOverride?: string): Promise<void> {
+  const did = didOverride ?? await promptRepoDid(repoCommandPositionals(args)[0], `DID to grant ${role}:`);
   const alias = flagValue(args, '--alias') ?? flagValue(args, '-a');
 
   if (!did) {
@@ -170,6 +242,16 @@ async function addRole(ctx: AgentContext, args: string[], role: Role): Promise<v
   }
 
   const repo = await getRepoContext(ctx, resolveRepoName(args));
+  for (const line of formatRoleChangeSummary({
+    action    : 'grant',
+    actorDid  : ctx.did,
+    ownerDid  : ctx.did,
+    repoName  : repo.name,
+    role,
+    targetDid : did,
+  })) {
+    console.log(line);
+  }
 
   const { status, record } = await ctx.repo.records.create(`repo/${role}` as any, {
     data            : { did, alias: alias ?? '' },
@@ -263,7 +345,7 @@ async function removeCollaborator(ctx: AgentContext, args: string[]): Promise<vo
 }
 
 async function removeRole(ctx: AgentContext, args: string[], onlyRole?: Role): Promise<void> {
-  const did = args[0];
+  const did = await promptRepoDid(repoCommandPositionals(args)[0], `DID to revoke ${onlyRole ?? 'collaborator'}:`);
 
   if (!did) {
     const usage = onlyRole
@@ -273,7 +355,18 @@ async function removeRole(ctx: AgentContext, args: string[], onlyRole?: Role): P
     process.exit(1);
   }
 
-  const repoContextId = await getRepoContextId(ctx, resolveRepoName(args));
+  const repo = await getRepoContext(ctx, resolveRepoName(args));
+  const repoContextId = repo.contextId;
+  for (const line of formatRoleChangeSummary({
+    action    : 'revoke',
+    actorDid  : ctx.did,
+    ownerDid  : ctx.did,
+    repoName  : repo.name,
+    role      : onlyRole,
+    targetDid : did,
+  })) {
+    console.log(line);
+  }
   let found = false;
 
   for (const role of onlyRole ? [onlyRole] : VALID_ROLES) {
@@ -294,4 +387,22 @@ async function removeRole(ctx: AgentContext, args: string[], onlyRole?: Role): P
     console.error(`No collaborator roles found for DID: ${did}`);
     process.exit(1);
   }
+}
+
+export type RoleChangeSummary = {
+  action : 'grant' | 'revoke';
+  actorDid : string;
+  ownerDid : string;
+  repoName : string;
+  role?: string;
+  targetDid : string;
+};
+
+export function formatRoleChangeSummary(summary: RoleChangeSummary): string[] {
+  return [
+    `${summary.action === 'grant' ? 'Granting' : 'Revoking'} ${summary.role ?? 'collaborator'} role`,
+    `  Repo:   ${summary.ownerDid}/${summary.repoName}`,
+    `  Actor:  ${summary.actorDid}`,
+    `  Target: ${summary.targetDid}`,
+  ];
 }

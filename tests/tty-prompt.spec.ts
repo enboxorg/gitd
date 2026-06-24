@@ -1,62 +1,104 @@
 /**
- * Tests for the TTY password prompt utility used by git helpers.
+ * Tests for the TTY password resolver used by git helpers.
  *
- * These tests verify that `getVaultPassword()` correctly prefers the
- * `GITD_PASSWORD` env var, falls back to `/dev/tty` prompting, and
- * returns `null` when no password source is available.
+ * `getVaultPassword()` prefers `GITD_PASSWORD`, then the hidden public-read
+ * profile secret, then the durable secret store, then a `/dev/tty` prompt.
  *
- * Actual TTY interaction cannot be tested in CI (no controlling terminal),
- * so those paths are tested only for graceful fallback to `null`.
+ * Actual TTY interaction cannot be tested (no controlling terminal), so those
+ * paths are only exercised for graceful fallback to `null`. The durable-store
+ * path is pinned to the encrypted-file backend so the real OS keychain is
+ * never touched.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
-import { getVaultPassword } from '../src/git-remote/tty-prompt.js';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
 
-// ---------------------------------------------------------------------------
-// getVaultPassword
-// ---------------------------------------------------------------------------
+import { getVaultPassword } from '../src/git-remote/tty-prompt.js';
+import { setVaultSecret } from '../src/auth/secret-store.js';
+import {
+  getOrCreatePublicReaderPassword,
+  PUBLIC_READER_PROFILE,
+} from '../src/profiles/public-reader.js';
 
 describe('getVaultPassword', () => {
   let origPassword: string | undefined;
+  let origProfile: string | undefined;
+  let origEnboxProfile: string | undefined;
+  let origEnboxHome: string | undefined;
+  let origBackend: string | undefined;
+  let tempHome: string | undefined;
 
   beforeEach(() => {
     origPassword = process.env.GITD_PASSWORD;
+    origProfile = process.env.GITD_PROFILE;
+    origEnboxProfile = process.env.ENBOX_PROFILE;
+    origEnboxHome = process.env.ENBOX_HOME;
+    origBackend = process.env.GITD_SECRET_BACKEND;
+    delete process.env.GITD_PROFILE;
+    delete process.env.ENBOX_PROFILE;
   });
 
   afterEach(() => {
-    if (origPassword !== undefined) {
-      process.env.GITD_PASSWORD = origPassword;
-    } else {
-      delete process.env.GITD_PASSWORD;
+    restoreEnv('GITD_PASSWORD', origPassword);
+    restoreEnv('GITD_PROFILE', origProfile);
+    restoreEnv('ENBOX_PROFILE', origEnboxProfile);
+    restoreEnv('ENBOX_HOME', origEnboxHome);
+    restoreEnv('GITD_SECRET_BACKEND', origBackend);
+    if (tempHome) {
+      rmSync(tempHome, { recursive: true, force: true });
+      tempHome = undefined;
     }
   });
 
-  it('should return GITD_PASSWORD when set', () => {
+  function restoreEnv(key: string, value: string | undefined): void {
+    if (value !== undefined) { process.env[key] = value; } else { delete process.env[key]; }
+  }
+
+  it('returns GITD_PASSWORD when set', async () => {
     process.env.GITD_PASSWORD = 'test-secret';
-    expect(getVaultPassword()).toBe('test-secret');
+    expect(await getVaultPassword()).toBe('test-secret');
   });
 
-  it('should return GITD_PASSWORD even when empty string', () => {
-    // An empty string is falsy but still "set" — the user explicitly
-    // provided it, so we should respect it (e.g. unlocked vaults).
-    process.env.GITD_PASSWORD = '';
-    // Empty string is falsy, so getVaultPassword will try /dev/tty next.
-    // This is actually correct behavior — an empty password is nonsensical.
-    const result = getVaultPassword();
-    // In CI without /dev/tty, should fall back to null.
-    expect(result === '' || result === null).toBe(true);
-  });
-
-  it('should return null or string when GITD_PASSWORD is not set (no TTY in CI)', () => {
+  it('returns the hidden public reader password for public-read repos', async () => {
     delete process.env.GITD_PASSWORD;
-    const result = getVaultPassword();
-    // In CI there's no controlling terminal, so /dev/tty open will fail
-    // and we should get null.  In a real terminal we'd get prompted.
+    tempHome = mkdtempSync(join(tmpdir(), 'gitd-tty-public-reader-'));
+    process.env.ENBOX_HOME = tempHome;
+    process.env.GITD_PROFILE = PUBLIC_READER_PROFILE;
+
+    const reader = getOrCreatePublicReaderPassword();
+    expect(await getVaultPassword()).toBe(reader.password);
+  });
+
+  it('returns the durable secret for the profile when env is unset', async () => {
+    delete process.env.GITD_PASSWORD;
+    tempHome = mkdtempSync(join(tmpdir(), 'gitd-tty-keychain-'));
+    process.env.ENBOX_HOME = tempHome;
+    process.env.GITD_SECRET_BACKEND = 'file';
+
+    await setVaultSecret('work', 'stored-pw');
+    expect(await getVaultPassword('work')).toBe('stored-pw');
+  });
+
+  it('prefers GITD_PASSWORD over the durable secret', async () => {
+    tempHome = mkdtempSync(join(tmpdir(), 'gitd-tty-precedence-'));
+    process.env.ENBOX_HOME = tempHome;
+    process.env.GITD_SECRET_BACKEND = 'file';
+    process.env.GITD_PASSWORD = 'env-pw';
+
+    await setVaultSecret('work', 'stored-pw');
+    expect(await getVaultPassword('work')).toBe('env-pw');
+  });
+
+  it('falls back gracefully when no source is available (no TTY in CI)', async () => {
+    delete process.env.GITD_PASSWORD;
+    const result = await getVaultPassword();
     expect(result === null || typeof result === 'string').toBe(true);
   });
 
-  it('should not throw when GITD_PASSWORD is not set', () => {
+  it('does not throw when no password source is available', async () => {
     delete process.env.GITD_PASSWORD;
-    expect(() => getVaultPassword()).not.toThrow();
+    await getVaultPassword();
   });
 });
