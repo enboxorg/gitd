@@ -50,7 +50,7 @@ export async function getVaultSecret(profileName: string): Promise<string | unde
   const backend = configuredBackend();
   if (backend === 'none') { return undefined; }
 
-  if (backend !== 'file' && keychainSupported()) {
+  if (shouldUseKeychain(backend)) {
     const value = keychainGet(profileName);
     if (value !== undefined) { return value; }
     if (backend === 'keychain') { return undefined; }
@@ -64,7 +64,7 @@ export async function setVaultSecret(profileName: string, secret: string): Promi
   const backend = configuredBackend();
   if (backend === 'none') { return; }
 
-  if (backend !== 'file' && keychainSupported()) {
+  if (shouldUseKeychain(backend)) {
     if (keychainSet(profileName, secret)) {
       // Clear any stale file copy so reads stay consistent with the keychain.
       fileDelete(profileName);
@@ -83,7 +83,7 @@ export async function deleteVaultSecret(profileName: string): Promise<void> {
   const backend = configuredBackend();
   if (backend === 'none') { return; }
 
-  if (backend !== 'file' && keychainSupported()) {
+  if (shouldUseKeychain(backend)) {
     keychainDelete(profileName);
   }
   fileDelete(profileName);
@@ -95,7 +95,7 @@ export function describeSecretBackend(): string {
   if (backend === 'none') { return 'disabled (GITD_SECRET_BACKEND=none)'; }
   if (backend === 'file') { return 'encrypted file'; }
   if (backend === 'keychain') { return 'OS keychain'; }
-  return keychainSupported() ? 'OS keychain (encrypted file fallback)' : 'encrypted file';
+  return shouldUseKeychain(undefined) ? 'OS keychain (encrypted file fallback)' : 'encrypted file';
 }
 
 // ---------------------------------------------------------------------------
@@ -108,8 +108,25 @@ function configuredBackend(): Backend | undefined {
   return undefined;
 }
 
-function keychainSupported(): boolean {
+function keychainPlatformSupported(): boolean {
   return process.platform === 'darwin' || process.platform === 'linux';
+}
+
+/**
+ * Decide whether to use the OS keychain for the current call.
+ *
+ * The OS keychain is a single machine-global store keyed by `gitd` /
+ * `vault:<profile>` — it is NOT scoped to `ENBOX_HOME`. So when `ENBOX_HOME`
+ * is overridden (tests, sandboxes, throwaway installs) we use the encrypted
+ * file backend instead, which lives under that home and stays isolated. The
+ * default home (production) uses the keychain; `GITD_SECRET_BACKEND` overrides
+ * everything.
+ */
+function shouldUseKeychain(backend: Backend | undefined): boolean {
+  if (backend === 'keychain') { return keychainPlatformSupported(); }
+  if (backend === 'file' || backend === 'none') { return false; }
+  if (process.env.ENBOX_HOME) { return false; }
+  return keychainPlatformSupported();
 }
 
 /** Keychain account label for a profile. */

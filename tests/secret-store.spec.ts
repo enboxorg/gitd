@@ -83,4 +83,15 @@ describe('secret store (encrypted file backend)', () => {
     await setVaultSecret('default', 'hunter2');
     expect(await getVaultSecret('default')).toBeUndefined();
   });
+
+  it('uses the file backend (not the OS keychain) when ENBOX_HOME is overridden', async () => {
+    // Auto mode: no explicit backend. The OS keychain is machine-global and not
+    // scoped to ENBOX_HOME, so with ENBOX_HOME overridden the store must use the
+    // encrypted file under that home — this is what keeps tests/sandboxes
+    // isolated from each other and from real secrets.
+    delete process.env.GITD_SECRET_BACKEND;
+    await setVaultSecret('default', 'hunter2');
+    expect(existsSync(secretFile('default'))).toBe(true);
+    expect(await getVaultSecret('default')).toBe('hunter2');
+  });
 });
